@@ -1,8 +1,8 @@
 {
     "vault": {
-        "servername": "https://6f1f06a2.vg.autodesk.com",
+        "servername": "VaultServer",
         "username": "Administrator",
-        "password": "Vault@123",
+        "password": "",
         "database": "Inventor"
     },
     "server": {
