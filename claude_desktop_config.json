@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "vault-mcp": {
+      "command": "C:\\Users\\mandalt\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+      "args": [
+        "C:\\Users\\mandalt\\OneDrive - Autodesk\\Desktop\\Vault MCP\\app.py",
+        "--transport",
+        "stdio"
+      ]
+    }
+  },
+  "preferences": {
+    "coworkScheduledTasksEnabled": false,
+    "ccdScheduledTasksEnabled": true,
+    "sidebarMode": "chat",
+    "coworkWebSearchEnabled": true,
+    "floatingAtollActive": true
+  }
+}
