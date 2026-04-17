@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "vault-mcp": {
+      "type": "sse",
+      "url": "http://localhost:8080/sse"
+    }
+  }
+}

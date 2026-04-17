@@ -1,0 +1,16 @@
+{
+    "vault": {
+        "servername": "https://6f1f06a2.vg.autodesk.com",
+        "username": "Administrator",
+        "password": "Vault@123",
+        "database": "Inventor"
+    },
+    "server": {
+        "host": "0.0.0.0",
+        "port": 8080
+    },
+    "logging": {
+        "level": "INFO",
+        "file": "Log/mcp_server.log"
+    }
+}

@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:aps.autodesk.com)",
+      "Bash(git -C \"/c/Users/mandalt/OneDrive - Autodesk/Desktop/Vault MCP/\" log --oneline -10)",
+      "Bash(git -C \"/c/Users/mandalt/OneDrive - Autodesk/Desktop/Vault MCP/\" show bc1faa7 --stat)",
+      "Bash(git -C \"/c/Users/mandalt/OneDrive - Autodesk/Desktop/Vault MCP/\" show HEAD --stat)",
+      "Bash(git -C \"/c/Users/mandalt/OneDrive - Autodesk/Desktop/Vault MCP/\" show HEAD:mcp_server.py)",
+      "Bash(git -C '/c/Users/mandalt/OneDrive - Autodesk/Desktop/Vault MCP/' show HEAD:vault_api.py)",
+      "Bash(git -C '/c/Users/mandalt/OneDrive - Autodesk/Desktop/Vault MCP/' show HEAD:app.py)"
+    ]
+  }
+}
