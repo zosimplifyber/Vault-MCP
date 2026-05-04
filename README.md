@@ -60,73 +60,117 @@ cp config.json.example config.json
 
 ## Running the Server
 
-### SSE Mode (Claude Code / remote clients)
-
-This is the default mode. It starts an HTTP server that MCP clients connect to over the network.
+### Recommended: launcher dashboard (default)
 
 ```bash
 python app.py
 ```
 
-The server will be available at:
-- Web server: `http://localhost:8765`
-- SSE endpoint: `http://localhost:8765/sse`
-- Messages endpoint: `http://localhost:8765/messages`
+This opens the **Vault Integration launcher** (Tk dashboard) and auto-starts the SSE MCP server on `http://127.0.0.1:8765/sse` inside the same process. From the dashboard you can also launch the Release Workflow wizard, BOM → Purchasing sheet, MFG Order Package builder, and Property Check tool — all sharing the same Vault session as the MCP server. One sign-in, one audit trail.
 
-To use a custom config file:
+The server endpoints:
+- Dashboard: opens automatically (no URL — it's a desktop window)
+- SSE endpoint for MCP clients: `http://127.0.0.1:8765/sse`
+- Messages endpoint: `http://127.0.0.1:8765/messages`
 
-```bash
-python app.py --config path/to/my_config.json
+**The launcher must stay open while any MCP client is using the server.** Closing it prompts to confirm because it would disconnect Claude Desktop / Claude Code mid-session.
+
+### Daily startup (Windows)
+
+A startup shortcut at
+`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\Vault MCP Launcher.lnk`
+runs `pythonw.exe app.py` at login so the launcher is already up before you open Claude Desktop. To create or recreate it:
+
+```powershell
+$startup = [Environment]::GetFolderPath('Startup')
+$sc = (New-Object -ComObject WScript.Shell).CreateShortcut("$startup\Vault MCP Launcher.lnk")
+$sc.TargetPath = 'C:\Users\<you>\AppData\Local\Python\pythoncore-3.14-64\pythonw.exe'
+$sc.Arguments = '"C:\path\to\Vault-MCP\app.py"'
+$sc.WorkingDirectory = 'C:\path\to\Vault-MCP'
+$sc.Save()
 ```
 
-### stdio Mode (Claude Desktop)
+`pythonw.exe` (rather than `python.exe`) keeps the console window from appearing — only the Tk dashboard is visible. Logs still go to `Log/mcp_server.log`.
 
-For Claude Desktop, the server runs as a subprocess communicating over stdin/stdout.
+### Other run modes
 
 ```bash
-python app.py --transport stdio
+python app.py --headless              # bare SSE WebServer, no GUI (for unattended hosts)
+python app.py --gui                   # launcher dashboard, MCP server NOT auto-started (manual Start button)
+python app.py --transport stdio       # stdin/stdout MCP transport (used directly only when bridging proxies)
+python app.py --workflow --part-number SF-001717   # skip launcher, open Release Workflow wizard pre-filled
+python app.py --config path/to/my_config.json      # custom config path
 ```
 
-## Connecting to Claude Code
+## Connecting MCP clients
 
-Add the server to your Claude Code MCP configuration (`.claude/settings.json` or via `claude mcp add`):
+All clients connect to the same SSE endpoint exposed by the running launcher: `http://127.0.0.1:8765/sse`. The launcher must be running first.
+
+### Claude Code
+
+In `~/.claude.json` (user-level) or `.claude/settings.json` (project-level):
 
 ```json
 {
   "mcpServers": {
     "vault": {
       "type": "sse",
-      "url": "http://localhost:8765/sse"
+      "url": "http://127.0.0.1:8765/sse"
     }
   }
 }
 ```
 
-Or use the CLI:
+Or via CLI:
 
 ```bash
-claude mcp add --transport sse vault http://localhost:8765/sse
+claude mcp add --transport sse vault http://127.0.0.1:8765/sse
 ```
 
-## Connecting to Claude Desktop
+### Claude Desktop
 
-Add the following to your Claude Desktop configuration file (`claude_desktop_config.json`):
+Claude Desktop's connector currently launches stdio subprocesses, so connecting it to a long-running SSE server requires the [`mcp-remote`](https://www.npmjs.com/package/mcp-remote) bridge. Add to `%APPDATA%\Claude\claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
-    "vault": {
-      "command": "python",
-      "args": [
-        "C:/path/to/Vault-MCP/app.py",
-        "--transport", "stdio"
-      ]
+    "vault-mcp": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "http://127.0.0.1:8765/sse"]
     }
   }
 }
 ```
 
-Replace `C:/path/to/Vault-MCP/` with the actual path to this project directory. Claude Desktop will launch the server automatically as a subprocess.
+Requires Node.js installed (for `npx`). First launch downloads `mcp-remote` from npm (~5–10 s); subsequent launches use the cache.
+
+After editing, fully quit Claude Desktop from the system tray — not just close the window — and reopen.
+
+### Daily startup checklist
+
+1. Launcher running (auto from the Startup-folder shortcut, or run `python app.py`). Confirm the MCP status dot is green.
+2. Open Claude Desktop / Claude Code. They reconnect to the running SSE server automatically.
+3. Smoke test: any tool call (e.g. `vault_search_items` for a known part number) should succeed.
+
+If the launcher isn't running when a client tries to connect, you'll see "connection refused" or a red connector status. Start the launcher and re-toggle the connector.
+
+## Session expiration / auto re-authentication
+
+Vault Server times out idle REST sessions (default ~30 minutes), after which every call returns `HTTP 401` with the misleading message _"You currently do not have permissions to download this file."_ — this is **not** an ACL problem; it's the Bearer token having been invalidated.
+
+`VaultRestAPI` in `vault_rest_api.py` handles this transparently: it caches the credentials from the last successful `create_session()` call and, when any subsequent `_request()` returns 401, re-authenticates once with the cached credentials and retries the call. The retry is serialized by an `asyncio.Lock` so concurrent 401s only cause one re-sign-in. If the retry also returns 401 (genuine ACL denial or rotated password), the error propagates normally.
+
+In `Log/mcp_server.log` you'll see this on session expiry:
+
+```
+... API error 401: {... 'detail': 'You currently do not have permissions...'}
+... Session likely expired — re-authenticating as zolech (database: Simplifyber)
+... POST .../sessions  ... 200 OK
+... Re-authenticated; retrying GET .../items?q=SF-001717
+... Response 200
+```
+
+The single visible-to-the-user 401 entry above is harmless — the retry on the next line succeeds.
 
 ## Available Tools
 

@@ -4,6 +4,7 @@ Wraps the Autodesk Vault Data API v2 endpoints.
 Base URL: {servername}/AutodeskDM/Services/api/vault/v2
 """
 
+import asyncio
 import httpx
 import logging
 from typing import Any, Dict, List, Optional
@@ -23,6 +24,13 @@ class VaultRestAPI:
         self.base_url = servername.rstrip("/") + API_PATH
         self._session_token: Optional[str] = None
         self._vault_id: Optional[str] = None
+        # Credentials cached on successful sign-in so _request() can silently
+        # re-authenticate when Vault times out the session token (default ~30
+        # min idle). Without this, every call after timeout returns 401 with
+        # the misleading "do not have permissions to download this file"
+        # message and the only fix is restarting the MCP subprocess.
+        self._creds: Optional[Dict[str, str]] = None
+        self._reauth_lock: Optional[asyncio.Lock] = None
 
     # ------------------------------------------------------------------
     # Session helpers
@@ -37,7 +45,39 @@ class VaultRestAPI:
     def clear_session(self) -> None:
         self._session_token = None
         self._vault_id = None
+        self._creds = None
         logger.info("Session cleared")
+
+    def _ensure_reauth_lock(self) -> asyncio.Lock:
+        if self._reauth_lock is None:
+            self._reauth_lock = asyncio.Lock()
+        return self._reauth_lock
+
+    async def _try_reauth(self, expired_token: Optional[str]) -> bool:
+        """Re-sign in using cached credentials. Returns True on success.
+
+        ``expired_token`` is the token that was on the request that just got a
+        401 — when several concurrent calls all 401 at once we only want to
+        re-auth once, so a caller whose token has already been replaced (by
+        another caller's re-auth) skips and retries with the new token.
+        """
+        if not self._creds:
+            return False
+        async with self._ensure_reauth_lock():
+            if self._session_token and self._session_token != expired_token:
+                return True
+            creds = self._creds
+            logger.info(
+                "Session likely expired — re-authenticating as %s (database: %s)",
+                creds.get("username"), creds.get("database"),
+            )
+            result = await self.create_session(
+                database=creds["database"],
+                username=creds["username"],
+                password=creds["password"],
+                app_code=creds.get("app_code", ""),
+            )
+            return not result["error"]
 
     @property
     def is_authenticated(self) -> bool:
@@ -56,15 +96,15 @@ class VaultRestAPI:
     # HTTP transport
     # ------------------------------------------------------------------
 
-    async def _request(
+    async def _send_once(
         self,
         method: str,
         endpoint: str,
         *,
-        params: Optional[Dict[str, Any]] = None,
-        json_data: Optional[Dict[str, Any]] = None,
-        extra_headers: Optional[Dict[str, str]] = None,
-        timeout: float = 30.0,
+        params: Optional[Dict[str, Any]],
+        json_data: Optional[Dict[str, Any]],
+        extra_headers: Optional[Dict[str, str]],
+        timeout: float,
     ) -> Dict[str, Any]:
         headers = self._auth_headers()
         if extra_headers:
@@ -88,25 +128,73 @@ class VaultRestAPI:
                     timeout=timeout,
                     follow_redirects=True,
                 )
-            logger.info("Response %s", resp.status_code)
-
-            try:
-                data = resp.json()
-            except Exception:
-                data = {"content": resp.text}
-
-            if resp.status_code >= 400:
-                logger.error("API error %s: %s", resp.status_code, data)
-                return {"error": True, "status_code": resp.status_code, "data": data}
-
-            return {"error": False, "status_code": resp.status_code, "data": data}
-
         except httpx.TimeoutException:
             logger.error("Request timed out: %s %s", method, url)
-            return {"error": True, "status_code": 504, "data": {"message": "Request timed out"}}
+            return {"error": True, "status_code": 504,
+                    "data": {"message": "Request timed out"},
+                    "_token_used": self._session_token}
         except httpx.RequestError as exc:
             logger.error("Connection error: %s", exc)
-            return {"error": True, "status_code": 503, "data": {"message": str(exc)}}
+            return {"error": True, "status_code": 503,
+                    "data": {"message": str(exc)},
+                    "_token_used": self._session_token}
+
+        logger.info("Response %s", resp.status_code)
+        try:
+            data = resp.json()
+        except Exception:
+            data = {"content": resp.text}
+
+        if resp.status_code >= 400:
+            return {"error": True, "status_code": resp.status_code, "data": data,
+                    "_token_used": headers.get("Authorization")}
+        return {"error": False, "status_code": resp.status_code, "data": data,
+                "_token_used": headers.get("Authorization")}
+
+    async def _request(
+        self,
+        method: str,
+        endpoint: str,
+        *,
+        params: Optional[Dict[str, Any]] = None,
+        json_data: Optional[Dict[str, Any]] = None,
+        extra_headers: Optional[Dict[str, str]] = None,
+        timeout: float = 30.0,
+    ) -> Dict[str, Any]:
+        result = await self._send_once(
+            method, endpoint,
+            params=params, json_data=json_data,
+            extra_headers=extra_headers, timeout=timeout,
+        )
+
+        # Auto-reauth on 401: Vault returns 401 + errorCode 8000 ("do not
+        # have permissions to download this file") for both real ACL denials
+        # and expired sessions. Re-auth once with cached creds and retry —
+        # if it was an ACL issue we'll get the same 401 back.
+        if (
+            result["status_code"] == 401
+            and not endpoint.startswith("/sessions")
+            and self._creds is not None
+        ):
+            expired = result.pop("_token_used", None)
+            # Strip the "Bearer " prefix to compare against self._session_token
+            expired_token = (
+                expired[len("Bearer "):] if isinstance(expired, str) and expired.startswith("Bearer ")
+                else self._session_token
+            )
+            reauthed = await self._try_reauth(expired_token)
+            if reauthed:
+                logger.info("Re-authenticated; retrying %s %s", method, endpoint)
+                result = await self._send_once(
+                    method, endpoint,
+                    params=params, json_data=json_data,
+                    extra_headers=extra_headers, timeout=timeout,
+                )
+
+        result.pop("_token_used", None)
+        if result["error"] and result["status_code"] not in (503, 504):
+            logger.error("API error %s: %s", result["status_code"], result["data"])
+        return result
 
     # ------------------------------------------------------------------
     # Informational
@@ -159,6 +247,15 @@ class VaultRestAPI:
             )
             if access_token:
                 self.set_session(access_token, vault_id)
+                # Cache credentials so _request() can auto-reauth on session
+                # expiration. Stored only on success — no point keeping
+                # rejected creds.
+                self._creds = {
+                    "database": database,
+                    "username": username,
+                    "password": password,
+                    "app_code": app_code,
+                }
         return result
 
     async def delete_session(self, session_id: str) -> Dict[str, Any]:
@@ -342,8 +439,20 @@ class VaultRestAPI:
         """
         resolved = vault_id or self._vault_id or ""
         url = self.base_url + f"/vaults/{resolved}/file-versions/{file_version_id}/content"
+
+        result, token_used = await self._download_once(url, timeout)
+        if result["status_code"] == 401 and self._creds is not None:
+            if await self._try_reauth(token_used):
+                logger.info("Re-authenticated; retrying download %s", url)
+                result, _ = await self._download_once(url, timeout)
+        return result
+
+    async def _download_once(
+        self, url: str, timeout: float
+    ) -> tuple[Dict[str, Any], Optional[str]]:
         headers = self._auth_headers()
         headers.pop("Content-Type", None)
+        token_used = self._session_token
 
         log_headers = {
             k: ("Bearer ***" if k == "Authorization" else v)
@@ -362,14 +471,18 @@ class VaultRestAPI:
                     err = resp.json()
                 except Exception:
                     err = {"content": resp.text[:500]}
-                return {"error": True, "status_code": resp.status_code, "data": err}
-            return {"error": False, "status_code": resp.status_code, "data": resp.content}
+                return ({"error": True, "status_code": resp.status_code, "data": err},
+                        token_used)
+            return ({"error": False, "status_code": resp.status_code, "data": resp.content},
+                    token_used)
         except httpx.TimeoutException:
             logger.error("Download timed out: %s", url)
-            return {"error": True, "status_code": 504, "data": {"message": "Download timed out"}}
+            return ({"error": True, "status_code": 504,
+                     "data": {"message": "Download timed out"}}, token_used)
         except httpx.RequestError as exc:
             logger.error("Download error: %s", exc)
-            return {"error": True, "status_code": 503, "data": {"message": str(exc)}}
+            return ({"error": True, "status_code": 503,
+                     "data": {"message": str(exc)}}, token_used)
 
     # ------------------------------------------------------------------
     # Search

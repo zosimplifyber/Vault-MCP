@@ -95,6 +95,12 @@ class MCPServerController:
                 app=sse_app, host=self.host, port=self.port,
                 log_level=self.cfg.get("logging", {}).get("level", "INFO").lower(),
                 access_log=True,
+                # Don't let uvicorn re-run logging.dictConfig — app.py already
+                # set up the root logger via basicConfig, and uvicorn's default
+                # config can fail with "Unable to configure formatter 'default'"
+                # when invoked after another logging setup. Use the parent
+                # logger setup; access_log entries still propagate.
+                log_config=None,
             )
             self._server = uvicorn.Server(config)
         except Exception as exc:  # noqa: BLE001
@@ -149,6 +155,7 @@ class LauncherGUI:
         access_token: str = "",
         user_id: str = "",
         cfg: Optional[dict[str, Any]] = None,
+        auto_start_mcp: bool = False,
     ) -> None:
         self.root = root
         self.root.title("Simplifyber — Vault Integration")
@@ -181,6 +188,31 @@ class LauncherGUI:
         # Drain the cross-thread queue and re-poll status periodically
         self.root.after(100, self._drain_queue)
         self.root.after(2000, self._periodic_status_refresh)
+
+        # Auto-start the MCP server once the window is up so the user sees
+        # the running state immediately. Delay slightly so the launcher
+        # finishes drawing before uvicorn starts spamming the log.
+        if auto_start_mcp and self.mcp_ctrl is not None:
+            self.root.after(300, self._on_mcp_start)
+
+        # Closing the X button while MCP is running would drop any connected
+        # MCP clients (Claude Desktop, Claude Code) mid-session. Confirm first.
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    def _on_close(self) -> None:
+        if self.mcp_ctrl is not None and self.mcp_ctrl.is_running():
+            confirm = messagebox.askyesno(
+                "Stop MCP server?",
+                "The MCP server is running. Closing this window will disconnect "
+                "any active MCP clients (Claude Desktop, Claude Code).\n\n"
+                "Quit anyway?",
+                parent=self.root,
+                default="no",
+            )
+            if not confirm:
+                return
+            self.mcp_ctrl.stop()
+        self.root.destroy()
 
     # ----- UI construction --------------------------------------------------
 
@@ -776,14 +808,20 @@ def launch_launcher(
     access_token: str = "",
     user_id: str = "",
     cfg: Optional[dict[str, Any]] = None,
+    auto_start_mcp: bool = False,
 ) -> None:
     """Open the dashboard. Pass an authenticated session to skip first-time
-    sign-in (the user can still hit Reconnect to refresh)."""
+    sign-in (the user can still hit Reconnect to refresh).
+
+    ``auto_start_mcp`` makes the dashboard kick off the SSE MCP server as
+    soon as the window appears — used when the launcher is the front-end
+    for ``python app.py`` (default SSE mode)."""
     root = tk.Tk()
     LauncherGUI(
         root,
         api=api, vault_id=vault_id,
         access_token=access_token, user_id=user_id, cfg=cfg,
+        auto_start_mcp=auto_start_mcp,
     )
     root.mainloop()
 

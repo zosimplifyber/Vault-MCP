@@ -7,17 +7,18 @@ one audit trail per launch.
 
 Run modes (--transport)
 -----------------------
-sse      (default) — HTTP WebServer using Server-Sent Events.
-                     Connect from Claude Code or any remote MCP client at
-                     http://<host>:<port>/sse.
+sse      (default) — Opens the Vault Integration launcher dashboard and
+                     auto-starts the SSE MCP server inside it. Connect
+                     remote MCP clients (Claude Code etc.) at
+                     http://<host>:<port>/sse. Pass ``--headless`` to skip
+                     the GUI and run bare uvicorn instead.
 stdio              — stdin/stdout transport for Claude Desktop's
                      command-based MCP entry. Logs go to file only (stdout
                      is reserved for the MCP protocol).
-gui                — Opens the Vault Integration launcher dashboard
-                     (``gui.launcher``) with the live session
-                     pre-attached. From the launcher the user can start
-                     the MCP server, launch the Release Workflow wizard,
-                     or open the other engineering tools.
+gui                — Opens the launcher dashboard with the live session
+                     pre-attached but does NOT auto-start the MCP server
+                     (the user clicks Start when they want it). Same as
+                     SSE mode without the auto-start.
 workflow           — Skips the launcher and opens the Release Workflow
                      wizard (``gui.release_workflow``) directly. Use
                      when the wizard is the only thing needed.
@@ -26,13 +27,15 @@ Convenience flags
 -----------------
 --gui              Shortcut for --transport gui.
 --workflow         Shortcut for --transport workflow.
+--headless         In SSE mode, skip the launcher GUI and run bare uvicorn.
 --part-number STR  Pre-fill the part number for --gui / --workflow.
 --config PATH      Override the default config.json location.
 
 Usage:
-    python app.py                                 # SSE WebServer (default)
+    python app.py                                 # launcher + auto-started MCP (default)
+    python app.py --headless                      # bare SSE WebServer (old default)
     python app.py --transport stdio               # stdio for Claude Desktop
-    python app.py --gui                           # launcher dashboard
+    python app.py --gui                           # launcher only, manual MCP start
     python app.py --workflow --part-number 12345  # wizard, pre-filled
     python app.py --config my_config.json         # custom config path
 
@@ -161,7 +164,9 @@ async def authenticate(api: VaultRestAPI, vault_cfg: dict) -> str:
 # SSE mode (WebServer)
 # ---------------------------------------------------------------------------
 
-async def run_sse(cfg: dict) -> None:
+async def run_sse_headless(cfg: dict) -> None:
+    """Bare SSE server — no GUI. Used when --headless is passed or when
+    running on a box with no display (Tk unavailable)."""
     logger = logging.getLogger(__name__)
 
     vault_cfg = cfg["vault"]
@@ -174,7 +179,7 @@ async def run_sse(cfg: dict) -> None:
     mcp = create_mcp_server(api=api, vault_id=vault_id)
 
     display_host = "localhost" if host == "0.0.0.0" else host
-    logger.info("Starting Vault MCP Server  (SSE)")
+    logger.info("Starting Vault MCP Server  (SSE, headless)")
     logger.info("  WebServer  : http://%s:%d", display_host, port)
     logger.info("  SSE endpoint  : http://%s:%d/sse", display_host, port)
     logger.info("  Messages      : http://%s:%d/messages", display_host, port)
@@ -188,9 +193,52 @@ async def run_sse(cfg: dict) -> None:
         port=port,
         log_level=cfg.get("logging", {}).get("level", "INFO").lower(),
         access_log=True,
+        log_config=None,  # use parent's logging setup; see launcher.py for context
     )
     server = uvicorn.Server(config)
     await server.serve()
+
+
+def run_sse(cfg: dict) -> None:
+    """Default ``python app.py`` mode. Opens the launcher dashboard and
+    auto-starts the MCP server inside it, so the user gets a live status
+    panel and the Engineering Tools as soon as the server comes up. Falls
+    back to bare uvicorn if Tk fails to initialise (e.g. headless box)."""
+    logger = logging.getLogger(__name__)
+    api, vault_id, access_token, user_id = asyncio.run(_sign_in_for_gui(cfg))
+
+    _ensure_scripts_on_path()
+
+    try:
+        from gui.launcher import launch_launcher
+    except ImportError as exc:
+        logger.warning("GUI unavailable (%s) — falling back to headless SSE", exc)
+        asyncio.run(run_sse_headless(cfg))
+        return
+
+    logger.info("Launching Vault Integration dashboard with auto-started MCP server")
+    logger.info("  Vault database: %s", cfg["vault"]["database"])
+    logger.info("  Vault server  : %s", cfg["vault"]["servername"])
+
+    try:
+        launch_launcher(
+            api=api, vault_id=vault_id,
+            access_token=access_token, user_id=user_id, cfg=cfg,
+            auto_start_mcp=True,
+        )
+    except tk_init_error_types() as exc:
+        logger.warning("Tk init failed (%s) — falling back to headless SSE", exc)
+        asyncio.run(run_sse_headless(cfg))
+
+
+def tk_init_error_types() -> tuple:
+    """Return the tuple of exception types that mean Tk couldn't open a
+    display. Imported lazily so app.py still loads on a Tk-less Python."""
+    try:
+        import tkinter
+        return (tkinter.TclError,)
+    except ImportError:
+        return (Exception,)
 
 
 # ---------------------------------------------------------------------------
@@ -376,6 +424,11 @@ def parse_args() -> argparse.Namespace:
         help="Shortcut for --transport workflow (skip launcher, open wizard).",
     )
     parser.add_argument(
+        "--headless",
+        action="store_true",
+        help="In SSE mode, skip the launcher GUI and run uvicorn directly.",
+    )
+    parser.add_argument(
         "--part-number",
         default="",
         help="Pre-fill the part number when launching --gui / --workflow.",
@@ -400,5 +453,7 @@ if __name__ == "__main__":
         run_gui(cfg, prefill_part_number=args.part_number)
     elif args.transport == "workflow":
         run_workflow_direct(cfg, prefill_part_number=args.part_number)
+    elif args.headless:
+        asyncio.run(run_sse_headless(cfg))
     else:
-        asyncio.run(run_sse(cfg))
+        run_sse(cfg)            # opens launcher GUI + auto-starts MCP server
