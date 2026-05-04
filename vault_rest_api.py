@@ -471,10 +471,23 @@ class VaultRestAPI:
     # Items (BOM / Engineering items)
     # ------------------------------------------------------------------
 
-    async def get_item_by_id(self, vault_id: str, item_id: str) -> Dict[str, Any]:
-        """GET /vaults/{vaultId}/items/{id}."""
+    async def get_item_by_id(
+        self, vault_id: str, item_id: str, *, prop_def_ids: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """GET /vaults/{vaultId}/items/{id}.
+
+        Pass ``prop_def_ids`` (comma-separated property definition IDs) to
+        include user-defined properties in the response — without it the
+        endpoint returns only system fields (Number / Title / Description /
+        Revision / State / Category) and the ``properties`` list is empty.
+        """
         resolved = vault_id or self._vault_id or ""
-        return await self._request("GET", f"/vaults/{resolved}/items/{item_id}")
+        params: Dict[str, Any] = {}
+        if prop_def_ids:
+            params["propDefIds"] = prop_def_ids
+        return await self._request(
+            "GET", f"/vaults/{resolved}/items/{item_id}", params=params or None,
+        )
 
     async def search_items(
         self,
@@ -482,12 +495,20 @@ class VaultRestAPI:
         query: str,
         limit: int = 100,
         cursor_state: Optional[str] = None,
+        *,
+        prop_def_ids: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """GET /vaults/{vaultId}/items — search for engineering items."""
+        """GET /vaults/{vaultId}/items — search for engineering items.
+
+        Pass ``prop_def_ids`` to include UDPs on each result (otherwise only
+        system fields come back).
+        """
         resolved = vault_id or self._vault_id or ""
         params: Dict[str, Any] = {"q": query, "limit": limit}
         if cursor_state:
             params["cursorState"] = cursor_state
+        if prop_def_ids:
+            params["propDefIds"] = prop_def_ids
         return await self._request("GET", f"/vaults/{resolved}/items", params=params)
 
     async def get_item_version_history(
@@ -497,12 +518,18 @@ class VaultRestAPI:
         *,
         limit: int = 50,
         cursor_state: Optional[str] = None,
+        prop_def_ids: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """GET /vaults/{vaultId}/items/{id}/versions — version history for a master item."""
+        """GET /vaults/{vaultId}/items/{id}/versions — version history for a master item.
+
+        Pass ``prop_def_ids`` to include UDPs on each version.
+        """
         resolved = vault_id or self._vault_id or ""
         params: Dict[str, Any] = {"limit": limit}
         if cursor_state:
             params["cursorState"] = cursor_state
+        if prop_def_ids:
+            params["propDefIds"] = prop_def_ids
         return await self._request(
             "GET", f"/vaults/{resolved}/items/{item_id}/versions", params=params
         )
@@ -535,25 +562,43 @@ class VaultRestAPI:
         query: Optional[str] = None,
         limit: int = 100,
         cursor_state: Optional[str] = None,
+        prop_def_ids: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """GET /vaults/{vaultId}/item-versions — list item versions, optional keyword filter."""
+        """GET /vaults/{vaultId}/item-versions — list item versions, optional keyword filter.
+
+        Pass ``prop_def_ids`` to include UDPs on each version.
+        """
         resolved = vault_id or self._vault_id or ""
         params: Dict[str, Any] = {"limit": limit}
         if query:
             params["q"] = query
         if cursor_state:
             params["cursorState"] = cursor_state
+        if prop_def_ids:
+            params["propDefIds"] = prop_def_ids
         return await self._request(
             "GET", f"/vaults/{resolved}/item-versions", params=params
         )
 
     async def get_item_version_by_id(
-        self, vault_id: str, item_version_id: str
+        self, vault_id: str, item_version_id: str, *,
+        prop_def_ids: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """GET /vaults/{vaultId}/item-versions/{id}."""
+        """GET /vaults/{vaultId}/item-versions/{id}.
+
+        Pass ``prop_def_ids`` (comma-separated property definition IDs) to
+        populate the response's ``properties`` list with the matching UDPs.
+        Without it Vault returns only system fields (number, title, state,
+        revision, category, etc.) and the ``properties`` array is empty.
+        """
         resolved = vault_id or self._vault_id or ""
+        params: Dict[str, Any] = {}
+        if prop_def_ids:
+            params["propDefIds"] = prop_def_ids
         return await self._request(
-            "GET", f"/vaults/{resolved}/item-versions/{item_version_id}"
+            "GET",
+            f"/vaults/{resolved}/item-versions/{item_version_id}",
+            params=params or None,
         )
 
     async def get_item_bom(
@@ -563,12 +608,15 @@ class VaultRestAPI:
         *,
         limit: int = 200,
         cursor_state: Optional[str] = None,
+        prop_def_ids: Optional[str] = None,
     ) -> Dict[str, Any]:
         """GET /vaults/{vaultId}/item-versions/{id}/bill-of-materials — child items (BOM)."""
         resolved = vault_id or self._vault_id or ""
         params: Dict[str, Any] = {"limit": limit}
         if cursor_state:
             params["cursorState"] = cursor_state
+        if prop_def_ids:
+            params["propDefIds"] = prop_def_ids
         return await self._request(
             "GET",
             f"/vaults/{resolved}/item-versions/{item_version_id}/bill-of-materials",
@@ -660,15 +708,23 @@ class VaultRestAPI:
         description: Optional[str] = None,
         priority: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """POST /vaults/{vaultId}/jobs — add a job to the Vault job queue."""
+        """POST /vaults/{vaultId}/jobs — add a job to the Vault job queue.
+
+        Every field on the Job schema must be present, and description must be
+        non-empty. Missing fields or an empty description trigger Vault error 155
+        ("Illegal null parameter") even though the OpenAPI spec marks none of
+        them as required.
+        """
         resolved = vault_id or self._vault_id or ""
-        body: Dict[str, Any] = {"jobType": job_type}
-        if params is not None:
-            body["params"] = {str(k): str(v) for k, v in params.items()}
-        if description is not None:
-            body["description"] = description
-        if priority is not None:
-            body["priority"] = priority
+        body: Dict[str, Any] = {
+            "id": "",
+            "jobType": job_type,
+            "priority": priority if priority is not None else 1,
+            "description": description or f"Submitted via Vault MCP: {job_type}",
+            "url": "",
+            "params": {str(k): str(v) for k, v in (params or {}).items()},
+            "isOnSite": "",
+        }
         return await self._request(
             "POST", f"/vaults/{resolved}/jobs", json_data=body
         )

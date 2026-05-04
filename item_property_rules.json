@@ -1,0 +1,142 @@
+{
+  "_comment": "Property rules for Vault items, keyed by Category Name. The release workflow runs these against every item in a BOM tree before allowing sync-properties / lifecycle-release to proceed. User-defined properties (Source, Material, Engineer, Designer, etc.) are pulled via propDefIds — see check_item_properties.get_all_item_propdef_ids.\n\nDescription rules follow the 'Vault PDM – Item Description' standard (rev A): lowercase keyword nouns only — no dimensions, no material, no ISO/DIN/standard numbers, no project/customer names. ISO/DIN/standard numbers belong in the Title. Revisions are numeric for every category.\n\nEach property may declare any of: required (bool), allowed_values (list), forbidden_values (list), pattern (regex, fullmatch), forbidden_patterns (list of regex, re.search), min_length (int), max_length (int), description (str), required_unless ({property, matches_pattern}). The required_unless clause skips the `required` check when another named property matches a regex (re.search) -- used e.g. to exempt ISO/DIN-standard purchased parts from needing a Vendor entry. Reloaded every run.",
+
+  "category_aliases": {
+    "Purchased Part": "Part - Purchased",
+    "Engineering Part": "Part - Engineering",
+    "Engineering Assembly": "Assembly - Engineering",
+    "Part-Purchased": "Part - Purchased",
+    "Part-Engineering": "Part - Engineering",
+    "Assembly-Engineering": "Assembly - Engineering",
+    "DT Part": "DT Parts",
+    "DT-Parts": "DT Parts",
+    "DTParts": "DT Parts"
+  },
+
+  "categories": {
+    "Part - Purchased": {
+      "description": "Bought parts (Source = Buy) — must have Vendor + Vendor Number; Material/Engineer/Designer/Project not required.",
+      "properties": {
+        "Number":                { "required": true,  "min_length": 3 },
+        "Title (Item,CO)":       { "required": true,  "min_length": 3, "description": "ISO / DIN / standard numbers are allowed here (e.g. 'ISO 4762 M6x20')." },
+        "Description (Item,CO)": {
+          "required": true,
+          "min_length": 5,
+          "pattern": "^[a-z][a-z \\-]*[a-z]$",
+          "forbidden_patterns": ["\\b(iso|din|astm|ansi|jis|sae|asme|nist|en|bs)\\b"],
+          "description": "Lowercase keyword nouns only per Vault PDM – Item Description standard. No dimensions, materials, standards, or project/customer names."
+        },
+        "Revision":              { "required": true,  "pattern": "[0-9]+" },
+        "State":                 { "required": true,  "allowed_values": ["Released", "In Review", "Work in Progress"] },
+        "Source":                { "required": true,  "allowed_values": ["Buy"] },
+        "Units":                 { "required": true,  "allowed_values": ["Each"] },
+        "Material":              { "required": false },
+        "Vendor":                { "required": true, "required_unless": { "property": "Title (Item,CO)", "matches_pattern": "(?i)^\\s*(ISO|DIN|ANSI|ASME|JIS|SAE|EN|BS|ASTM|NIST)\\b" } },
+        "Vendor Number":         { "required": true, "required_unless": { "property": "Title (Item,CO)", "matches_pattern": "(?i)^\\s*(ISO|DIN|ANSI|ASME|JIS|SAE|EN|BS|ASTM|NIST)\\b" } },
+        "Engineer":              { "required": false },
+        "Engr Approved By":      { "required": false, "allowed_values": ["Zak O.", "Justin S.", "Mackenzie M.", "Alan Y.", "N/A"], "forbidden_values": ["NOT REVIEWED"] },
+        "Designer":              { "required": false },
+        "Project":               { "required": false },
+        "Category Name":         { "required": true,  "allowed_values": ["Part - Purchased"] }
+      }
+    },
+
+    "Part - Engineering": {
+      "description": "In-house designed parts (Source = Make) — must have Material + Engineer/Engr Approved By/Project; Vendor not required.",
+      "properties": {
+        "Number":                { "required": true,  "min_length": 3 },
+        "Title (Item,CO)":       { "required": true,  "min_length": 3, "description": "ISO / DIN / standard numbers are allowed here." },
+        "Description (Item,CO)": {
+          "required": true,
+          "min_length": 5,
+          "pattern": "^[a-z][a-z \\-]*[a-z]$",
+          "forbidden_patterns": ["\\b(iso|din|astm|ansi|jis|sae|asme|nist|en|bs)\\b"],
+          "description": "Lowercase keyword nouns only per Vault PDM – Item Description standard."
+        },
+        "Revision":              { "required": true,  "pattern": "[0-9]+" },
+        "State":                 { "required": true,  "allowed_values": ["Released", "In Review", "Work in Progress"] },
+        "Source":                { "required": true,  "allowed_values": ["Make"] },
+        "Units":                 { "required": true,  "allowed_values": ["Each"] },
+        "Material": {
+          "required": true,
+          "min_length": 4,
+          "forbidden_patterns": [
+            "(?i)\\b(ss|sst|sus)\\b",
+            "(?i)\\b(al|alu|alum)\\b",
+            "(?i)\\b(cs|crs|hrs|ms|gi|galv)\\b",
+            "(?i)\\b(stl|stnls|alm)\\b",
+            "(?i)\\b(pc|pe|pp|abs|pvc|ptfe|hdpe|ldpe|pom|pmma|peek)\\b",
+            "(?i)\\b(qty|asm|asy|mfg|mtl|mat|matl|approx|spec)\\b"
+          ],
+          "description": "Spell out the material — no abbreviations. Use 'Stainless Steel 304' not 'SS304', 'Aluminum 6061-T6' not 'AL6061', 'Polycarbonate' not 'PC'. Grade designators (304, 6061-T6, etc.) are fine; the leading material noun must be a full word."
+        },
+        "Vendor":                { "required": false },
+        "Vendor Number":         { "required": false },
+        "Engineer":              { "required": true },
+        "Engr Approved By":      { "required": true, "allowed_values": ["Zak O.", "Justin S.", "Mackenzie M.", "Alan Y.", "N/A"], "forbidden_values": ["NOT REVIEWED"] },
+        "Designer":               { "required": true },
+        "Project":               { "required": true },
+        "Category Name":         { "required": true,  "allowed_values": ["Part - Engineering"] }
+      }
+    },
+
+    "Assembly - Engineering": {
+      "description": "Engineering assemblies (Source = Make). Material/Vendor not expected; sign-off + project required.",
+      "properties": {
+        "Number":                { "required": true,  "min_length": 3 },
+        "Title (Item,CO)":       { "required": true,  "min_length": 3, "description": "ISO / DIN / standard numbers are allowed here." },
+        "Description (Item,CO)": {
+          "required": true,
+          "min_length": 5,
+          "pattern": "^[a-z][a-z \\-]*[a-z]$",
+          "forbidden_patterns": ["\\b(iso|din|astm|ansi|jis|sae|asme|nist|en|bs)\\b"],
+          "description": "Lowercase keyword nouns only per Vault PDM – Item Description standard."
+        },
+        "Revision":              { "required": true,  "pattern": "[0-9]+" },
+        "State":                 { "required": true,  "allowed_values": ["Released", "In Review", "Work in Progress"] },
+        "Source":                { "required": true,  "allowed_values": ["Make"] },
+        "Units":                 { "required": true,  "allowed_values": ["Each"] },
+        "Material":              { "required": false },
+        "Vendor":                { "required": false },
+        "Vendor Number":         { "required": false },
+        "Engineer":              { "required": true },
+        "Engr Approved By":      { "required": true, "allowed_values": ["Zak O.", "Justin S.", "Mackenzie M.", "Alan Y.", "N/A"], "forbidden_values": ["NOT REVIEWED"] },
+        "Designer":              { "required": false },
+        "Project":               { "required": true },
+        "Category Name":         { "required": true,  "allowed_values": ["Assembly - Engineering"] }
+      }
+    },
+
+    "DT Parts": {
+      "description": "Design / test parts — lightweight category for tooling, prototypes, and dev hardware that doesn't go through the full engineering release. Identity fields are required; UDPs are tracked but not gated.",
+      "properties": {
+        "Number":                { "required": true,  "min_length": 3 },
+        "Title (Item,CO)":       { "required": true,  "min_length": 2, "description": "ISO / DIN / standard numbers are allowed here." },
+        "Description (Item,CO)": {
+          "required": true,
+          "min_length": 3,
+          "pattern": "^[a-z][a-z \\-]*[a-z]$",
+          "forbidden_patterns": ["\\b(iso|din|astm|ansi|jis|sae|asme|nist|en|bs)\\b"],
+          "description": "Lowercase keyword nouns only per Vault PDM – Item Description standard."
+        },
+        "Revision":              { "required": true,  "pattern": "[0-9]+" },
+        "State":                 { "required": true,  "allowed_values": ["Released", "In Review", "Work in Progress"] },
+        "Source":                { "required": false },
+        "Units":                 { "required": false },
+        "Material":              { "required": false },
+        "Vendor":                { "required": false },
+        "Vendor Number":         { "required": false },
+        "Engineer":              { "required": false },
+        "Engr Approved By":      { "required": false, "allowed_values": ["Zak O.", "Justin S.", "Mackenzie M.", "Alan Y.", "N/A"], "forbidden_values": ["NOT REVIEWED"] },
+        "Designer":              { "required": false },
+        "Project":               { "required": false },
+        "Category Name":         { "required": true,  "allowed_values": ["DT Parts"] }
+      }
+    }
+  },
+
+  "release_gate": {
+    "description": "Stricter rule set used by the release workflow — every item in the BOM must pass these before lifecycle state can advance. The per-category rules above are the source of truth; this section documents the gate behaviour.",
+    "release_gate_allowed_states": ["Work in Progress", "In Review", "Released"]
+  }
+}

@@ -7,7 +7,14 @@
       "Bash(git -C \"/c/Users/mandalt/OneDrive - Autodesk/Desktop/Vault MCP/\" show HEAD --stat)",
       "Bash(git -C \"/c/Users/mandalt/OneDrive - Autodesk/Desktop/Vault MCP/\" show HEAD:mcp_server.py)",
       "Bash(git -C '/c/Users/mandalt/OneDrive - Autodesk/Desktop/Vault MCP/' show HEAD:vault_api.py)",
-      "Bash(git -C '/c/Users/mandalt/OneDrive - Autodesk/Desktop/Vault MCP/' show HEAD:app.py)"
+      "Bash(git -C '/c/Users/mandalt/OneDrive - Autodesk/Desktop/Vault MCP/' show HEAD:app.py)",
+      "Bash(claude mcp *)",
+      "mcp__vault__vault_search_items",
+      "mcp__vault__vault_get_item_associated_files",
+      "mcp__vault__vault_get_cad_bom_by_part_number",
+      "mcp__vault__vault_search_files",
+      "mcp__vault__vault_get_folder_contents",
+      "Bash(python -c ' *)"
     ]
   }
 }

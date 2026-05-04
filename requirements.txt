@@ -4,3 +4,6 @@ httpx>=0.27.0            # Async HTTP client for Vault REST API calls
 uvicorn[standard]>=0.30.0  # ASGI web server
 pypdf>=4.0.0             # PDF read/write/merge for the watermark tool
 reportlab>=4.0.0         # Generates the watermark overlay layer
+pandas>=2.0.0            # BOM tabular processing for the purchasing-sheet tools
+openpyxl>=3.1.0          # Writes the formatted .xlsx purchasing sheets
+xlrd>=2.0.0              # Lets pandas read legacy .xls Vault BOM exports
