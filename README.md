@@ -144,8 +144,21 @@ Once connected, the following tools are exposed to the AI assistant:
 | `vault_get_property_definition` | Get a specific property definition |
 | `vault_search_items` | Search for engineering/BOM items |
 | `vault_get_item` | Get details for a specific engineering item |
+| `vault_get_item_version_history` | List all versions of a master item |
+| `vault_get_item_change_orders` | List change orders linked to an item |
+| `vault_list_item_versions` | List item versions, optionally filtered by query |
+| `vault_get_item_version` | Get details for a specific item version |
+| `vault_get_item_bom` | **Get the Bill of Materials for an item version** |
+| `vault_get_item_parents` | Get parent items (where-used) for an item version |
+| `vault_get_item_associated_files` | Get files associated with an item version |
+| `vault_get_bom_by_part_number` | **Look up an item BOM in one call by part number** |
+| `vault_get_cad_bom_by_part_number` | **Look up the CAD assembly BOM in one call by part number** |
 | `vault_list_lifecycle_definitions` | List lifecycle definitions |
 | `vault_list_category_definitions` | List category definitions |
+| `vault_get_job_queue_enabled` | Check whether the Vault job queue is enabled |
+| `vault_submit_job` | **Submit a job to the Vault job queue** |
+| `vault_get_job` | Get a job's status and metadata by ID |
+| `vault_watermark_pdfs_in_folder` | **Download every PDF in a Vault folder, watermark it, save locally** |
 
 ## Logs
 

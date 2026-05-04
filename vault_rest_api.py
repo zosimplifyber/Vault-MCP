@@ -312,6 +312,65 @@ class VaultRestAPI:
             params["version"] = version
         return await self._request("GET", f"/files/{file_id}/download", params=params)
 
+    async def get_file_uses(
+        self,
+        vault_id: str,
+        file_version_id: str,
+        *,
+        limit: int = 200,
+        cursor_state: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """GET /vaults/{vaultId}/file-versions/{id}/uses — child file associations (CAD BOM)."""
+        resolved = vault_id or self._vault_id or ""
+        params: Dict[str, Any] = {"limit": limit}
+        if cursor_state:
+            params["cursorState"] = cursor_state
+        return await self._request(
+            "GET",
+            f"/vaults/{resolved}/file-versions/{file_version_id}/uses",
+            params=params,
+        )
+
+    async def download_file_version_content(
+        self, vault_id: str, file_version_id: str, *, timeout: float = 180.0
+    ) -> Dict[str, Any]:
+        """GET /vaults/{vaultId}/file-versions/{id}/content — raw file bytes.
+
+        On success the standard envelope's ``data`` field holds raw ``bytes``
+        rather than a JSON-decoded dict. Callers must not feed the result to
+        ``json.dumps`` without first extracting and discarding the bytes.
+        """
+        resolved = vault_id or self._vault_id or ""
+        url = self.base_url + f"/vaults/{resolved}/file-versions/{file_version_id}/content"
+        headers = self._auth_headers()
+        headers.pop("Content-Type", None)
+
+        log_headers = {
+            k: ("Bearer ***" if k == "Authorization" else v)
+            for k, v in headers.items()
+        }
+        logger.info("GET %s  headers=%s  (binary)", url, log_headers)
+
+        try:
+            async with httpx.AsyncClient(verify=False) as client:
+                resp = await client.get(
+                    url, headers=headers, timeout=timeout, follow_redirects=True
+                )
+            logger.info("Response %s  bytes=%d", resp.status_code, len(resp.content))
+            if resp.status_code >= 400:
+                try:
+                    err = resp.json()
+                except Exception:
+                    err = {"content": resp.text[:500]}
+                return {"error": True, "status_code": resp.status_code, "data": err}
+            return {"error": False, "status_code": resp.status_code, "data": resp.content}
+        except httpx.TimeoutException:
+            logger.error("Download timed out: %s", url)
+            return {"error": True, "status_code": 504, "data": {"message": "Download timed out"}}
+        except httpx.RequestError as exc:
+            logger.error("Download error: %s", exc)
+            return {"error": True, "status_code": 503, "data": {"message": str(exc)}}
+
     # ------------------------------------------------------------------
     # Search
     # ------------------------------------------------------------------
@@ -431,6 +490,139 @@ class VaultRestAPI:
             params["cursorState"] = cursor_state
         return await self._request("GET", f"/vaults/{resolved}/items", params=params)
 
+    async def get_item_version_history(
+        self,
+        vault_id: str,
+        item_id: str,
+        *,
+        limit: int = 50,
+        cursor_state: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """GET /vaults/{vaultId}/items/{id}/versions — version history for a master item."""
+        resolved = vault_id or self._vault_id or ""
+        params: Dict[str, Any] = {"limit": limit}
+        if cursor_state:
+            params["cursorState"] = cursor_state
+        return await self._request(
+            "GET", f"/vaults/{resolved}/items/{item_id}/versions", params=params
+        )
+
+    async def get_item_change_orders(
+        self,
+        vault_id: str,
+        item_id: str,
+        *,
+        limit: int = 100,
+        cursor_state: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """GET /vaults/{vaultId}/items/{id}/change-orders."""
+        resolved = vault_id or self._vault_id or ""
+        params: Dict[str, Any] = {"limit": limit}
+        if cursor_state:
+            params["cursorState"] = cursor_state
+        return await self._request(
+            "GET", f"/vaults/{resolved}/items/{item_id}/change-orders", params=params
+        )
+
+    # ------------------------------------------------------------------
+    # Item versions & BOM
+    # ------------------------------------------------------------------
+
+    async def list_item_versions(
+        self,
+        vault_id: str,
+        *,
+        query: Optional[str] = None,
+        limit: int = 100,
+        cursor_state: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """GET /vaults/{vaultId}/item-versions — list item versions, optional keyword filter."""
+        resolved = vault_id or self._vault_id or ""
+        params: Dict[str, Any] = {"limit": limit}
+        if query:
+            params["q"] = query
+        if cursor_state:
+            params["cursorState"] = cursor_state
+        return await self._request(
+            "GET", f"/vaults/{resolved}/item-versions", params=params
+        )
+
+    async def get_item_version_by_id(
+        self, vault_id: str, item_version_id: str
+    ) -> Dict[str, Any]:
+        """GET /vaults/{vaultId}/item-versions/{id}."""
+        resolved = vault_id or self._vault_id or ""
+        return await self._request(
+            "GET", f"/vaults/{resolved}/item-versions/{item_version_id}"
+        )
+
+    async def get_item_bom(
+        self,
+        vault_id: str,
+        item_version_id: str,
+        *,
+        limit: int = 200,
+        cursor_state: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """GET /vaults/{vaultId}/item-versions/{id}/bill-of-materials — child items (BOM)."""
+        resolved = vault_id or self._vault_id or ""
+        params: Dict[str, Any] = {"limit": limit}
+        if cursor_state:
+            params["cursorState"] = cursor_state
+        return await self._request(
+            "GET",
+            f"/vaults/{resolved}/item-versions/{item_version_id}/bill-of-materials",
+            params=params,
+        )
+
+    async def get_item_parents(
+        self,
+        vault_id: str,
+        item_version_id: str,
+        *,
+        limit: int = 100,
+        cursor_state: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """GET /vaults/{vaultId}/item-versions/{id}/parents — where-used."""
+        resolved = vault_id or self._vault_id or ""
+        params: Dict[str, Any] = {"limit": limit}
+        if cursor_state:
+            params["cursorState"] = cursor_state
+        return await self._request(
+            "GET",
+            f"/vaults/{resolved}/item-versions/{item_version_id}/parents",
+            params=params,
+        )
+
+    async def get_item_associated_files(
+        self,
+        vault_id: str,
+        item_version_id: str,
+        *,
+        limit: int = 100,
+        cursor_state: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """GET /vaults/{vaultId}/item-versions/{id}/associated-files."""
+        resolved = vault_id or self._vault_id or ""
+        params: Dict[str, Any] = {"limit": limit}
+        if cursor_state:
+            params["cursorState"] = cursor_state
+        return await self._request(
+            "GET",
+            f"/vaults/{resolved}/item-versions/{item_version_id}/associated-files",
+            params=params,
+        )
+
+    async def get_item_thumbnail(
+        self, vault_id: str, item_version_id: str
+    ) -> Dict[str, Any]:
+        """GET /vaults/{vaultId}/item-versions/{id}/thumbnail."""
+        resolved = vault_id or self._vault_id or ""
+        return await self._request(
+            "GET",
+            f"/vaults/{resolved}/item-versions/{item_version_id}/thumbnail",
+        )
+
     # ------------------------------------------------------------------
     # Change orders / Lifecycle
     # ------------------------------------------------------------------
@@ -453,4 +645,42 @@ class VaultRestAPI:
             "GET",
             f"/vaults/{resolved}/category-definitions",
             params={"limit": limit},
+        )
+
+    # ------------------------------------------------------------------
+    # Jobs
+    # ------------------------------------------------------------------
+
+    async def submit_job(
+        self,
+        vault_id: str,
+        job_type: str,
+        *,
+        params: Optional[Dict[str, str]] = None,
+        description: Optional[str] = None,
+        priority: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """POST /vaults/{vaultId}/jobs — add a job to the Vault job queue."""
+        resolved = vault_id or self._vault_id or ""
+        body: Dict[str, Any] = {"jobType": job_type}
+        if params is not None:
+            body["params"] = {str(k): str(v) for k, v in params.items()}
+        if description is not None:
+            body["description"] = description
+        if priority is not None:
+            body["priority"] = priority
+        return await self._request(
+            "POST", f"/vaults/{resolved}/jobs", json_data=body
+        )
+
+    async def get_job_by_id(self, vault_id: str, job_id: str) -> Dict[str, Any]:
+        """GET /vaults/{vaultId}/jobs/{id} — fetch job status and metadata."""
+        resolved = vault_id or self._vault_id or ""
+        return await self._request("GET", f"/vaults/{resolved}/jobs/{job_id}")
+
+    async def get_job_queue_enabled(self, vault_id: str) -> Dict[str, Any]:
+        """GET /vaults/{vaultId}/jobs/job-queue-enabled — boolean queue status."""
+        resolved = vault_id or self._vault_id or ""
+        return await self._request(
+            "GET", f"/vaults/{resolved}/jobs/job-queue-enabled"
         )

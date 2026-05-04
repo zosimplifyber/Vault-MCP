@@ -61,7 +61,14 @@ def setup_logging(cfg: dict, stdio_mode: bool = False) -> None:
     level = getattr(logging, log_cfg.get("level", "INFO").upper(), logging.INFO)
     log_file = log_cfg.get("file", "Log/mcp_server.log")
 
-    log_dir = os.path.dirname(log_file)
+    # Anchor relative log paths to this script's directory so the path
+    # doesn't depend on the launcher's working directory (e.g. Claude Desktop).
+    log_path = Path(log_file)
+    if not log_path.is_absolute():
+        log_path = Path(__file__).parent / log_path
+    log_file = str(log_path)
+
+    log_dir = log_path.parent
     if log_dir:
         os.makedirs(log_dir, exist_ok=True)
 

@@ -2,3 +2,5 @@
 mcp[cli]>=1.0.0          # Model Context Protocol SDK (includes FastMCP + SSE transport)
 httpx>=0.27.0            # Async HTTP client for Vault REST API calls
 uvicorn[standard]>=0.30.0  # ASGI web server
+pypdf>=4.0.0             # PDF read/write/merge for the watermark tool
+reportlab>=4.0.0         # Generates the watermark overlay layer

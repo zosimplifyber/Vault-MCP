@@ -1,0 +1,5256 @@
+openapi: 3.0.1
+info:
+  title: Vault Data API
+  description: 'The Vault Data API provides access to the Vault database, offering a set of endpoints divided into two main sections: Global and Vault. The Global section includes general operations applicable across the system, while the Vault section specifically handles interactions with the Vault data. It''s designed to provide a seamless interface for users to interact with their Vaulted data.Vault Data API Developer''s Guide https://aps.autodesk.com/en/docs/vaultdataapi/v2/developers_guide/overview/'
+  contact:
+    name: Vault Data API Feedback
+  x-forge-service-name: vault
+  version: 2.0.16
+x-external: true
+servers:
+  - url: /AutodeskDM/Services/api/vault/v2
+tags:
+  - name: Informational
+  - name: Auth
+  - name: Accounts
+  - name: Options
+  - name: Property
+  - name: Files and Folders
+  - name: Items
+  - name: Change Orders
+  - name: Links
+  - name: Search
+  - name: Jobs
+paths:
+  /openapi-spec.yml:
+    get:
+      tags:
+        - Informational
+      summary: Get Openapi Specification
+      description: The GetAPISpec endpoint provides detailed information about the Vault Data API, including its functionalities, methods, and data structures. The returned data includes a YAML representation of the Vault Data API's specification, following the OpenAPI Specification (OAS) format.
+      operationId: getApiSpec
+      responses:
+        '200':
+          description: The request succeeded. The response contains the Vault Data API specification.
+          content:
+            application/x-yaml: {}
+  /server-info:
+    get:
+      tags:
+        - Informational
+      summary: Get server information
+      description: Get some metadata information about server such as product version, etc.
+      operationId: getServerInfo
+      responses:
+        '200':
+          description: The request succeeded. The response contains the server information.
+          content:
+            application/json:
+              schema:
+                type: object
+                x-examples:
+                  Example 1:
+                    name: Vault Professional Server
+                    productVersion: 29.0.2.0
+                properties:
+                  name:
+                    type: string
+                    description: 'The internal product name. For backward compatibility, this value contains the original product name, which may not be the same as the current product name. '
+                  productVersion:
+                    type: string
+                    description: The product version currently installed. ex:30.0.91.0
+  /groups:
+    get:
+      tags:
+        - Accounts
+      summary: Get all groups
+      description: Get all groups.
+      operationId: getGroups
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/cursorState'
+      responses:
+        '200':
+          description: The request succeeded. The response contains the list of groups.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupCollection'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+  /groups/{id}:
+    parameters:
+      - schema:
+          type: string
+        name: id
+        description: The unique identifier of a group.
+        in: path
+        required: true
+    get:
+      tags:
+        - Accounts
+      summary: Get a group
+      description: 'Get group by its ID. '
+      operationId: getGroupById
+      responses:
+        '200':
+          description: The request succeeded. The response contains the group.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupExtended'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+  /groups/{id}/accounts/{authType}:
+    get:
+      tags:
+        - Accounts
+      summary: Get group account information by specific type
+      description: Get group account information by a specific type.
+      operationId: getAccountByAuthType
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: id
+          description: The unique identifier of a group.
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: authType
+          required: true
+          schema:
+            type: string
+            enum:
+              - ActiveDirectory
+              - Vault
+              - Autodesk
+            description: |
+              The type of account to retrieve. Allowed values are ActiveDirectory, Vault, and Autodesk.
+      responses:
+        '200':
+          description: The request succeeded. The response contains the account.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+  /profile-attribute-definitions:
+    get:
+      tags:
+        - Accounts
+      summary: Get all profile attribute definitions
+      description: 'Get all profile attribute definitions '
+      operationId: getProfileAttributeDefinitions
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: query
+          name: filter[association]
+          description: 'Types the profile attribute definition is associated with. Allowed values: User, Group or All'
+          schema:
+            type: string
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/cursorState'
+      responses:
+        '200':
+          description: The request succeeded. The response contains the list of profile attribute definitions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileAttributeDefinitionCollection'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+  /profile-attribute-definitions/{id}:
+    get:
+      tags:
+        - Accounts
+      summary: Get a profile attribute definition
+      description: Get profile attribute definition by its ID
+      operationId: getProfileAttributeDefinitionById
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: id
+          description: The unique identifier of a profile attribute definition.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request succeeded. The response contains the profile attribute definition.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileAttributeDefinition'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+  /roles:
+    get:
+      tags:
+        - Accounts
+      summary: Get user roles
+      description: |-
+        The returned list of roles depends on the permissions of the user passed in via BearerToken.
+        If the user has AdminUserRead permission, all roles are returned.
+        If not, only the roles that are assigned to the user are returned.
+      operationId: getRoles
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/cursorState'
+      responses:
+        '200':
+          description: The request succeeded. The response contains the list of roles.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleCollection'
+        '401':
+          $ref: '#/components/responses/401'
+  /roles/{id}:
+    get:
+      tags:
+        - Accounts
+      summary: Get an user role
+      description: Get the role object with given role id
+      operationId: getRoleById
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: id
+          description: The unique identifier of a role.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request succeeded. The response contains the role.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Role'
+        '400':
+          description: Role does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: PermissionDenied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /sessions:
+    post:
+      tags:
+        - Auth
+      summary: Create session with Vault credentials
+      description: Create a new session with the input username/password and vault name
+      operationId: createSession
+      x-codegen-request-body-name: body
+      requestBody:
+        description: ''
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                input:
+                  type: object
+                  properties:
+                    vault:
+                      type: string
+                      description: "The knowledge vault to sign in to.\r\n\r\n"
+                    userName:
+                      type: string
+                      description: The Vault user name.
+                    password:
+                      type: string
+                      description: The Vault password.
+                    appCode:
+                      type: string
+                      description: 'The app name to use for server-side audit logging. '
+            examples:
+              Example 1:
+                value:
+                  input:
+                    vault: Vault
+                    userName: administrator
+                    password: ''
+                    appCode: ''
+        required: false
+      responses:
+        '200':
+          description: The request succeeded. The response contains the new created session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+              example:
+                accessToken: V:eyJUaWNrZXQiOiI1MjAzMWJkYy0yYzkzLTQ3NzItYjQ5Yy1hZjk4MjE2MDY1NzUiLCJVc2VySWQiOjJ9
+                vaultInformation:
+                  vaultName: vault
+                  vaultId: '1'
+                userInformation:
+                  id: '2'
+                  profilePicture: /default.png
+                  userName: administrator
+                  firstName: ''
+                  lastName: Administrator
+                  email: ''
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          description: Login failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                title: Vault error
+                statusCode: 401
+                errorCode: '8000'
+                detail: login failed
+        '404':
+          description: error when the vault not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                title: Vault error
+                statusCode: 404
+                errorCode: '133'
+                detail: KnowledgeVaultDoesNotExist [133] (Vault)
+  /sessions/win-auth:
+    post:
+      tags:
+        - Auth
+      summary: Create a session with Windows authentication
+      description: Create a new session with the windows identity to a specific Knowledge Vault
+      operationId: createSessionWithWinAuth
+      x-codegen-request-body-name: body
+      requestBody:
+        description: ''
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                input:
+                  type: object
+                  properties:
+                    vault:
+                      type: string
+                      description: The knowledge vault to sign in to.
+                    appCode:
+                      type: string
+                      description: The app name to use for server-side audit logging.
+            examples:
+              Example 1:
+                value:
+                  input:
+                    vault: V1
+                    appCode: TC
+        required: false
+      responses:
+        '200':
+          description: The request succeeded. The response contains the new created session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+              example:
+                accessToken: V:eyJUaWNrZXQiOiI1MjAzMWJkYy0yYzkzLTQ3NzItYjQ5Yy1hZjk4MjE2MDY1NzUiLCJVc2VySWQiOjJ9
+                vaultInformation:
+                  vaultName: vault
+                  vaultId: '1'
+                userInformation:
+                  id: '2'
+                  profilePicture: /default.png
+                  userName: domain/user
+                  firstName: ''
+                  lastName: user
+                  email: ''
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          description: Authorization denied
+  /sessions/{id}:
+    get:
+      tags:
+        - Auth
+      summary: Get current session
+      description: Get user session tied to Bearer token. Pass @current to get the current active user session.
+      operationId: getSessionById
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: id
+          description: The unique identifier of a login session.
+          required: true
+          schema:
+            type: string
+            default: '@current'
+      responses:
+        '200':
+          description: The request succeeded. The response contains the session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '401':
+          $ref: '#/components/responses/401'
+    delete:
+      tags:
+        - Auth
+      summary: Delete current session
+      description: Delete user session tied to Bearer token. Pass @current to delete the current active user session.
+      operationId: deleteSession
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: id
+          description: The unique identifier of a login session.
+          required: true
+          schema:
+            type: string
+            default: '@current'
+      responses:
+        '204':
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Status to check if session was deleted successfully.
+              example: {}
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/400'
+  /system-options:
+    get:
+      tags:
+        - Options
+      summary: Get system options
+      description: 'Returns list of options which applies to the entire system. '
+      operationId: getSystemOptions
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: query
+          name: filter[name]
+          description: Filters and returns items with exact match
+          schema:
+            type: string
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/cursorState'
+      responses:
+        '200':
+          description: The request succeeded. The response contains the list of system options.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VaultOptionCollection'
+              examples: {}
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+    post:
+      tags:
+        - Options
+      summary: Create a system option
+      description: Creates a system wide option with input name and value
+      operationId: createSystemOption
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: The name of the option.
+                value:
+                  type: string
+                  description: The value of the option.
+      responses:
+        '200':
+          description: The request succeeded. The response contains the new created system option.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VaultOption'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '409':
+          description: Duplicate name
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /system-options/{id}:
+    parameters:
+      - in: path
+        name: id
+        description: The unique identifier of an option.
+        required: true
+        schema:
+          type: string
+    get:
+      tags:
+        - Options
+      operationId: getSystemOptionById
+      summary: Get a system option
+      description: Get an option (By ID) which applies to the entire system
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      responses:
+        '200':
+          description: The request succeeded. The response contains the system option.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VaultOption'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+    patch:
+      tags:
+        - Options
+      summary: Update a system option
+      description: Update an option (By ID) which applies to the entire system
+      operationId: updateSystemOptionById
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                value:
+                  type: string
+                  description: The value of the option
+      responses:
+        '200':
+          description: The request succeeded. The response contains the updated system option.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VaultOption'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+    delete:
+      tags:
+        - Options
+      summary: Delete a system option
+      description: Delete an option (By ID) which applies to the entire system
+      operationId: deleteSystemOptionById
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      responses:
+        '204':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Status of the operation
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+  /users:
+    get:
+      tags:
+        - Accounts
+      summary: Get all users
+      description: 'Get the list of all users in the Vault. Note: AdminUserRead permission is required.'
+      operationId: getAllUsers
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/cursorState'
+      responses:
+        '200':
+          description: The request succeeded. The response contains the list of users.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserCollection'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+  /users/{id}:
+    get:
+      tags:
+        - Accounts
+      summary: Get an user
+      description: Get full user object associated with the specified userId.
+      operationId: getUserById
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: id
+          description: The unique identifier of an user.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request succeeded. The response contains the user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserExtended'
+        '400':
+          description: Invalid User Id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+  /users/{id}/accounts:
+    get:
+      tags:
+        - Accounts
+      summary: Get user accounts
+      description: Get all accounts associated with the specified userId.
+      operationId: getUserAccounts
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: id
+          description: The unique identifier of an user.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request succeeded. The response contains the list of accounts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountCollection'
+        '400':
+          description: Invalid User Id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+  /users/{id}/accounts/{authType}:
+    get:
+      tags:
+        - Accounts
+      summary: Get an user account
+      description: Get user account information for a specific type.
+      operationId: getUsersAccountByAuthType
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: id
+          description: The unique identifier of an user.
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: authType
+          required: true
+          schema:
+            type: string
+            enum:
+              - ActiveDirectory
+              - Vault
+              - Autodesk
+            description: |
+              The type of account to retrieve. Allowed values are ActiveDirectory, Vault, and Autodesk.
+      responses:
+        '200':
+          description: The request succeeded. The response contains the user account information.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '400':
+          description: Invalid User Id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+  /vaults:
+    get:
+      tags:
+        - Informational
+      summary: Get all Knowledge Vaults
+      description: Get the list of all knowledge vaults on the server without logging in.
+      operationId: getVaults
+      parameters:
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/cursorState'
+      responses:
+        '200':
+          description: The request succeeded. The response contains the list of vaults.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VaultCollection'
+              example:
+                pagination:
+                  limit: 10
+                  totalResults: 2
+                  nextUrl: url
+                results:
+                  - name: vault1
+                    id: '1'
+                  - name: vault2
+                    id: '2'
+                  - name: vault3
+                    id: '3'
+  /vaults/{id}:
+    get:
+      tags:
+        - Informational
+      summary: Get a Knowledge Vault
+      description: Get Knowledge vault based on its ID
+      operationId: getVaultById
+      parameters:
+        - in: path
+          name: id
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request succeeded. The response contains the vault information.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Vault'
+              example:
+                name: SelectValueName
+                id: '1'
+        '404':
+          description: Knowledge vault does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /vaults/{vaultId}/change-orders:
+    get:
+      tags:
+        - Change Orders
+      summary: Get all change orders
+      description: |
+        Get list of change orders based on a set of conditions. E.g. /vaults/{vaultId}/change-orders?filter[state]=open&filter[assignees]=1,2,3,4
+
+        Note that [assignees] is an additional filter that does not exists in property definitions.
+      operationId: getChangeOrders
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/q'
+        - in: query
+          name: filter[State]
+          description: Search filter to include only change orders that match state property. e.g. filter[state]=open
+          schema:
+            type: string
+        - in: query
+          name: filter[assignees]
+          schema:
+            type: string
+          description: 'Search filter to include only change orders that assignees user list can perform. ex: filter[assignees]=1,2,3,4'
+        - in: query
+          name: filter[openCOsOnly]
+          description: |-
+            ``true``: Include only open change orders.
+
+            ``false``: (Default) Include all change orders.
+          schema:
+            type: boolean
+            default: false
+        - $ref: '#/components/parameters/extendedModels'
+        - $ref: '#/components/parameters/propDefIds'
+        - in: query
+          name: sort
+          schema:
+            type: string
+          description: 'Specifies sorting criteria for search results. Supports multi-sort and accepted values for sort-order: asc, desc.  Ex: sort = Revision desc,Name asc'
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/cursorState'
+      responses:
+        '200':
+          description: The request succeeded. The response contains the list of change orders.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangeOrderCollection'
+              example:
+                pagination:
+                  limit: 100
+                  totalResults: 2011
+                  nextUrl: https://developer.api.autodesk.com/data/v2/folder/contents?limit=20&cursorState=1!PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0idXRmLTE2Ij8%2bDQo8UHJvcGVydGllcz4NCiAgPFBhaXIgTm09IlBVVEsyNyIgVmFsPSJkaW4gYmVhcmluZygxKSIgLz4NCiAgPFBhaXIgTm09IkVudGl0eUlkIiBWYWw9IiAmI3gxOyYjeDA7JiN4MDsmI3gwOyYjeDA7JiN4MDsmI3gwOyYjeDA7LlAiIC8%2bDQo8L1Byb3BlcnRpZXM%2b
+                changeOrders:
+                  - id: 6852
+                    CONumber: dolor Excepteur aliqua tempor
+                    state: ipsum
+                    title: amet commodo
+                    dueDate: cillum
+                    detailLink: Ut
+                  - id: 254823
+                    CONumber: Lorem
+                    state: officia non ad elit commodo
+                    title: eiusmod
+                    dueDate: e
+                    detailLink: est
+        '401':
+          description: Ticket Invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /vaults/{vaultId}/change-orders/{id}:
+    get:
+      tags:
+        - Change Orders
+      summary: Get a change order
+      description: Get change order by its ID
+      operationId: getChangeOrderById
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          description: The unique identifier of a change order.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request succeeded. The response contains the change order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangeOrder'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          description: Change order does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /vaults/{vaultId}/change-orders/{id}/all-related-files:
+    get:
+      tags:
+        - Change Orders
+      summary: Get change order files
+      description: 'Get all change order related Files by its Id. This includes files that are not only tracked by the change order, but also its associated items file associations as well. Note: The result also includes related attachments.'
+      operationId: getChangeOrderRelatedFiles
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          description: The unique identifier of a change order.
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: option[releasedOnly]
+          schema:
+            type: boolean
+            default: false
+          description: |-
+            ``true``: Include only associated files that are in consumable(released) state.
+
+            ``false``: (Default) Include all associated files.
+        - $ref: '#/components/parameters/extendedModels'
+        - $ref: '#/components/parameters/propDefIds'
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/cursorState'
+      responses:
+        '200':
+          description: The request succeeded. The response contains the list of files.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileVersionCollection'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+  /vaults/{vaultId}/change-orders/{id}/associated-entities:
+    get:
+      tags:
+        - Change Orders
+      summary: Get change order associated entities
+      description: Get all change order associated entities by its Id. The returned result include files which are being tracked by the change order, along with items that are associated with the change order.
+      operationId: getChangeOrderAssociatedEntities
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          description: The unique identifier of a change order.
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: option[releasedItemsOnly]
+          schema:
+            type: boolean
+            default: false
+          description: |-
+            ``true``: Include only associated items that are consumable.
+
+            ``false``: (Default) Include all associated items.
+        - in: query
+          name: option[releasedFilesOnly]
+          schema:
+            type: boolean
+            default: false
+          description: |-
+            ``true``: Include only associated files that are in consumable(released) state.
+
+            ``false``: (Default) Include all associated files.
+        - $ref: '#/components/parameters/extendedModels'
+        - $ref: '#/components/parameters/propDefIds'
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/cursorState'
+      responses:
+        '200':
+          description: The request succeeded. The response contains the list of entities.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntityCollection'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+  /vaults/{vaultId}/change-orders/{id}/comments:
+    get:
+      tags:
+        - Change Orders
+      summary: Get change order comments
+      description: Get comments for a given change order ID.
+      operationId: getChangeOrderComments
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          description: The unique identifier of a change order.
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/cursorState'
+      responses:
+        '200':
+          description: The request succeeded. The response contains the list of comments.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ECOCommentCollection'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+  /vaults/{vaultId}/change-order-comments/{id}/attachments:
+    get:
+      tags:
+        - Change Orders
+      summary: Get change order comment attachments
+      description: Get attachments associated with a change order comment
+      operationId: getChangeOrderCommentAttachments
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          description: The unique identifier of a change order comment.
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: option[releasedOnly]
+          schema:
+            type: boolean
+            default: false
+          description: |-
+            ``true``: Include only attachments that are in consumable(released) state.
+
+            ``false``: (Default) Include all attachments.
+        - $ref: '#/components/parameters/extendedModels'
+        - $ref: '#/components/parameters/propDefIds'
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/cursorState'
+      responses:
+        '200':
+          description: The request succeeded. The response contains the list of attachments.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileVersionCollection'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+  /vaults/{vaultId}/file-versions:
+    get:
+      tags:
+        - Files and Folders
+      summary: Get file versions
+      description: Get list of file versions based on a set of conditions.
+      operationId: getFileVersions
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/q'
+        - in: query
+          name: filter[CheckoutUserName]
+          description: Search filter to include only file versions that match CheckoutUserName property.  e.g. filter[CheckoutUserName]=userA
+          schema:
+            type: string
+        - in: query
+          name: filter[CreateUserName]
+          schema:
+            type: string
+          description: Search filter to include only file versions that matchCreateUserName property.  e.g. filter[CreateUserName]=userA
+        - in: query
+          name: filter[CategoryName]
+          schema:
+            type: string
+          description: Search filter to include only file versions that match CategoryName property.  e.g. filter[CategoryName]=Office
+        - in: query
+          name: filter[State]
+          schema:
+            type: string
+          description: Search filter to include only file versions that match state property.  e.g. filter[state]=Review
+        - in: query
+          name: option[latestOnly]
+          schema:
+            type: boolean
+            default: true
+          description: |-
+            ``true``: (Default) Include only the latest version.
+
+            ``false``: Include all versions.
+        - in: query
+          name: option[releasedFilesOnly]
+          schema:
+            type: boolean
+            default: false
+          description: |-
+            ``true``: Include only file versions that are consumable (released) state.
+
+            ``false``: (Default) Include all file versions.
+        - $ref: '#/components/parameters/extendedModels'
+        - $ref: '#/components/parameters/propDefIds'
+        - in: query
+          name: sort
+          schema:
+            type: string
+          description: 'Specifies sorting criteria for search results. Format: {propertyDefSysName} {sort-order} Accepted values for sort-order: asc, desc.  Ex: sort = Revision desc,Name asc'
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/cursorState'
+      responses:
+        '200':
+          description: The request succeeded. The response contains the list of file versions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileVersionCollection'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+  /vaults/{vaultId}/file-versions/{id}:
+    get:
+      tags:
+        - Files and Folders
+      summary: Get a file version
+      description: Get file version object by Id.
+      operationId: getFileVersionById
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          description: The unique identifier of a file version.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request succeeded. The response contains the file version.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileVersionExtended'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+  /vaults/{vaultId}/file-versions/{id}/signedurl:
+    get:
+      tags:
+        - Files and Folders
+      summary: Generate signed download URL for a file version
+      description: 'A time-limited, cryptographically signed URL providing secure access to download a file resource. Endpoint allows generation of signed download url for given file version Id. '
+      operationId: getFileVersionSignedUrl
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          description: The unique identifier of a file version.
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: wmSrcItemVerId
+          required: false
+          schema:
+            type: string
+          description: When current file is a dwf associated to an Item, to download its watermarked version, supply this Item Version's id as the watermark source.
+        - in: query
+          name: wmSrcFileVerId
+          required: false
+          schema:
+            type: string
+          description: When current file is a dwf associated to an Item, directly or as a CAD file's visualization attachment, to download its watermarked version, supply this File Version's id or its CAD File Version's id as the watermark source.
+        - in: query
+          name: contentDisposition
+          required: false
+          schema:
+            type: string
+          description: Specify the content disposition of the response header. Pass in 'inline' to allow the file to be displayed inside the web page; 'attachment' or null to save the file. Other values would be directly used as it is, but the behavior can't be guaranteed.
+        - in: query
+          name: expirationTime
+          schema:
+            type: integer
+            default: 180
+          description: 'Duration for the signed url to be valid in seconds. Max allowed time is 180 seconds. Ex: expirationTime=120  '
+      responses:
+        '200':
+          description: The request succeeded. The response contains the signed download URL.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  url:
+                    type: string
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+  /vaults/{vaultId}/file-versions/{id}/content:
+    get:
+      tags:
+        - Files and Folders
+      summary: Download file version content
+      description: Retrieve the content of a specific file version. Supports both full file download as well as partial content via range requests.
+      operationId: getFileVersionContent
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          description: The unique identifier of a file version.
+          required: true
+          schema:
+            type: string
+        - name: Range
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Request only part of the file content, e.g. bytes=0-999
+        - $ref: '#/components/parameters/allowSync'
+        - in: query
+          name: wmSrcItemVerId
+          required: false
+          description: When current file is a dwf associated to an Item, to download its watermarked version, supply this Item Version's id as the watermark source.
+          schema:
+            type: string
+        - in: query
+          name: wmSrcFileVerId
+          required: false
+          description: When current file is a dwf associated to an Item, directly or as a CAD file's visualization attachment, to download its watermarked version, supply this File Version's id or its CAD File Version's id as the watermark source.
+          schema:
+            type: string
+        - in: query
+          name: contentDisposition
+          required: false
+          description: Specify the content disposition of the response header. Pass in 'inline' to allow the file to be displayed inside the web page; 'attachment' or null to save the file. Other values would be directly used as it is, but the behavior can't be guaranteed.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response for full file download
+          headers:
+            Accept-Ranges:
+              schema:
+                type: string
+              description: Indicates server support for range requests. Always set to 'bytes'.
+            Content-Type:
+              schema:
+                type: string
+              description: Indicates the media type of the resource.
+            Content-Length:
+              schema:
+                type: integer
+              description: Total size of the resource in bytes.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+            application/json:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '206':
+          description: Successful response for partial content (range request)
+          headers:
+            Accept-Ranges:
+              schema:
+                type: string
+              description: Indicates server support for range requests. Always set to 'bytes'.
+            Content-Type:
+              schema:
+                type: string
+              description: Indicates the media type of the resource.
+            Content-Length:
+              schema:
+                type: integer
+              description: Total size of the resource in bytes.
+            Content-Range:
+              schema:
+                type: string
+              description: Only used in partial responses. Indicates the range of bytes being sent and the total size of the resource.
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+            application/json:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+        '416':
+          description: Range Not Satisfiable
+    head:
+      tags:
+        - Files and Folders
+      summary: Get file version content metadata
+      description: Retrieve metadata for a specific file version content without fetching the full content body
+      operationId: getFileVersionContentHead
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          description: The unique identifier of a file version.
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/allowSync'
+        - in: query
+          name: wmSrcItemVerId
+          required: false
+          description: When current file is a dwf associated to an Item, to download its watermarked version, supply this Item Version's id as the watermark source.
+          schema:
+            type: string
+        - in: query
+          name: wmSrcFileVerId
+          required: false
+          description: When current file is a dwf associated to an Item, directly or as a CAD file's visualization attachment, to download its watermarked version, supply this File Version's id or its CAD File Version's id as the watermark source.
+          schema:
+            type: string
+        - in: query
+          name: contentDisposition
+          required: false
+          description: Specify the content disposition of the response header. Pass in 'inline' to allow the file to be displayed inside the web page; 'attachment' or null to save the file. Other values would be directly used as it is, but the behavior can't be guaranteed.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request succeeded. The response contains the file version content metadata.
+          headers:
+            Content-Type:
+              schema:
+                type: string
+              description: Indicates the media type of the resource.
+            Content-Length:
+              schema:
+                type: integer
+              description: Total size of the resource in bytes.
+        '400':
+          description: ''
+          headers:
+            x-vault-error-code:
+              schema:
+                type: string
+              description: Vault error code for the specific error that occurred.
+            x-vault-error-detail:
+              schema:
+                type: string
+              description: A brief, human-readable description of the error.
+        '401':
+          description: ''
+          headers:
+            x-vault-error-code:
+              schema:
+                type: string
+              description: Vault error code for the specific error that occurred.
+            x-vault-error-detail:
+              schema:
+                type: string
+              description: A brief, human-readable description of the error.
+        '404':
+          description: Not Found
+  /vaults/{vaultId}/file-versions/{id}/svf/bubble.json:
+    get:
+      tags:
+        - Files and Folders
+      summary: Get the LMV root for file version
+      description: |-
+        This endpoint should be invoked only for DWF/DWFx file. Retrieves the bubble.json file, which serves as the root file for the Autodesk Large Model Viewer (LMV) format. It provides essential metadata and structure information required to render 2D/3D models or other complex visualizations in the LMV viewer.
+
+        Note: When requesting this endpoint for a file version first time, the server would trigger a low priority job in background to generate the bubble.json and other LMV related visualization files, which will be cached for subsequent use. Subsequent calls to this endpoint will retrieve the bubble.json from the cache directly.
+        In order to get the associated DWF/DWFx file (if available) for a CAD file, "visualization-attachments" endpoint should be used.
+      operationId: getFileVersionLmvRoot
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          description: The unique identifier of a file version.
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/allowSync'
+        - in: query
+          name: wmSrcItemVerId
+          required: false
+          description: When current file is a dwf associated to an Item, to download its watermarked version, supply this Item Version's id as the watermark source.
+          schema:
+            type: string
+        - in: query
+          name: wmSrcFileVerId
+          required: false
+          description: When current file is a dwf associated to an Item, directly or as a CAD file's visualization attachment, to download its watermarked version, supply this File Version's id or its CAD File Version's id as the watermark source.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Bubble.json is retrieved from cache.
+          content:
+            application/json:
+              schema:
+                type: object
+        '202':
+          description: |-
+            Bubble.json and other lmv files are not generated yet for this DWF/x file. 202 indicates server has accepted the request and have scheduled a low prioirty background job to created the necessary files required for viewing.
+
+            Note: User could invoke this endpoint every x seconds in loop to check this translation job status and wait for completion till StatusCode = 200
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+    parameters:
+      - schema:
+          type: string
+        name: vaultId
+        description: The unique identifier of a vault.
+        in: path
+        required: true
+      - schema:
+          type: string
+        name: id
+        description: The unique identifier of a file version.
+        in: path
+        required: true
+  /vaults/{vaultId}/file-versions/{id}/item-versions:
+    get:
+      tags:
+        - Files and Folders
+      summary: Get items for file version
+      description: 'Get all of the Items assigned to a file version. '
+      operationId: getFileVersionAssociatedItemVersions
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          description: The unique identifier of a file version.
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: option[releasedOnly]
+          schema:
+            type: boolean
+            default: false
+          description: |-
+            ``true``: Include only items that are in consumable state.
+
+            ``false``: (Default) Include all items.
+        - $ref: '#/components/parameters/propDefIds'
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/cursorState'
+      responses:
+        '200':
+          description: The request succeeded. The response contains the list of item versions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemVersionCollection'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+  /vaults/{vaultId}/file-versions/{id}/markups:
+    get:
+      tags:
+        - Files and Folders
+      summary: Get markups for file version
+      description: Get all markups for specific file version
+      operationId: getFileVersionMarkups
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          description: The unique identifier of a file version.
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/cursorState'
+      responses:
+        '200':
+          description: The request succeeded. The response contains the list of markups.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarkupCollection'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+  /vaults/{vaultId}/file-versions/{id}/markups/{markupId}:
+    get:
+      tags:
+        - Files and Folders
+      summary: Get a markup for file version
+      description: Get markup for specific file version
+      operationId: getFileVersionMarkupById
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          description: The unique identifier of a file version.
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: markupId
+          description: The unique identifier of a markup.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request succeeded. The response contains the markup.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Markup'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+  /vaults/{vaultId}/file-versions/{id}/thumbnail:
+    get:
+      tags:
+        - Files and Folders
+      summary: Download file version thumbnail
+      description: Get thumbnail for given file version Id
+      operationId: getFileVersionThumbnailById
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          description: The unique identifier of a file version.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request succeeded. The response contains the thumbnail.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+            application/json:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+  /vaults/{vaultId}/file-versions/{id}/visualization-attachments:
+    get:
+      tags:
+        - Files and Folders
+      summary: Get visualization attachments for file version
+      description: Get the visualization attachments for file version id.
+      operationId: getFileVersionVisualizationAttachments
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          description: The unique identifier of a file version.
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/cursorState'
+      responses:
+        '200':
+          description: The request succeeded. The response contains the list of visualization attachments.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileVersionCollection'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+  /vaults/{vaultId}/file-versions/{id}/uses:
+    get:
+      tags:
+        - Files and Folders
+      summary: Get child associations for file version
+      description: Get file dependencies and attachments for given file version id
+      operationId: getFileVersionUses
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          description: The unique identifier of a file version.
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: option[includeHidden]
+          schema:
+            type: boolean
+            default: false
+          description: |-
+            ``true``: Include files marked as hidden.
+
+            ``false``: (Default) Exclude hidden files.
+        - in: query
+          name: option[releaseBiased]
+          schema:
+            type: boolean
+            default: true
+          description: |-
+            ``true``: (Default) Use "Release biased" approach of gathering dependencies.
+
+            ``false``: Use "Latest biased" approach of gathering dependencies.
+        - in: query
+          name: option[releasedOnly]
+          schema:
+            type: boolean
+            default: false
+          description: |-
+            ``true``: Include only associations that are in consumable state.
+
+            ``false``: (Default) Include all associations.
+        - $ref: '#/components/parameters/extendedModels'
+        - $ref: '#/components/parameters/propDefIds'
+        - in: query
+          name: option[getLatestAssocs]
+          description: |-
+            ``true``: (Default) Get the latest file associations.
+
+            ``false``: Get all file associations.
+          schema:
+            type: boolean
+            default: true
+        - in: query
+          name: option[recurse]
+          description: |-
+            ``true``: Include all levels of child.
+
+            ``false``: (Default) Include only the direct child.
+          schema:
+            type: boolean
+            default: false
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/cursorState'
+      responses:
+        '200':
+          description: The request succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileAssocCollection'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+  /vaults/{vaultId}/file-versions/{id}/parents:
+    get:
+      tags:
+        - Files and Folders
+      summary: Get parent associations for file version
+      description: Get parent associations for given file version id.
+      operationId: getFileVersionWhereUsed
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          description: The unique identifier of a file version.
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: option[includeHidden]
+          schema:
+            type: boolean
+            default: false
+          description: |-
+            ``true``: Include files marked as hidden.
+
+            ``false``: (Default) Exclude hidden files.
+        - in: query
+          name: option[releaseBiased]
+          schema:
+            type: boolean
+            default: true
+          description: |-
+            ``true``: (Default) Use "Release biased" approach of gathering dependencies.
+
+            ``false``: Use "Latest biased" approach of gathering dependencies.
+        - in: query
+          name: option[releasedOnly]
+          schema:
+            type: boolean
+            default: false
+          description: |-
+            ``true``: Include only associations that are in consumable state.
+
+            ``false``: (Default) Include all associations.
+        - $ref: '#/components/parameters/extendedModels'
+        - $ref: '#/components/parameters/propDefIds'
+        - in: query
+          name: option[getLatestAssocs]
+          description: |-
+            ``true``: (Default) Get the latest file associations.
+
+            ``false``: Get all file associations.
+          schema:
+            type: boolean
+            default: true
+        - in: query
+          name: option[recurse]
+          description: |-
+            ``true``: Include all levels of parents.
+
+            ``false``: (Default) Include only the direct parents.
+          schema:
+            type: boolean
+            default: false
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/cursorState'
+      responses:
+        '200':
+          description: The request succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileAssocCollection'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+  /vaults/{vaultId}/files/{id}:
+    get:
+      tags:
+        - Files and Folders
+      summary: Get a file
+      description: Get file object by id.
+      operationId: getFileById
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          description: The unique identifier of a file used to group all the versions of a file. In other words, different versions of a file will have a different Id(version/iteration) but the same MasterId.
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: option[releasedOnly]
+          description: |-
+            ``true``: Return latest consumable version.
+
+            ``false``: (Default) Return latest version.
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: The request succeeded. The response contains the file.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileObject'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+  /vaults/{vaultId}/files/{id}/change-orders:
+    get:
+      tags:
+        - Files and Folders
+      summary: Get change orders for file
+      description: 'Get the Change Orders which are driving a given file. '
+      operationId: getFileAssociatedChangeOrders
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          description: The unique identifier of a file used to group all the versions of a file. In other words, different versions of a file will have a different Id(version/iteration) but the same MasterId.
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: option[includeClosedECOs]
+          schema:
+            type: boolean
+            default: false
+          description: |-
+            ``true``: Include change orders with closed or cancelled state.
+
+            ``false``: (Default) Skip change orders with closed or cancelled state.
+        - $ref: '#/components/parameters/extendedModels'
+        - $ref: '#/components/parameters/propDefIds'
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/cursorState'
+      responses:
+        '200':
+          description: The request succeeded. The response contains the list of change orders.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangeOrderCollection'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+  /vaults/{vaultId}/files/{id}/versions:
+    get:
+      tags:
+        - Files and Folders
+      summary: Get versions history for file
+      description: |-
+        Get file versions history for given file. Based on option[history] and option[revision] values, following will be the behavior:
+
+        When revision is AllRevision: either all file versions (history=All) or all file versions that are in consumable state (history=ReleasedOnly) or all file versions that are either highest version in revision or consumable state is returned (history=ReleasedAndRevisionTip).
+
+        When revision is CurrentRevision: either all file versions in the same revision (history=All) or all file versions in same revision that are in consumable state (history=ReleasedOnly) or all file versions in same revision that are either highest version in revision or consumable state is returned (history=ReleasedAndRevisionTip).
+      operationId: getFileHistory
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          description: The unique identifier of a file used to group all the versions of a file. In other words, different versions of a file will have a different Id(version/iteration) but the same MasterId.
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: option[history]
+          description: 'Allow option is: All, ReleasedOnly or ReleasedAndRevisionTip. Default value is All'
+          schema:
+            $ref: '#/components/schemas/HistoryOptionsEnum'
+        - in: query
+          name: option[onlyShowTipReleasedForEachRev]
+          description: |-
+            ``true``: (Default) Only show the tip released version for each revision.
+
+            ``false``: Show all released versions for each revision.
+            This parameter won''t take effect if option[history]=All
+          schema:
+            type: boolean
+            default: true
+        - $ref: '#/components/parameters/extendedModels'
+        - $ref: '#/components/parameters/propDefIds'
+        - in: query
+          name: option[revision]
+          schema:
+            $ref: '#/components/schemas/RevisionOptionsEnum'
+          description: 'Allow option is: AllRevision or CurrentRevision. Default value is AllRevision'
+        - in: query
+          name: descending
+          description: |-
+            ``true``: Return latest file version at top.
+
+            ``false``: (Default) Return latest file version at bottom.
+          schema:
+            type: boolean
+            default: false
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/cursorState'
+      responses:
+        '200':
+          description: The request succeeded. The response contains the list of file versions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileVersionCollection'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+  /vaults/{vaultId}/folders/{id}:
+    get:
+      tags:
+        - Files and Folders
+      summary: Get a folder
+      description: 'Get the folder object with the given Id '
+      operationId: getFolderById
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          description: The unique identifier of a folder. If the id is 'root', return root folder object.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request succeeded. The response contains the folder.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Folder'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+  /vaults/{vaultId}/folders/{id}/contents:
+    get:
+      tags:
+        - Files and Folders
+      summary: Get folder contents
+      description: Get the folder objects and children under it with the given Id in the given vault with vaultId.
+      operationId: getFolderContents
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          required: true
+          description: 'The unique identifier of a folder. If the id is root, the $ folder contents are returned. Note: root is a special keyword'
+          schema:
+            type: string
+        - $ref: '#/components/parameters/q'
+        - in: query
+          name: option[searchContent]
+          description: |-
+            ``true``: Search query text within all properties or both in all properties and content.
+
+            ``false``: (Default) Search query text within all properties.
+          schema:
+            type: boolean
+            default: false
+        - in: query
+          name: option[searchSubFolders]
+          description: |-
+            ``true``: Search query text within all sub folders.
+
+            ``false``: (Default) Do not search query text within all sub folders.
+          schema:
+            type: boolean
+            default: false
+        - in: query
+          name: option[includeFolders]
+          schema:
+            type: boolean
+            default: true
+          description: |-
+            ``true``: (Default) Include folders or folder links in the search result.
+
+            ``false``: Exclude folders or folder links in the search result.
+        - in: query
+          name: option[includeItemEcoLinks]
+          schema:
+            type: boolean
+            default: true
+          description: |-
+            ``true``: (Default) Include Item/Change-order Link in the search result.
+
+            ``false``: Exclude Item/Change-order Link in the search result.
+        - in: query
+          name: option[releasedFilesOnly]
+          schema:
+            type: boolean
+            default: false
+          description: |-
+            ``true``: Include only file/file links that are in consumable (released) state.
+
+            ``false``: (Default) Include all files/file links.
+        - in: query
+          name: option[releasedItemsOnly]
+          schema:
+            type: boolean
+            default: false
+          description: |-
+            ``true``: Include only itemLink that are consumable state.
+
+            ``false``: (Default) Include all itemLink.
+        - in: query
+          name: option[latestOnly]
+          schema:
+            type: boolean
+            default: true
+          description: |-
+            ``true``: (Default) Include only the latest version.
+
+            ``false``: Include all versions.
+        - $ref: '#/components/parameters/extendedModels'
+        - $ref: '#/components/parameters/propDefIds'
+        - in: query
+          name: sort
+          description: 'Specifies sorting criteria for search results. Format: {propertyDefSysName} {sort-order} Accepted values for sort-order: asc, desc.  Ex: sort = Revision desc,Name asc'
+          schema:
+            type: string
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/cursorState'
+      responses:
+        '200':
+          description: The request succeeded. The response contains the list of folders and files.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntityCollection'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+  /vaults/{vaultId}/folders/{id}/sub-folders:
+    get:
+      tags:
+        - Files and Folders
+      summary: Get subfolders
+      description: Get the immediate subfolders of a given folder Id
+      operationId: getFolderSubFolders
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          description: The unique identifier of a folder..
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/extendedModels'
+        - $ref: '#/components/parameters/propDefIds'
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/cursorState'
+      responses:
+        '200':
+          description: The request succeeded. The response contains the list of subfolders.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FolderCollection'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+  /vaults/{vaultId}/item-versions:
+    get:
+      tags:
+        - Items
+      summary: Get item versions
+      description: Get item versions in the given Vault with vaultId.
+      operationId: getItemVersions
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/q'
+        - $ref: '#/components/parameters/propDefIds'
+        - in: query
+          name: option[releasedItemsOnly]
+          schema:
+            type: boolean
+            default: false
+          description: |-
+            ``true``: Includeonly versions that are consumable (released) state.
+
+            ``false``: (Default) Include all versions.
+        - in: query
+          name: option[latestOnly]
+          schema:
+            type: boolean
+            default: true
+          description: |-
+            ``true``: (Default) Include only the latest version.
+
+            ``false``: Include all versions.
+        - in: query
+          name: sort
+          schema:
+            type: string
+            default: ItemNumber
+          description: 'Specifies sorting criteria for search results. Format: {propertyDefSysName} {sort-order} Accepted values for sort-order: asc, desc.  Ex: sort = Revision desc,Name asc'
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/cursorState'
+      responses:
+        '200':
+          description: The request succeeded. The response contains the list of item versions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemVersionCollection'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+  /vaults/{vaultId}/item-versions/{id}:
+    get:
+      tags:
+        - Items
+      summary: Get an item version
+      description: Get item version by its id.
+      operationId: getItemVersionById
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          description: The unique identifier of an item version.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request succeeded. The response contains the item version.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemVersion'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+  /vaults/{vaultId}/item-versions/{id}/associated-files:
+    get:
+      tags:
+        - Items
+      summary: Get file associations for item version
+      description: Get all File associations on a given item version id
+      operationId: getItemVersionAssociatedFiles
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          description: The unique identifier of an item version.
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/extendedModels'
+        - $ref: '#/components/parameters/propDefIds'
+      responses:
+        '200':
+          description: The request succeeded. The response contains the list of item file associations.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemAssociatedFileVersionCollection'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+  /vaults/{vaultId}/item-versions/{id}/bill-of-materials:
+    get:
+      tags:
+        - Items
+      summary: Get child items for item version
+      description: Get Bill of Materials for the item version that was effective for the given date
+      operationId: getItemVersionBom
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          description: The unique identifier of an item version.
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: option[bomType]
+          schema:
+            $ref: '#/components/schemas/BOMTypeEnum'
+          description: 'The type of BOM. Possible values: Effective, Historic, Latest, Tip. Default value is Latest '
+        - in: query
+          name: option[date]
+          schema:
+            type: string
+          description: The date that it was effective. Default value is DateTime.MinValue
+        - in: query
+          name: option[rolledUp]
+          schema:
+            type: boolean
+            default: false
+          description: |-
+            ``true``: Include a linear view of the BOM, BOM items for parts only. Only available for view operations.
+
+            ``false``: (Default) Return a tree view of the BOM.
+        - in: query
+          name: option[oneLevel]
+          schema:
+            type: boolean
+            default: false
+          description: |-
+            ``true``: Include only the current level and immediate children.
+
+            ``false``: (Default) Include all level.
+        - in: query
+          name: option[referenceDesignators]
+          schema:
+            type: boolean
+            default: false
+          description: |-
+            ``true``: Include reference designators.
+
+            ``false``: (Default) Exclude reference designators.
+        - in: query
+          name: option[occurrences]
+          schema:
+            type: boolean
+            default: false
+          description: |-
+            ``true``: Include the occurrences.
+
+            ``false``: (Default) Exclude the occurrences.
+        - in: query
+          name: option[excludedBOMLinks]
+          schema:
+            type: boolean
+            default: false
+          description: |-
+            ``true``: Include excluded BOM rows.
+
+            ``false``: (Default) Return included BOM rows.
+        - in: query
+          name: option[unassignedComponents]
+          schema:
+            type: boolean
+            default: false
+          description: |-
+            ``true``: Include unassigned components (BOM rows without associated items) in BOM rows.
+
+            ``false``: (Default) Include only components with assigned items.
+        - in: query
+          name: option[includeBOMAssociationProperty]
+          schema:
+            type: boolean
+            default: false
+          description: |-
+            ``true``: Include properties on BOM associations.
+
+            ``false``: (Default) Exclude properties on BOM associations.
+      responses:
+        '200':
+          description: The request succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BOMLinksAndRevisions'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+  /vaults/{vaultId}/item-versions/{id}/parents:
+    get:
+      tags:
+        - Items
+      summary: Get parent items for item version
+      description: Get item where used for item version
+      operationId: getItemVersionWhereUsed
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          description: The unique identifier of an item version.
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: option[bomType]
+          schema:
+            $ref: '#/components/schemas/BOMTypeEnum'
+          description: 'The type of BOM. Possible values: Effective, Historic, Latest, Tip. Default value is Latest'
+        - in: query
+          name: option[date]
+          schema:
+            type: string
+          description: The date that it was effective
+      responses:
+        '200':
+          description: The request succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BOMLinksAndRevisions'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+  /vaults/{vaultId}/item-versions/{id}/thumbnail:
+    get:
+      tags:
+        - Items
+      summary: Get thumbnail for item version
+      description: Get the thumbnail associated with given item version
+      operationId: getItemVersionThumbnail
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          description: The unique identifier of an item version.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request succeeded. The response contains the thumbnail.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+            application/json:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+  /vaults/{vaultId}/items:
+    get:
+      tags:
+        - Items
+      summary: Get all items
+      description: Get all Items in the given Vault with vaultId.
+      operationId: getItems
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/cursorState'
+      responses:
+        '200':
+          description: The request succeeded. The response contains the list of items.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemCollection'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+  /vaults/{vaultId}/items/{id}:
+    get:
+      tags:
+        - Items
+      summary: Get an item
+      description: Get item by id.
+      operationId: getItemById
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          description: The unique identifier of an item used to group all the versions of an Item. In other words, different versions of an item will have a different Id(version/iteration) but the same MasterId.
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: option[releasedOnly]
+          schema:
+            type: boolean
+            default: false
+          description: |-
+            ``true``: Return latest consumable(released) item revision.
+
+            ``false``: (Default) Return tip item revision.
+      responses:
+        '200':
+          description: The request succeeded. The response contains the item.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+  /vaults/{vaultId}/items/{id}/change-orders:
+    get:
+      tags:
+        - Items
+      summary: Get Change Orders for item
+      description: Get item associated Change Orders
+      operationId: getItemAssociatedChangeOrders
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          description: The unique identifier of an item used to group all the versions of an Item. In other words, different versions of an item will have a different Id(version/iteration) but the same MasterId.
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: option[includeClosedECOs]
+          schema:
+            type: boolean
+            default: false
+          description: |-
+            ``true``: Include change orders with closed or cancelled state.
+
+            ``false``: (Default) Skip change orders with closed or cancelled state.
+        - $ref: '#/components/parameters/extendedModels'
+        - $ref: '#/components/parameters/propDefIds'
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/cursorState'
+      responses:
+        '200':
+          description: The request succeeded. The response contains the list of change orders.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangeOrderCollection'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+  /vaults/{vaultId}/items/{id}/versions:
+    get:
+      tags:
+        - Items
+      summary: Get version history for item
+      description: Get the item history by revision Id
+      operationId: getItemHistory
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          description: The unique identifier of an item used to group all the versions of an Item. In other words, different versions of an item will have a different Id(version/iteration) but the same MasterId.
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: option[history]
+          description: 'Allow option is: All, ReleasedOnly, ReleasedAndRevisionTip or RevisionTip. Default value is All'
+          schema:
+            $ref: '#/components/schemas/HistoryOptionsEnum'
+        - $ref: '#/components/parameters/extendedModels'
+        - $ref: '#/components/parameters/propDefIds'
+        - in: query
+          name: descending
+          description: |-
+            ``true``: Return latest file version at top.
+
+            ``false``: (Default) Return latest file version at bottom.
+          schema:
+            type: boolean
+            default: false
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/cursorState'
+      responses:
+        '200':
+          description: The request succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemVersionCollection'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+  /vaults/{vaultId}/jobs:
+    post:
+      tags:
+        - Jobs
+      summary: Create a job
+      description: Add a job into the job queue.
+      operationId: addJob
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Job'
+      responses:
+        '200':
+          description: The request succeeded. The response contains the job.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+  /vaults/{vaultId}/jobs/job-queue-enabled:
+    get:
+      tags:
+        - Jobs
+      summary: Get job queue status
+      description: Check if the job queue is enabled.
+      operationId: getJobQueueEnabled
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request succeeded. The response contains the job queue enabled status.
+          content:
+            application/json:
+              schema:
+                type: boolean
+              examples: {}
+  /vaults/{vaultId}/jobs/{id}:
+    get:
+      tags:
+        - Jobs
+      summary: Get a job
+      description: Get job by its Id
+      operationId: getJobsById
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          description: The unique identifier of a job.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request succeeded. The response contains the job.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+  /vaults/{vaultId}/links:
+    get:
+      tags:
+        - Links
+      summary: Get all links
+      description: Get all links
+      operationId: getLinks
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/cursorState'
+      responses:
+        '200':
+          description: The request succeeded. The response contains the list of links.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LinkCollection'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+  /vaults/{vaultId}/links/{id}:
+    get:
+      tags:
+        - Links
+      summary: Get a link
+      description: Get the link object by Id.
+      operationId: getLinkById
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          description: The unique identifier of a link.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request succeeded. The response contains the link.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LinkEntity'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+  /vaults/{vaultId}/property-definitions:
+    get:
+      tags:
+        - Property
+      summary: Get all property definitions
+      description: Get property definitions in the vault.
+      operationId: getPropertyDefinitions
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: filter[entityClassId]
+          description: The value should be from EntityClass, e.g., FILE, FLDR, ITEM, CO. if null of empty will return property defs for all Entity Classes.
+          schema:
+            type: string
+        - in: query
+          name: filter[systemNames]
+          description: Search filter to include only propertyDefs that match SystemName. SystemNames, separated by ','
+          schema:
+            type: string
+        - in: query
+          name: filter[propDefIds]
+          description: Search filter to include only propertyDefs that match Id. PropertyDefIds, separated by ','
+          schema:
+            type: string
+        - $ref: '#/components/parameters/extendedModels'
+        - in: query
+          name: option[includeBOMAssociationProperty]
+          description: |-
+            ``true``: Include BOM Association Property definitions.
+
+            ``false``: (Default) Exclude BOM Association Property definitions.
+          schema:
+            type: boolean
+            default: false
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/cursorState'
+      responses:
+        '200':
+          description: A paginated result of a property definition object.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PropertyDefinitionCollection'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+  /vaults/{vaultId}/property-definitions/{id}:
+    get:
+      tags:
+        - Property
+      summary: Get a property definition
+      description: Get the propertyDef object for the given id
+      operationId: getPropertyDefinitionById
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          description: The unique identifier of a profile definition.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request succeeded. The response contains the property definition.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PropertyDefinition'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          description: The requested resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                title: Vault error
+                statusCode: 404
+                errorCode: '1430'
+                detail: PropertyDefinitionDoesNotExist [1430] (999)
+  /vaults/{vaultId}/search-results:
+    get:
+      tags:
+        - Search
+      summary: Basic search
+      description: 'Basic Search: Find entities using a query string. The text is searched across all properties or both properties and content based on options passed.'
+      operationId: search
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/q'
+        - in: query
+          name: option[searchContent]
+          description: |-
+            ``true``: Search full content of the file.
+
+            ``false``: (Default) Search only properties of the file.
+          schema:
+            type: boolean
+            default: false
+        - in: query
+          name: option[searchSubFolders]
+          description: |-
+            ``true``: Search sub folders.
+
+            ``false``: (Default) Do not search sub folders.
+          schema:
+            type: boolean
+            default: false
+        - in: query
+          name: option[releasedFilesOnly]
+          schema:
+            type: boolean
+            default: false
+          description: |-
+            ``true``: Include only versions that are consumable (released) state.
+
+            ``false``: (Default) Include all versions.
+        - in: query
+          name: option[releasedItemsOnly]
+          schema:
+            type: boolean
+            default: false
+          description: |-
+            ``true``: Include only versions that are consumable (released) state.
+
+            ``false``: (Default) Include all versions.
+        - in: query
+          name: option[latestOnly]
+          description: |-
+            ``true``: (Default) Include only the latest version.
+
+            ``false``: Include all versions.
+          schema:
+            type: boolean
+            default: true
+        - $ref: '#/components/parameters/extendedModels'
+        - $ref: '#/components/parameters/propDefIds'
+        - in: query
+          name: sort
+          description: 'Specifies sorting criteria for search results. Format: {propertyDefSysName} {sort-order} Accepted values for sort-order: asc, desc.  Ex: sort = Revision desc,Name asc'
+          schema:
+            type: string
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/cursorState'
+      responses:
+        '200':
+          description: The request succeeded. The response contains the search results.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntityCollection'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+  /vaults/{vaultId}:advanced-search:
+    post:
+      tags:
+        - Search
+      summary: Advanced search
+      description: 'Advanced Search: Allows the user to search for entities within a specified vault. The search can be customized based on various parameters such as entity types (File, Folder, Item, ChangeOrder), specific folders, and search criteria. Users can also sort the results, limit the search to the latest or released files/items only, and decide whether to include subfolders or full models in the search. The ''vaultId'' is required in the path to identify the targeted Vault.'
+      operationId: advancedSearch
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: path
+          name: vaultId
+          description: The unique identifier of a vault.
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/cursorState'
+        - in: query
+          name: option[searchSubFolders]
+          description: |-
+            ``true``: Search sub-folders of the folders specified in foldersToSearch in the request body.
+
+            ``false``: (Default) Do not search sub-folders of the folders specified in foldersToSearch in the request body.
+
+            If no folders are specified in foldersToSearch in the request body, then this parameter will not have any effect.
+          schema:
+            type: boolean
+            default: false
+        - in: query
+          name: option[releasedFilesOnly]
+          schema:
+            type: boolean
+            default: false
+          description: |-
+            ``true``: Include only versions that are consumable (released) state.
+
+            ``false``: (Default) Include all versions.
+        - in: query
+          name: option[releasedItemsOnly]
+          schema:
+            type: boolean
+            default: false
+          description: |-
+            ``true``: Include only versions that are consumable (released) state.
+
+            ``false``: (Default) Include all versions.
+        - in: query
+          name: option[latestOnly]
+          schema:
+            type: boolean
+            default: true
+          description: |-
+            ``true``: (Default) Include only the latest version.
+
+            ``false``: Include all versions.
+        - $ref: '#/components/parameters/extendedModels'
+        - $ref: '#/components/parameters/propDefIds'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                entityTypesToSearch:
+                  type: array
+                  uniqueItems: true
+                  description: EntityTypes to search. If null or empty value is passed, it will include results from all entity types.
+                  items:
+                    type: string
+                    enum:
+                      - File
+                      - Folder
+                      - Item
+                      - ChangeOrder
+                foldersToSearch:
+                  type: array
+                  description: URL string array for the folder entities.
+                  items:
+                    type: string
+                searchCriterias:
+                  type: array
+                  description: The search parameters.
+                  items:
+                    $ref: '#/components/schemas/SearchCriteria'
+                sortCriterias:
+                  type: array
+                  description: The properties to sort on.
+                  items:
+                    $ref: '#/components/schemas/SortCriteria'
+              required:
+                - searchCriterias
+            examples:
+              Example 1:
+                value:
+                  entityTypesToSearch:
+                    - Folder
+                    - File
+                  foldersToSearch:
+                    - /AutodeskDM/Services/api/vault/v2/vaults/106/folders/1
+                    - /AutodeskDM/Services/api/vault/v2/vaults/106/folders/2
+                  searchCriterias:
+                    - propertyDefinitionUrl: /AutodeskDM/Services/api/vault/v2/vaults/106/property-definitions/9
+                      operator: Contains
+                      searchString: SM-TEST-01
+                    - propertyDefinitionUrl: /AutodeskDM/Services/api/vault/v2/vaults/106/property-definitions/47
+                      operator: IsExactly
+                      searchString: Released
+                  sortCriterias:
+                    - propertyDefinitionUrl: /AutodeskDM/Services/api/vault/v2/vaults/106/property-definitions/30
+                      ascending: true
+      responses:
+        '200':
+          description: The request succeeded. The response contains the search results.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntityCollection'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+  /vaults/{vaultId}/vault-options:
+    parameters:
+      - in: path
+        name: vaultId
+        description: The unique identifier of a vault.
+        required: true
+        schema:
+          type: string
+    get:
+      tags:
+        - Options
+      summary: Get all Vault options
+      description: 'Returns list of options which applies to the entire vault. '
+      operationId: getVaultOptions
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      parameters:
+        - in: query
+          name: filter[name]-starts
+          description: Filters and returns items whose names start with the specified string
+          schema:
+            type: string
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/cursorState'
+      responses:
+        '200':
+          description: The request succeeded. The response contains the list of vault options.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VaultOptionCollection'
+              examples: {}
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+    post:
+      tags:
+        - Options
+      summary: Creates a vault option
+      description: Creates a new option which applies to the particular vault
+      operationId: createVaultOption
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Option name
+                value:
+                  type: string
+                  description: Option value
+      responses:
+        '200':
+          description: The request succeeded. The response body contains the newly created vault option.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VaultOption'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '409':
+          description: Duplicate name
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /vaults/{vaultId}/vault-options/{id}:
+    parameters:
+      - in: path
+        name: vaultId
+        description: The unique identifier of a vault.
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: id
+        description: The unique identifier of an option.
+        required: true
+        schema:
+          type: string
+    get:
+      tags:
+        - Options
+      summary: Get a vault option
+      description: Get the vault option by its id.
+      operationId: getVaultOptionById
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      responses:
+        '200':
+          description: The request succeeded. The response body contains the vault option.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VaultOption'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+    patch:
+      tags:
+        - Options
+      summary: Update a vault option
+      description: Update an option (By ID) which applies to the current vault
+      operationId: updateVaultOptionById
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                value:
+                  type: string
+                  description: Option value
+      responses:
+        '200':
+          description: The request succeeded. The response body contains the updated vault option.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VaultOption'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+    delete:
+      tags:
+        - Options
+      summary: Delete a vault option
+      description: Delete a vault option (By ID)
+      operationId: deleteVaultOptionById
+      security:
+        - BearerTokenAuth: []
+        - 3-legged: []
+      responses:
+        '204':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: {}
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+components:
+  responses:
+    '400':
+      description: The server was unable to process the request. The syntax of the request is malformed or the request is missing a required header. Do not repeat the request without fixing the issue. The response body may indicate what is wrong with the request.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    '401':
+      description: The supplied authorization header was not valid or the supplied token scope was not acceptable. Verify authentication and try again.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    '403':
+      description: The request was successfully validated but lacking the required permissions. Verify your credentials and permissions before you send this request again.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    '404':
+      description: The requested resource was not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    Account:
+      title: Account
+      type: object
+      description: Account object.
+      properties:
+        id:
+          type: string
+        accountName:
+          type: string
+          description: The name of the account for signin purposes.
+        accountEmail:
+          type: string
+          description: The email associated with the account.
+        isActive:
+          type: boolean
+          description: Is the account active (enabled).
+        url:
+          $ref: '#/components/schemas/Url'
+    AccountCollection:
+      title: Account Collection
+      type: object
+      description: Account collection object.
+      properties:
+        pagination:
+          $ref: '#/components/schemas/CursorBasedPagination'
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Account'
+    AuthTypeEnum:
+      title: AuthType Enum
+      enum:
+        - ActiveDirectory
+        - Vault
+        - Autodesk
+      description: The type of account to retrieve. Allowed values are ActiveDirectory, Vault, and Autodesk.
+    BOMComponent:
+      title: BOM Component
+      type: object
+      description: BOM component object.
+      properties:
+        isCloaked:
+          type: boolean
+          description: 'Indicates if a BOM component is cloaked '
+        bOMStructure:
+          $ref: '#/components/schemas/BOMStructureEnum'
+        baseQty:
+          type: string
+          description: A numeric value quantifying a single instance of the Component. For Components with discreet quantities, "1" should always be used. For measured quantities, a positive decimal value can be used. For example, a rod cut to 3.5 feet would have a BaseUOM of "foot" and a BaseQty of "3.5".
+        baseUOM:
+          type: string
+          description: The Unit of Measure the Component is quantified with. For discreet quantities, "Each" should be used. For measured quantities, a length (inch, cm, foot, etc.) volume (ounce, ml, liter, quart, etc.) or mass (gram, pound, kg, etc.) unit of measure should be used.
+        componentType:
+          $ref: '#/components/schemas/ComponentTypeEnum'
+        name:
+          type: string
+          description: The name of this component.
+        xRefType:
+          $ref: '#/components/schemas/XRefTypeEnum'
+        uniqueId:
+          type: string
+          description: Unique data within the scope of the design file used to identify the Component. For Inventor files, the GUID used to identify the Component is used (or GUID plus VirtualComponentDefinition._PropertySetsId for Virtual components). For DWG files, the HandleID associated with the Component is used.
+        id:
+          type: string
+        xRefId:
+          type: string
+          description: For Components with a XRefType of "external", XRefID represents the FileID of the design file associated with that component. For "internal" Components, XRefID should be set to -1.
+    BOMLinksAndRevisions:
+      title: BOM Links And Revisions
+      type: object
+      description: BOM links and revisions object. Contains BOM related links between Items.
+      properties:
+        itemVersions:
+          type: array
+          description: An array of Items.
+          items:
+            $ref: '#/components/schemas/ItemVersion'
+        itemBomLinks:
+          type: array
+          description: The associations between the Items.
+          items:
+            $ref: '#/components/schemas/ItemBomLink'
+        referenceDesignatorsAvailable:
+          type: boolean
+          description: If true, reference designators are available.
+        occurrences:
+          type: array
+          description: An array of occurrences.
+          items:
+            $ref: '#/components/schemas/ItemBomOccurrence'
+        bOMComponents:
+          type: array
+          description: 'Array of BOM components in this BOM '
+          items:
+            $ref: '#/components/schemas/BOMComponent'
+    BOMStructureEnum:
+      title: BOM Structure Enum
+      type: string
+      enum:
+        - Normal
+        - Purchased
+        - Inseperable
+        - Phantom
+        - Reference
+        - DynamicPhantom
+      description: |-
+        An enumerated value representing the BOMStructure value of Component:
+
+        - ``Normal`` - 0,
+        - ``Purchased`` - 1,
+        - ``Inseperable`` - 2,
+        - ``Phantom`` - 3,
+        - ``Reference`` - 4,
+        - ``DynamicPhantom`` - 5
+    BOMTypeEnum:
+      title: BOM Type Enum
+      type: string
+      enum:
+        - Latest
+        - Historic
+      description: Enum of BOM Type.
+    ChangeOrder:
+      title: Change Order
+      type: object
+      description: change order object
+      properties:
+        id:
+          type: string
+          description: 'Master Id of this Change Order. The Master Id uniquely identifies this Change Order object '
+        url:
+          $ref: '#/components/schemas/Url'
+        name:
+          type: string
+          description: The descriptive name for this Change Order.The Change Order Number will be used here.
+        createDate:
+          type: string
+          description: The date and time the Change Order was created
+        number:
+          type: string
+          description: The Change Order number. Numbers are generated based on the Numbering Scheme.
+        title:
+          type: string
+          description: The title of the Change Order
+        description:
+          type: string
+          description: The description of the Change Order.
+        approveDeadline:
+          type: string
+          description: The date and time when the Change Order needs to be approved by.
+        lastModifiedDate:
+          type: string
+          description: The last time that the Change Order was modified.
+        lastModifiedUserId:
+          type: string
+        closeDate:
+          type: string
+        lastTouchedDate:
+          type: string
+          description: ' the last time that the Change Order was modified.'
+        entityType:
+          type: string
+        numberOfAttachments:
+          type: number
+          description: Number of File Attachments
+        properties:
+          type: array
+          items:
+            $ref: '#/components/schemas/Property'
+        state:
+          type: string
+          description: Get the name of the Change Order State.
+        stateColor:
+          type: number
+          description: The color of the state.
+        isReadOnly:
+          type: boolean
+          description: Get if the Change Order is currently locked.
+    ChangeOrderExtended:
+      title: Change Order Extended
+      type: object
+      description: change order extended object
+      allOf:
+        - $ref: '#/components/schemas/ChangeOrder'
+        - type: object
+          properties:
+            assignees:
+              type: array
+              items:
+                $ref: '#/components/schemas/User'
+    ChangeOrderCollection:
+      title: Change Order Collection
+      type: object
+      description: Change Order collection object.
+      properties:
+        pagination:
+          $ref: '#/components/schemas/CursorBasedPagination'
+        results:
+          type: array
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/ChangeOrderExtended'
+              - $ref: '#/components/schemas/ChangeOrder'
+        included:
+          type: object
+          properties:
+            propertyDefinition:
+              type: object
+              additionalProperties:
+                $ref: '#/components/schemas/PropertyDefinition'
+    ComponentTypeEnum:
+      title: Component Type Enum
+      type: string
+      enum:
+        - Part
+        - Assembly
+        - Virtual
+        - Standard
+        - Purchased
+        - Document
+      description: |-
+        An enumerated value specifying the type of component.  Enum of Component Type:
+
+        - ``Part`` - 0
+        - ``Assembly`` - 1
+        - ``Virtual`` - 2
+        - ``Standard`` - 3
+        - ``Purchased`` - 4
+        - ``Document`` - 5
+    CursorBasedPagination:
+      title: Cursor-based pagination
+      type: object
+      description: Cursor-based pagination object.
+      properties:
+        limit:
+          type: integer
+          description: Limit requested for the current search
+        totalResults:
+          type: integer
+          description: Number of total hits. If this value is larger than the objects returned, then multiple searches will have to be performed to get the complete result set.
+        indexingStatus:
+          $ref: '#/components/schemas/IndexingStatus'
+        nextUrl:
+          type: string
+          description: Used to continue a search if the results are too large for a single call. Url has bookmark string embedded for subsequent calls on that search
+    ECOComment:
+      title: ECO Comment
+      type: object
+      description: Change Order Comment object.
+      properties:
+        id:
+          type: string
+        url:
+          $ref: '#/components/schemas/Url'
+        subject:
+          type: string
+        message:
+          type: string
+        createDate:
+          type: string
+        createUserName:
+          type: string
+        state:
+          type: string
+        numberOfAttachments:
+          type: number
+        replies:
+          type: array
+          items:
+            $ref: '#/components/schemas/ECOComment2'
+        parent:
+          $ref: '#/components/schemas/ECOComment2'
+    ECOComment2:
+      title: ECO Comment2
+      type: object
+      properties:
+        id:
+          type: string
+        url:
+          $ref: '#/components/schemas/Url'
+        subject:
+          type: string
+        message:
+          type: string
+        createDate:
+          type: string
+        createUserName:
+          type: string
+        state:
+          type: string
+        numberOfAttachments:
+          type: number
+        replies:
+          type: array
+          items:
+            $ref: '#/components/schemas/ECOComment'
+        parent:
+          $ref: '#/components/schemas/ECOComment'
+      description: Change Order Comment object duplicate(ECOComment) to allow them to reference to each other
+    ECOCommentCollection:
+      title: ECO Comment Collection
+      type: object
+      description: Change Order Comment collection object.
+      properties:
+        pagination:
+          $ref: '#/components/schemas/CursorBasedPagination'
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ECOComment'
+    Entity:
+      title: Entity
+      type: object
+      description: A generic entity object with all supported fields.
+      properties:
+        id:
+          type: string
+          description: A unique identifier for the object
+        name:
+          type: string
+          description: Name of the entity
+        fullName:
+          type: string
+          description: The full vault path if Entity is a folder
+        number:
+          type: string
+        category:
+          type: string
+          description: Category information  about this entity
+        categoryColor:
+          type: number
+          description: Category color
+        entityType:
+          type: string
+        version:
+          type: number
+          description: Version number if entity is an Iteration object
+        createDate:
+          type: string
+          description: Tells the date and time that this version of the entity was created in the Vault.
+        lastModifiedDate:
+          type: string
+        revision:
+          type: string
+          description: Revision information about this entity.
+        state:
+          type: string
+          description: The name of the life cycle state for the entity
+        stateColor:
+          type: number
+          description: The color of the state.
+        parentFolderId:
+          type: string
+        parent:
+          $ref: '#/components/schemas/Folder'
+        isCheckedOut:
+          type: boolean
+        createUserName:
+          type: string
+        checkinDate:
+          type: string
+        checkoutDate:
+          type: string
+        size:
+          type: number
+        url:
+          $ref: '#/components/schemas/Url'
+        hasVisualizationAttachment:
+          type: boolean
+        checkoutUserName:
+          type: string
+        isLibrary:
+          type: boolean
+        isReadOnly:
+          type: boolean
+        isCloaked:
+          type: boolean
+        file:
+          $ref: '#/components/schemas/FileObject'
+        item:
+          $ref: '#/components/schemas/Item'
+        subfolderCount:
+          type: number
+        children:
+          type: string
+        properties:
+          type: array
+          items:
+            $ref: '#/components/schemas/Property'
+      required:
+        - id
+        - name
+    EntityCollection:
+      title: Entity Collection
+      type: object
+      description: Entity collection object.
+      properties:
+        pagination:
+          $ref: '#/components/schemas/CursorBasedPagination'
+        results:
+          type: array
+          items:
+            anyOf:
+              - $ref: '#/components/schemas/FileVersion'
+              - $ref: '#/components/schemas/FileVersionExtended'
+              - $ref: '#/components/schemas/Folder'
+              - $ref: '#/components/schemas/FolderExtended'
+              - $ref: '#/components/schemas/ChangeOrder'
+              - $ref: '#/components/schemas/ChangeOrderExtended'
+              - $ref: '#/components/schemas/LinkEntity'
+              - $ref: '#/components/schemas/ItemVersion'
+        included:
+          type: object
+          properties:
+            folder:
+              type: object
+              additionalProperties:
+                $ref: '#/components/schemas/Folder'
+            propertyDefinition:
+              type: object
+              additionalProperties:
+                $ref: '#/components/schemas/PropertyDefinition'
+    ErrorResponse:
+      title: Error Response
+      required:
+        - title
+        - detail
+        - errorCode
+        - statusCode
+      type: object
+      properties:
+        title:
+          type: string
+        detail:
+          type: string
+        statusCode:
+          type: integer
+        errorCode:
+          type: string
+          description: The vault error code. Client can use it to look up the localized error message
+        params:
+          type: array
+          items:
+            type: string
+      description: The format for an error response
+    FileAssocCollection:
+      title: File Association Collection
+      type: object
+      description: File Association collection object.
+      properties:
+        pagination:
+          $ref: '#/components/schemas/CursorBasedPagination'
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileAssociation'
+        included:
+          type: object
+          properties:
+            folder:
+              type: object
+              additionalProperties:
+                $ref: '#/components/schemas/Folder'
+            propertyDefinition:
+              type: object
+              additionalProperties:
+                $ref: '#/components/schemas/PropertyDefinition'
+    FileAssociation:
+      title: File Association
+      type: object
+      description: File association object.
+      properties:
+        parentFile:
+          $ref: '#/components/schemas/FileVersionExtended'
+        childFile:
+          $ref: '#/components/schemas/FileVersionExtended'
+        fileAssocType:
+          $ref: '#/components/schemas/FileAssociationTypeEnum'
+    FileAssociationTypeEnum:
+      title: File Association Type Enum
+      type: string
+      enum:
+        - Dependency
+        - Attachment
+      description: File association options.
+    FileVersionCollection:
+      title: File Version Collection
+      type: object
+      description: File version collection object.
+      properties:
+        pagination:
+          $ref: '#/components/schemas/CursorBasedPagination'
+        results:
+          type: array
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/FileVersionExtended'
+              - $ref: '#/components/schemas/FileVersion'
+        included:
+          type: object
+          properties:
+            folder:
+              type: object
+              additionalProperties:
+                $ref: '#/components/schemas/Folder'
+            propertyDefinition:
+              type: object
+              additionalProperties:
+                $ref: '#/components/schemas/PropertyDefinition'
+    FileObject:
+      title: File - we cannot directly use File as class name, as it's occupied.
+      type: object
+      properties:
+        id:
+          type: string
+          description: File MasterId
+        url:
+          $ref: '#/components/schemas/Url'
+        versionType:
+          $ref: '#/components/schemas/VersionTypeEnum'
+        fileVersion:
+          $ref: '#/components/schemas/FileVersionExtended'
+      required:
+        - id
+        - url
+    FileClassificationEnum:
+      title: File Classification Enum
+      type: string
+      enum:
+        - None
+        - DesignVisualization
+        - DesignDocument
+        - ConfigurationMember
+        - ConfigurationFactory
+        - ElectricalProject
+        - DesignSubstitute
+        - DesignRepresentation
+        - DesignPresentation
+      description: The classification of the file.
+    FileVisualizationAttachmentStatusEnum:
+      title: File Visualization Attachment Status Enum
+      type: string
+      enum:
+        - None
+        - Syncronized
+        - NotSyncronized
+        - UserVerified
+        - Legacy
+      description: The design visualization attachment status of the file.
+    FileVersion:
+      title: File Version
+      type: object
+      description: file version basic object.
+      properties:
+        id:
+          type: string
+          description: File IterationId
+        name:
+          type: string
+          description: The name of the file. This value applies to all versions of the file
+        category:
+          type: string
+          description: Category information about this file
+        categoryColor:
+          type: number
+          description: Category color
+        classification:
+          $ref: '#/components/schemas/FileClassificationEnum'
+        entityType:
+          type: string
+        version:
+          type: number
+          description: The version of the file. A file that has just been added to the Vault, will have 1 as its VerNum
+        createDate:
+          type: string
+          description: Tells the date and time that this version of the file was created in the Vault. For the first version of a file, this date will match CkInDate. For later versions, this value will have the time when the previous version was checked out.
+        lastModifiedDate:
+          type: string
+          description: The last modified date of the file. This value is set by the client that uploaded the file.
+        revision:
+          type: string
+          description: Revision information about this file.
+        state:
+          type: string
+          description: The name of the life cycle state for the current file
+        stateColor:
+          type: number
+          description: The color of the state.
+        parentFolderId:
+          type: string
+          description: FolderId of the parent the current file  resides in
+        file:
+          $ref: '#/components/schemas/FileObject'
+        parent:
+          $ref: '#/components/schemas/Folder'
+        isCheckedOut:
+          type: boolean
+          description: If true, then the latest version of this file is in the checked-out state
+        createUserName:
+          type: string
+          description: The Name of the user who checked-in or uploaded this file.
+        checkinDate:
+          type: string
+          description: The date and time that the file was checked in. This property is only valid if isCheckedOut is false.
+        checkoutDate:
+          type: string
+          description: The date and time that the file was last checked out
+        checkoutUserName:
+          type: string
+          description: User that has the file checked out
+        size:
+          type: number
+          description: The size, in bytes, of the file. This property is only valid if CheckedOut is false.
+        url:
+          $ref: '#/components/schemas/Url'
+        hasVisualizationAttachment:
+          type: boolean
+          description: Flag to determine if valid VizAttachmentStatus (Not None)
+        visualizationAttachmentStatus:
+          $ref: '#/components/schemas/FileVisualizationAttachmentStatusEnum'
+        isReadOnly:
+          type: boolean
+        isCloaked:
+          type: boolean
+          description: Get if this file is cloaked. A cloaked object is one that the caller does not have permissions to view
+        isOnSite:
+          type: boolean
+          description: Gets whether or not the file is on the local site (in a multi-site environment). This value will always be true on a single-site environment.
+        properties:
+          type: array
+          items:
+            $ref: '#/components/schemas/Property'
+      required:
+        - id
+        - name
+    FileVersionExtended:
+      title: File Version Extended
+      type: object
+      description: file version extended object
+      allOf:
+        - $ref: '#/components/schemas/FileVersion'
+        - type: object
+          properties:
+            checkoutUser:
+              $ref: '#/components/schemas/User'
+    FolderCollection:
+      title: Folder Collection
+      type: object
+      description: Folder collection object.
+      properties:
+        pagination:
+          $ref: '#/components/schemas/CursorBasedPagination'
+        results:
+          type: array
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/Folder'
+              - $ref: '#/components/schemas/FolderExtended'
+        included:
+          type: object
+          properties:
+            folder:
+              type: object
+              additionalProperties:
+                $ref: '#/components/schemas/Folder'
+            propertyDefinition:
+              type: object
+              additionalProperties:
+                $ref: '#/components/schemas/PropertyDefinition'
+    Folder:
+      title: Folder
+      type: object
+      description: folder object
+      properties:
+        id:
+          type: string
+          description: Get the unique identifier for this folder
+        url:
+          $ref: '#/components/schemas/Url'
+        name:
+          type: string
+          description: Get the descriptive name for this Folder. This is always the Folder Name without the full path.
+        fullName:
+          type: string
+          description: Get the full vault path for this folder (ie. $/Folder1)
+        createDate:
+          type: string
+          description: Get the date and time that the folder was created.
+        createUserName:
+          type: string
+          description: Get the name of the user who created this folder.
+        category:
+          type: string
+          description: Get the category that is assigned to this folder
+        categoryColor:
+          type: number
+          description: Category color
+        state:
+          type: string
+          description: The name of the life cycle state for the current folder
+        stateColor:
+          type: number
+          description: The color of the state.
+        subfolderCount:
+          type: number
+          description: Get the number of immediate child folders.
+        children:
+          type: string
+        isLibrary:
+          type: boolean
+          description: 'Get whether or not this folder is a library folder '
+        isReadOnly:
+          type: boolean
+          description: Get whether this folder can be modified by the logged in user.
+        isCloaked:
+          type: boolean
+          description: Get if this folder is cloaked. A cloaked object is one that the caller does not have permissions to view.
+        properties:
+          type: array
+          items:
+            $ref: '#/components/schemas/Property'
+    FolderExtended:
+      title: Folder Extended
+      type: object
+      description: folder extended object
+      allOf:
+        - $ref: '#/components/schemas/Folder'
+        - type: object
+          properties:
+            parentFolderId:
+              type: string
+            parent:
+              $ref: '#/components/schemas/Folder'
+    Group:
+      title: Group
+      type: object
+      description: Group object. A group is a collection of users and other groups.
+      properties:
+        id:
+          type: string
+          description: The identifier for the object.
+        name:
+          type: string
+          description: The unique name of the Group.
+        systemName:
+          type: string
+        authTypes:
+          $ref: '#/components/schemas/AuthTypeEnum'
+        createDate:
+          type: string
+          description: The date the Group was created.
+        emailDL:
+          type: string
+          description: The email address (distribution list) for the Group.
+        isActive:
+          type: boolean
+          description: Is the group active
+        url:
+          $ref: '#/components/schemas/Url'
+    GroupExtended:
+      title: Group Extended
+      type: object
+      description: Group extended object.
+      allOf:
+        - $ref: '#/components/schemas/Group'
+        - type: object
+          properties:
+            createUser:
+              $ref: '#/components/schemas/User'
+            roles:
+              type: array
+              items:
+                $ref: '#/components/schemas/Role'
+            accounts:
+              type: array
+              items:
+                $ref: '#/components/schemas/Account'
+            users:
+              type: array
+              items:
+                $ref: '#/components/schemas/User'
+            attributes:
+              type: array
+              items:
+                $ref: '#/components/schemas/ProfileAttribute'
+            groupManagers:
+              type: array
+              items:
+                $ref: '#/components/schemas/User'
+            groups:
+              type: array
+              items:
+                $ref: '#/components/schemas/Group'
+    GroupCollection:
+      title: Group Collection
+      type: object
+      description: Group collection object.
+      properties:
+        pagination:
+          $ref: '#/components/schemas/CursorBasedPagination'
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Group'
+    HistoryOptionsEnum:
+      title: History Options Enum
+      type: string
+      enum:
+        - All
+        - ReleasedOnly
+        - ReleasedAndRevisionTip
+        - RevisionTip
+      description: options for viewing file history.
+    IndexingStatus:
+      title: Indexing Status
+      type: string
+      enum:
+        - IndexingComplete
+        - IndexingProperties
+        - IndexingContent
+        - NA
+      description: |-
+        Indicates the current status of the indexing engine. This status helps users understand whether the indexing operation is complete or still in progress. This is particularly important for customers with large datasets, as indexing can take a considerable amount of time to complete.
+        The statuses include:
+
+        - ``IndexingComplete`` - All properties and content have been indexed.
+        - ``IndexingProperties`` - File properties are currently being indexed.
+        - ``IndexingContent`` - File content is currently being indexed.
+        - ``NA`` - Not applicable as data not retrieved from index.
+
+        Note: When the status is either 'IndexingProperties' or 'IndexingContent', the search results are incomplete because the indexes are still being created. Complete search results will be available once fully indexed.
+    Item:
+      title: Item
+      type: object
+      description: Item object.
+      properties:
+        id:
+          type: string
+          description: MasterId of the item
+        url:
+          $ref: '#/components/schemas/Url'
+        versionType:
+          $ref: '#/components/schemas/VersionTypeEnum'
+        itemVersion:
+          $ref: '#/components/schemas/ItemVersion'
+      required:
+        - id
+        - url
+    ItemAssociatedFileVersion:
+      title: Item Associated File Version
+      type: object
+      description: Item associated file version object, contains the file version and the association type.
+      properties:
+        itemAssociationType:
+          $ref: '#/components/schemas/ItemAssociationTypeEnum'
+        file:
+          $ref: '#/components/schemas/FileVersionExtended'
+    ItemAssociatedFileVersionCollection:
+      title: Item Associated File Version Collection
+      type: object
+      description: Item associated file version collection object, collection of item related files and attachments.
+      properties:
+        pagination:
+          $ref: '#/components/schemas/CursorBasedPagination'
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ItemAssociatedFileVersion'
+        included:
+          type: object
+          properties:
+            folder:
+              type: object
+              additionalProperties:
+                $ref: '#/components/schemas/Folder'
+            propertyDefinition:
+              type: object
+              additionalProperties:
+                $ref: '#/components/schemas/PropertyDefinition'
+    ItemAssociationTypeEnum:
+      title: Item Association Type Enum
+      type: string
+      enum:
+        - Primary
+        - Secondary
+        - Tertiary
+        - StandardComponent
+        - PrimarySub
+        - SecondarySub
+        - PinnedAttachment
+        - NotPinnedAttachment
+      description: Item File Link Types.
+    ItemBomLink:
+      title: Item Bom Link
+      type: object
+      properties:
+        bomComponentId:
+          type: string
+          description: 'Id of the BOM Component (only valid when BOM row is a component - not assigned an item) '
+        groupedRow:
+          type: boolean
+          description: 'Indicates if this BOM association is a grouped row of multiple BOM rows '
+        groupId:
+          type: string
+          description: 'Id of the Multiple Row grouping '
+        unitSize:
+          type: string
+          description: 'The unit size for this BOM row '
+        instCount:
+          type: string
+          description: Instance Count of this BOM association
+        cad:
+          type: boolean
+          description: 'Indicates if this BOM row is created and maintained by CAD data or is a manual BOM row '
+        included:
+          type: boolean
+          description: 'Indicates if this BOM row is included or excluded from the BOM '
+        refDesId:
+          type: string
+          description: The reference designator ID. This value will be 0 if reference designators are not available.
+        childHasChildren:
+          type: boolean
+          description: If true, the child Item has children of its own. If false, the child is a leaf.
+        bomLinkMasterId:
+          type: string
+          description: 'Item association''s master Id (does not change between iterations) '
+        bomOrder:
+          type: string
+          description: The order that the child entry shows up in the BOM.
+        units:
+          type: string
+          description: The display name for the Unit of Measure on CldItemUsage.
+        quantity:
+          type: string
+          description: 'BOM row quantity '
+        childItemId:
+          type: string
+          description: The ID of the child Item.
+        parentItemId:
+          type: string
+          description: The ID of the parent Item.
+        id:
+          type: string
+          description: The ID for the object.
+        parentMasterChildMasterAndRefDesMaster:
+          type: string
+        childMasterAndRefDesMaster:
+          type: string
+        isStatic:
+          type: boolean
+          description: If true, the dependency is static. If false, the dependency is computed.
+        positionNumber:
+          type: string
+          description: 'Assigned BOM row position number '
+        properties:
+          type: array
+          items:
+            $ref: '#/components/schemas/Property'
+      description: 'A dependency between two Items '
+    ItemBomOccurrence:
+      title: Item Bom Occurrence
+      type: object
+      description: BOM link master ID with which this occurrence is associated.
+      properties:
+        rootItemId:
+          type: string
+          description: The top most Item of the BOM.
+        id:
+          type: string
+          description: A unique identifier for this occurrence within the Item BOM.
+        parentOccurrenceId:
+          type: string
+          description: The immediate parent. -1 means no parent occurrence.
+        bomLinkMasterId:
+          type: string
+        position:
+          type: string
+          description: The position on the BOM.
+        detailId:
+          type: string
+          description: The value of the occurrence. Also known as the 'Detail Id.'
+        path:
+          type: string
+          description: The path to the occurrence in the BOM. The format is the list of Item Master IDs separated by the '/' delimiter.
+    ItemVersionCollection:
+      title: Item Version Collection
+      type: object
+      description: Item version collection object.
+      properties:
+        pagination:
+          $ref: '#/components/schemas/CursorBasedPagination'
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ItemVersion'
+        included:
+          type: object
+          properties:
+            propertyDefinition:
+              type: object
+              additionalProperties:
+                $ref: '#/components/schemas/PropertyDefinition'
+    ItemCollection:
+      title: Item Collection
+      type: object
+      description: Item collection object.
+      properties:
+        pagination:
+          $ref: '#/components/schemas/CursorBasedPagination'
+        results:
+          $ref: '#/components/schemas/Item'
+        included:
+          type: object
+          properties:
+            propertyDefinition:
+              type: object
+              additionalProperties:
+                $ref: '#/components/schemas/PropertyDefinition'
+    ItemVersion:
+      title: Item Version
+      type: object
+      description: The unique identifier for the object.
+      properties:
+        id:
+          type: string
+          description: Item Iteration Id
+        url:
+          $ref: '#/components/schemas/Url'
+        number:
+          type: string
+          description: The Item number.
+        version:
+          type: number
+          description: The version number, which is a sequential number given to each version. For example, if this value is 5, then the object is the 5th version.
+        revision:
+          type: string
+          description: The display value for the revision.
+        comment:
+          type: string
+        title:
+          type: string
+          description: The display title.
+        state:
+          type: string
+          description: Life cycle state of the item
+        stateColor:
+          type: number
+        name:
+          type: string
+        category:
+          type: string
+          description: 'Category assigned to the item '
+        categoryColor:
+          type: number
+        entityType:
+          type: string
+        isReadOnly:
+          type: boolean
+        isCloaked:
+          type: boolean
+          description: If true, the logged-in user is restricted from seeing this item.
+        isLatestObsolete:
+          type: boolean
+          description: Flag to check if an latest Item's  version is obsolete
+        item:
+          $ref: '#/components/schemas/Item'
+        properties:
+          type: array
+          items:
+            $ref: '#/components/schemas/Property'
+    Job:
+      title: Job
+      type: object
+      description: Job object. A job is a task that is run by the job processor.
+      properties:
+        id:
+          type: string
+          description: A unique identifier for the job.
+        jobType:
+          type: string
+          description: The job type.
+        priority:
+          type: number
+          description: The priority of the job. A lower number means a higher priority. 1 is the lowest possible number.
+        description:
+          type: string
+          description: A description of the job.
+        url:
+          $ref: '#/components/schemas/Url'
+        params:
+          type: object
+          additionalProperties:
+            type: string
+          description: An array of parameters which provide metadata about the job.
+        status:
+          enum:
+            - Ready
+            - Running
+            - Success
+            - Failure
+          description: |-
+            The status of the job:
+
+            - ``Ready`` - The job is ready to be run.
+            - ``Running`` - The job is currently running.
+            - ``Success`` - The job has completed successfully.
+            - ``Failure`` - The job has failed.
+        isOnSite:
+          type: string
+          description: In a multi-site environment, this property tells if the file is on the local site.
+    LinkCollection:
+      title: Link Collection
+      type: object
+      description: Link collection object.
+      properties:
+        pagination:
+          $ref: '#/components/schemas/CursorBasedPagination'
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/LinkEntity'
+        included:
+          type: object
+          properties:
+            folder:
+              type: object
+              additionalProperties:
+                $ref: '#/components/schemas/Folder'
+            propertyDefinition:
+              type: object
+              additionalProperties:
+                $ref: '#/components/schemas/PropertyDefinition'
+    LinkEntity:
+      title: Link
+      type: object
+      description: link object.
+      properties:
+        name:
+          type: string
+        id:
+          type: string
+          description: 'Get the unique identifier for this link object '
+        createDate:
+          type: string
+        createUserName:
+          type: string
+        entityType:
+          type: string
+        url:
+          $ref: '#/components/schemas/Url'
+        toEntity:
+          $ref: '#/components/schemas/Entity'
+        fromEntity:
+          $ref: '#/components/schemas/Folder'
+    Markup:
+      title: Markup
+      type: object
+      description: Markup object. A markup is a visual annotation that is added to a file.
+      properties:
+        id:
+          type: string
+        parentId:
+          type: string
+        createdByUser:
+          $ref: '#/components/schemas/User'
+        createDateTime:
+          type: string
+        updatedByUser:
+          $ref: '#/components/schemas/User'
+        updateDateTime:
+          type: string
+        data:
+          type: string
+        thumbnail:
+          type: string
+        url:
+          $ref: '#/components/schemas/Url'
+    MarkupCollection:
+      title: Markup Collection
+      type: object
+      description: Markup collection object.
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Markup'
+        pagination:
+          $ref: '#/components/schemas/CursorBasedPagination'
+    PasswordPolicyOptionsEnum:
+      title: Password Policy Options Enum
+      type: string
+      enum:
+        - Disabled
+        - Enabled
+        - Lowercase
+      description: |-
+        PasswordPolicyOptions flags:
+
+        - ``Disabled`` - 0
+        - ``Enabled`` - 1
+        - ``Lowercase`` - 2
+        - ``Uppercase`` - 4
+        - ``Number`` - 8
+        - ``SpecialChar`` - 16
+    PasswordPolicySetting:
+      description: Password Policy Setting
+      type: object
+      x-examples:
+        Example 1:
+          passwordPolicyOption: 30
+          minPasswordLength: 8
+      properties:
+        passwordPolicyOption:
+          $ref: '#/components/schemas/PasswordPolicyOptionsEnum'
+        minPasswordLength:
+          type: integer
+          description: Minimum characters required
+    ProfileAttribute:
+      title: Profile Attribute
+      type: object
+      description: Profile attribute object.
+      properties:
+        userGroupId:
+          type: string
+          description: User or group id that profile attribute is associated with.
+        attributeId:
+          type: string
+          description: The id of the current attribute.
+        value:
+          type: string
+          description: The value of the profile attribute.
+    ProfileAttributeDefinition:
+      title: Profile Attribute Definition
+      type: object
+      description: Profile attribute definition object.
+      properties:
+        id:
+          type: string
+          description: The profile attribute id.
+        attributeName:
+          type: string
+          description: Name of the profile attribute (must be unique).
+        systemName:
+          type: string
+        activeDirectoryMapping:
+          type: string
+          description: Active Directory field the attribute is mapped from (null if not mapped).
+        association:
+          enum:
+            - None
+            - User
+            - Group
+            - All
+          description: The association type.
+        url:
+          $ref: '#/components/schemas/Url'
+    ProfileAttributeDefinitionCollection:
+      title: Profile Attribute Definition Collection
+      type: object
+      description: Profile attribute definition collection object.
+      properties:
+        pagination:
+          $ref: '#/components/schemas/CursorBasedPagination'
+        results:
+          $ref: '#/components/schemas/ProfileAttributeDefinition'
+    Property:
+      title: Property
+      type: object
+      description: Property object.
+      properties:
+        propertyDefinitionId:
+          type: string
+          description: Unique identifier for a server-based property definition
+        definition:
+          $ref: '#/components/schemas/PropertyDefinition'
+        value:
+          type: string
+          description: The property value associated with the entity and PropertyDefinition
+    PropertyDefinition:
+      title: Property Definition
+      type: object
+      description: Property definition object.
+      properties:
+        id:
+          type: string
+          description: Get the unique identifier for a server-based property definition
+        url:
+          $ref: '#/components/schemas/Url'
+        displayName:
+          type: string
+          description: 'Get or sets the Display name for this Property Definition '
+        systemName:
+          type: string
+          description: Get the System Name for this Property Definition.
+        dataType:
+          type: string
+          description: The value defined in SQL database.
+          enum:
+            - String
+            - Numeric
+            - Bool
+            - DateTime
+            - Image
+        active:
+          type: boolean
+          description: Get or sets whether this Property Definition is Active.
+        isSystem:
+          type: boolean
+          description: 'Get whether or not this is a System Property (as opposed to an userDefined property) '
+        initialValue:
+          type: string
+          description: ' Default Value that will be applied to entities that do not have an existing value associated with this PropertyDefinition '
+      required:
+        - id
+        - displayName
+        - systemName
+        - dataType
+    PropertyDefinitionExtended:
+      title: Property Definition Extended
+      type: object
+      description: property definition object
+      allOf:
+        - $ref: '#/components/schemas/PropertyDefinition'
+        - type: object
+          properties:
+            listValues:
+              type: array
+              description: Array of possible values for properties based on this property definition
+              items:
+                type: string
+    PropertyDefinitionCollection:
+      title: Property Definition Collection
+      type: object
+      description: Property definition collection object.
+      properties:
+        pagination:
+          $ref: '#/components/schemas/CursorBasedPagination'
+        results:
+          type: array
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/PropertyDefinition'
+              - $ref: '#/components/schemas/PropertyDefinitionExtended'
+    RevisionOptionsEnum:
+      title: Revision Options Enum
+      type: string
+      enum:
+        - AllRevision
+        - CurrentRevision
+      description: |-
+        Revision options:
+
+        - ``AllRevision`` - All Revisions
+        - ``CurrentRevision`` - Current Revision
+    Role:
+      title: Role
+      type: object
+      description: Role object. A role is a collection of permissions that can be assigned to users and groups.
+      properties:
+        id:
+          type: string
+          description: A unique identifier of the role.
+        roleName:
+          type: string
+          description: The name of the role.
+        systemName:
+          type: string
+          description: The system name of the Role.
+        description:
+          type: string
+          description: 'Friendly description of the role''s purpose '
+        url:
+          $ref: '#/components/schemas/Url'
+    RoleCollection:
+      title: Role Collection
+      type: object
+      description: Role collection object.
+      properties:
+        pagination:
+          $ref: '#/components/schemas/CursorBasedPagination'
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Role'
+    SearchCriteria:
+      title: Search Criteria
+      type: object
+      description: Search criteria object.
+      properties:
+        propertyDefinitionUrl:
+          type: string
+          description: URL string to the property definition
+        operator:
+          type: string
+          enum:
+            - Unknown
+            - Contains
+            - DoesNotContain
+            - IsExactly
+            - IsEmpty
+            - IsNotEmpty
+            - GreaterThan
+            - GreaterThanOrEqualTo
+            - LessThan
+            - LessThanOrEqualTo
+            - NotEqualTo
+          description: Represents the operator used for the search.
+        searchString:
+          type: string
+          description: The value to use for the search
+      required:
+        - operator
+      x-examples:
+        Example 1:
+          propertyDefinitionUrl: /AutodeskDM/Services/api/vault/v2/vaults/106/property-definitions/9
+          operator: Contains
+          searchString: SM-TEST-01
+    SortCriteria:
+      title: Sort Criteria
+      type: object
+      description: Sort criteria object.
+      properties:
+        propertyDefinitionUrl:
+          type: string
+          description: |
+            URL string to the property definition
+        ascending:
+          type: boolean
+          description: If true, the sort is ascending. If false, the sort is descending.
+      x-examples:
+        Example 1:
+          propertyDefinitionUrl: /AutodeskDM/Services/api/vault/v2/vaults/106/property-definitions/30
+          ascending: true
+    User:
+      title: User
+      type: object
+      description: User object.
+      properties:
+        id:
+          type: string
+          description: A unique number that the Vault uses to reference the user.
+        name:
+          type: string
+          description: The login name of the user.
+        email:
+          type: string
+          description: The email address of the user.
+        authTypes:
+          $ref: '#/components/schemas/AuthTypeEnum'
+        systemName:
+          type: string
+        createDate:
+          type: string
+          format: date-time
+          description: The date that the user was created.
+        isActive:
+          type: string
+          description: 'Is the user active '
+        url:
+          $ref: '#/components/schemas/Url'
+    UserExtended:
+      title: User Extended
+      type: object
+      description: User extended object.
+      allOf:
+        - $ref: '#/components/schemas/User'
+        - type: object
+          properties:
+            firstName:
+              type: string
+              description: First name of the user
+            lastName:
+              type: string
+              description: Last name of the user
+            analyticsId:
+              type: string
+            roles:
+              type: array
+              description: 'An array of Role objects associated with this user. '
+              items:
+                $ref: '#/components/schemas/Role'
+            vaults:
+              type: array
+              description: 'An array of KnowledgeVault objects associated with this user. '
+              items:
+                $ref: '#/components/schemas/Vault'
+            groups:
+              type: array
+              description: 'An array of Group objects the user is a direct member of '
+              items:
+                $ref: '#/components/schemas/Group'
+            accounts:
+              type: array
+              description: 'Accounts associated with this user. '
+              items:
+                $ref: '#/components/schemas/Account'
+            attributes:
+              type: array
+              description: 'Profile attributes of this user. '
+              items:
+                type: object
+                properties:
+                  definition:
+                    $ref: '#/components/schemas/ProfileAttributeDefinition'
+                  value:
+                    type: string
+            isAdministrator:
+              type: boolean
+            createUser:
+              $ref: '#/components/schemas/User'
+    UserCollection:
+      title: User Collection
+      type: object
+      description: User collection object.
+      properties:
+        pagination:
+          $ref: '#/components/schemas/CursorBasedPagination'
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+    Vault:
+      title: Vault
+      type: object
+      description: Vault object.Contains information about the Knowledge Vault.
+      properties:
+        name:
+          type: string
+          description: The name of the Knowledge Vault. This is also the name of the database.
+        id:
+          type: string
+          description: A unique identifier for the Knowledge Vault.
+        url:
+          $ref: '#/components/schemas/Url'
+    VaultCollection:
+      title: Vault Collection
+      type: object
+      description: Vault collection object.
+      properties:
+        pagination:
+          $ref: '#/components/schemas/CursorBasedPagination'
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Vault'
+    VaultOption:
+      title: Vault Option
+      type: object
+      description: Vault option object.
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          description: The name of the option
+        value:
+          type: string
+          description: The value of the option
+        url:
+          $ref: '#/components/schemas/Url'
+    VaultOptionCollection:
+      title: Vault Option Collection
+      type: object
+      description: Vault option collection object.
+      properties:
+        pagination:
+          $ref: '#/components/schemas/CursorBasedPagination'
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/VaultOption'
+    VersionTypeEnum:
+      title: Version Type Enum
+      type: string
+      enum:
+        - None
+        - Latest
+        - LatestReleased
+      description: An enumerated value that specifies the type of version to retrieve.
+    XRefTypeEnum:
+      title: XRef Type Enum
+      type: string
+      enum:
+        - Internal
+        - External
+      description: |-
+        An enumerated value that specifies whether the Component is internal or external in relation to the design file.
+
+        Enum of XRefType
+          Internal = 0,
+          External = 1
+    Session:
+      title: Session
+      type: object
+      description: Session object.
+      properties:
+        id:
+          type: string
+        accessToken:
+          type: string
+          description: The access token
+        vaultInformation:
+          $ref: '#/components/schemas/Vault'
+        userInformation:
+          $ref: '#/components/schemas/User'
+      required:
+        - accessToken
+    Url:
+      type: string
+      description: The relative URL to access this object.
+  securitySchemes:
+    BearerTokenAuth:
+      type: apiKey
+      description: |-
+        Authorization token used by the server to identity the user.
+
+        For sessions created through Vault/WinAuth login, the token passed will have the following format:
+        Ex: Bearer V:e4eeba1f-ffff-49b7-87b3-7525a99596b1
+
+        If AutodeskAccount mapping is enabled for the user and user prefers to use AutodeskAccount credentials when accessing the REST endpoints, the server supports implicit AutodeskId authentication flow wherein the user could pass a three-legged OAuth token (https://aps.autodesk.com/en/docs/oauth/v2/tutorials/get-3-legged-token/) in the Authorization field.
+        Ex: Bearer nk8KaaHhfVcYvDF8obdKfXlMtlMg8Lz2xFG+2NEl37/hZP25WctBzNxMrEme9JRmZ62XzyUFRFQU1z5eJkpsyNZBsenyhPfN6Cd008tde+
+      name: Authorization
+      in: header
+    3-legged:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://developer.api.autodesk.com/authentication/v2/authorize
+          tokenUrl: https://developer.api.autodesk.com/authentication/v2/token
+          refreshUrl: https://developer.api.autodesk.com/authentication/v2/token
+          scopes:
+            data:read: read your data
+            data:write: modify your data
+            data:create: create new data
+      x-authentication_context: user context required
+      description: User context required.
+  parameters:
+    allowSync:
+      in: query
+      name: allowSync
+      required: false
+      schema:
+        type: boolean
+        default: false
+      description: |-
+        In a multi-site environment, this field tells if the file should be synched to the local site.
+
+        ``true``: File is not on the local site, it will be copied to the local site.
+
+        ``false``: (Default) File is not copied to the local site.
+    extendedModels:
+      in: query
+      name: option[extendedModels]
+      description: |
+        ``true``: The response will include additional detailed information for each entity. Examples include:
+
+        - For folders (getFolders), it will return `FolderExtended` instead of `Folder`, which includes additional information such as the parent folder.
+        - For file versions (getFileVersions), it will return `FileVersionExtended` instead of `FileVersion`, which includes extra details like the checkout user ID.
+        - For change orders (getChangeOrders), it will return `ChangeOrderExtended` instead of `ChangeOrder`, which provides further information such as the list of assignees.
+        - For property definitions (getPropertyDefinitions), it will return `PropertyDefinitionExtended` instead of `PropertyDefinition`, which includes extra details like list values.
+
+        ``false``: (Default) The response will include basic information for each entity.
+      required: false
+      schema:
+        type: boolean
+        default: false
+    propDefIds:
+      in: query
+      name: option[propDefIds]
+      description: The properties that need to be returned. property ids separated by ',', e.g. '1,2,3' 'all' means return all properties.
+      required: false
+      schema:
+        type: string
+    limit:
+      in: query
+      name: limit
+      description: |-
+        Specifies the number of results to return per page. Maximum limit is controlled by "Page size conifguration" setting
+        which could be updated using ADMS ("Global Setting" -> "Page size conifguration").
+      required: false
+      schema:
+        type: integer
+        default: 100
+    cursorState:
+      in: query
+      name: cursorState
+      description: Indicates the state of the cursor for pagination. Use this parameter to navigate through paged results
+      required: false
+      schema:
+        type: string
+    q:
+      in: query
+      name: q
+      description: 'The value to use for the search. Based on ''SearchContent'' option, this parameter will either search across all properties  or across all properties and content. Ex: q=Assembly, all objects that contain ''Assembly'' within their properties will be returned. '
+      required: false
+      schema:
+        type: string
+x-use-rst-examples: true
