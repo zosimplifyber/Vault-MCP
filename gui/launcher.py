@@ -188,15 +188,19 @@ class LauncherGUI:
         self._build_ui()
         self._refresh_vault_panel()
         self._refresh_mcp_panel()
+        self._refresh_wrike_panel()
         # Drain the cross-thread queue and re-poll status periodically
         self.root.after(100, self._drain_queue)
         self.root.after(2000, self._periodic_status_refresh)
 
-        # Auto-start the MCP server once the window is up so the user sees
+        # Auto-start the MCP servers once the window is up so the user sees
         # the running state immediately. Delay slightly so the launcher
         # finishes drawing before uvicorn starts spamming the log.
-        if auto_start_mcp and self.mcp_ctrl is not None:
-            self.root.after(300, self._on_mcp_start)
+        if auto_start_mcp:
+            if self.mcp_ctrl is not None:
+                self.root.after(300, self._on_mcp_start)
+            if self.wrike_ctrl is not None:
+                self.root.after(500, self._on_wrike_start)
 
         # Closing the X button while MCP is running would drop any connected
         # MCP clients (Claude Desktop, Claude Code) mid-session. Confirm first.
@@ -252,10 +256,12 @@ class LauncherGUI:
         )
 
     def _on_close(self) -> None:
-        if self.mcp_ctrl is not None and self.mcp_ctrl.is_running():
+        running = [c for c in (self.mcp_ctrl, self.wrike_ctrl)
+                   if c is not None and c.is_running()]
+        if running:
             confirm = messagebox.askyesno(
-                "Stop MCP server?",
-                "The MCP server is running. Closing this window will disconnect "
+                "Stop MCP servers?",
+                "An MCP server is running. Closing this window will disconnect "
                 "any active MCP clients (Claude Desktop, Claude Code).\n\n"
                 "Quit anyway?",
                 parent=self.root,
@@ -263,7 +269,8 @@ class LauncherGUI:
             )
             if not confirm:
                 return
-            self.mcp_ctrl.stop()
+            for c in running:
+                c.stop()
         self.root.destroy()
 
     # ----- UI construction --------------------------------------------------
@@ -272,6 +279,7 @@ class LauncherGUI:
         self._build_header()
         self._build_vault_panel()
         self._build_mcp_panel()
+        self._build_wrike_panel()
         self._build_tools_panel()
         self._build_status_bar()
 
@@ -440,6 +448,64 @@ class LauncherGUI:
             bg=PALE_BLUE, fg=DARK_BLUE,
             font=("Consolas", 9), anchor="w",
         ).grid(row=1, column=1, sticky="w")
+
+    # -- Wrike MCP panel -----------------------------------------------------
+
+    def _build_wrike_panel(self) -> None:
+        card = tk.Frame(self.root, bg=PALE_BLUE,
+                        highlightthickness=1, highlightbackground=GRAY_BDR)
+        card.pack(fill="x", padx=18, pady=8)
+
+        tk.Label(
+            card, text="  WRIKE MCP SERVER",
+            bg=DARK_BLUE, fg=WHITE, font=("Arial", 10, "bold"),
+            anchor="w", padx=10, pady=6,
+        ).pack(fill="x")
+        tk.Frame(card, bg=MID_BLUE, height=2).pack(fill="x")
+
+        body = tk.Frame(card, bg=PALE_BLUE, padx=14, pady=10)
+        body.pack(fill="x")
+
+        status_row = tk.Frame(body, bg=PALE_BLUE)
+        status_row.pack(fill="x")
+        self.wrike_status_dot = tk.Label(
+            status_row, text="●", bg=PALE_BLUE, fg=DARK_GRAY, font=("Arial", 16))
+        self.wrike_status_dot.pack(side="left", padx=(0, 6))
+        self.wrike_status_text = tk.Label(
+            status_row, text="Stopped", bg=PALE_BLUE, fg=DARK_BLUE,
+            font=("Arial", 11, "bold"))
+        self.wrike_status_text.pack(side="left")
+
+        self.wrike_open_btn = self._brand_button(
+            status_row, "Open in browser", self._on_wrike_open_browser, primary=False)
+        self.wrike_open_btn.pack(side="right", padx=(6, 0))
+        self.wrike_open_btn.configure(state="disabled")
+
+        self.wrike_stop_btn = self._brand_button(
+            status_row, "Stop", self._on_wrike_stop, primary=False)
+        self.wrike_stop_btn.pack(side="right", padx=(6, 0))
+        self.wrike_stop_btn.configure(state="disabled")
+
+        self.wrike_start_btn = self._brand_button(
+            status_row, "Start", self._on_wrike_start, primary=True)
+        self.wrike_start_btn.pack(side="right")
+
+        info = tk.Frame(body, bg=PALE_BLUE)
+        info.pack(fill="x", pady=(8, 0))
+        tk.Label(info, text="Endpoint:", bg=PALE_BLUE, fg=DARK_GRAY,
+                 font=("Arial", 9, "bold"), anchor="w", width=12).grid(
+                     row=0, column=0, sticky="w")
+        self.wrike_url_var = tk.StringVar(value="—")
+        tk.Label(info, textvariable=self.wrike_url_var, bg=PALE_BLUE,
+                 fg=DARK_BLUE, font=("Consolas", 9), anchor="w").grid(
+                     row=0, column=1, sticky="w")
+        tk.Label(info, text="SSE:", bg=PALE_BLUE, fg=DARK_GRAY,
+                 font=("Arial", 9, "bold"), anchor="w", width=12).grid(
+                     row=1, column=0, sticky="w")
+        self.wrike_sse_var = tk.StringVar(value="—")
+        tk.Label(info, textvariable=self.wrike_sse_var, bg=PALE_BLUE,
+                 fg=DARK_BLUE, font=("Consolas", 9), anchor="w").grid(
+                     row=1, column=1, sticky="w")
 
     # -- Tools panel ---------------------------------------------------------
 
@@ -640,9 +706,40 @@ class LauncherGUI:
             self.mcp_stop_btn.configure(state="disabled")
             self.mcp_open_btn.configure(state="disabled")
 
+    def _refresh_wrike_panel(self) -> None:
+        if not self.wrike_ctrl:
+            self.wrike_status_dot.configure(fg=DARK_GRAY)
+            self.wrike_status_text.configure(text="Not configured", fg=DARK_GRAY)
+            self.wrike_url_var.set("Add a 'wrike' block with a token to config.json")
+            self.wrike_sse_var.set("—")
+            self.wrike_start_btn.configure(state="disabled")
+            self.wrike_stop_btn.configure(state="disabled")
+            self.wrike_open_btn.configure(state="disabled")
+            return
+
+        self.wrike_url_var.set(self.wrike_ctrl.url)
+        self.wrike_sse_var.set(f"{self.wrike_ctrl.url}/sse")
+
+        if self.wrike_ctrl.is_running():
+            self.wrike_status_dot.configure(fg="#1F6B2E")
+            self.wrike_status_text.configure(text="Running", fg="#1F6B2E")
+            self.wrike_start_btn.configure(state="disabled")
+            self.wrike_stop_btn.configure(state="normal")
+            self.wrike_open_btn.configure(state="normal")
+        else:
+            err = self.wrike_ctrl.last_error
+            label = "Stopped" if not err else f"Error — {err}"
+            color = DARK_GRAY if not err else RUST_ORANGE
+            self.wrike_status_dot.configure(fg=color)
+            self.wrike_status_text.configure(text=label, fg=color)
+            self.wrike_start_btn.configure(state="normal")
+            self.wrike_stop_btn.configure(state="disabled")
+            self.wrike_open_btn.configure(state="disabled")
+
     def _periodic_status_refresh(self) -> None:
         # Cheap — just re-evaluates state already in memory; no Vault calls.
         self._refresh_mcp_panel()
+        self._refresh_wrike_panel()
         self.root.after(2000, self._periodic_status_refresh)
 
     # ----- Cross-thread queue drain ----------------------------------------
@@ -732,6 +829,38 @@ class LauncherGUI:
         if not self.mcp_ctrl or not self.mcp_ctrl.is_running():
             return
         webbrowser.open(self.mcp_ctrl.url)
+
+    # ----- Wrike MCP handlers ----------------------------------------------
+
+    def _on_wrike_start(self) -> None:
+        if not self.wrike_ctrl:
+            messagebox.showwarning(
+                "Wrike not configured",
+                "Add a 'wrike' block with a permanent access token to "
+                "config.json, then restart.", parent=self.root)
+            return
+        ok = self.wrike_ctrl.start()
+        if ok:
+            self.status_var.set(
+                f"Wrike MCP server starting on {self.wrike_ctrl.url}")
+        else:
+            err = self.wrike_ctrl.last_error or "unknown error"
+            self.status_var.set(f"Wrike MCP start failed: {err}")
+            messagebox.showerror("Wrike MCP start failed", err, parent=self.root)
+        self.root.after(400, self._refresh_wrike_panel)
+
+    def _on_wrike_stop(self) -> None:
+        if not self.wrike_ctrl:
+            return
+        self.status_var.set("Stopping Wrike MCP server…")
+        self.wrike_ctrl.stop()
+        self.status_var.set("Wrike MCP server stopped.")
+        self._refresh_wrike_panel()
+
+    def _on_wrike_open_browser(self) -> None:
+        if not self.wrike_ctrl or not self.wrike_ctrl.is_running():
+            return
+        webbrowser.open(self.wrike_ctrl.url)
 
     def _on_open_workflow(self) -> None:
         if not (self.api and self.vault_id and self.access_token):
