@@ -52,25 +52,28 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 class MCPServerController:
-    """Start / stop the SSE MCP server in-process on a background thread.
+    """Start / stop one SSE MCP server in-process on a background thread.
 
-    The server is built around the same `VaultRestAPI` instance the launcher
-    holds, so the MCP tools and any GUI tools share one session and audit
-    trail. `stop()` flips uvicorn's ``should_exit`` flag and joins the
-    worker thread; uvicorn will let in-flight requests finish first.
+    Parametrized by ``server_factory`` — a zero-arg callable returning a built
+    FastMCP instance — so the same controller drives both the Vault server and
+    the Wrike server. ``stop()`` flips uvicorn's ``should_exit`` flag and joins
+    the worker thread; uvicorn will let in-flight requests finish first.
     """
 
     def __init__(
         self,
-        api: VaultRestAPI,
-        vault_id: str,
-        cfg: dict[str, Any],
+        server_factory,
+        host: str,
+        port: int,
+        *,
+        name: str = "MCP",
+        log_level: str = "INFO",
     ) -> None:
-        self.api = api
-        self.vault_id = vault_id
-        self.cfg = cfg
-        self.host = cfg.get("server", {}).get("host", "0.0.0.0")
-        self.port = int(cfg.get("server", {}).get("port", 8765))
+        self.server_factory = server_factory
+        self.host = host
+        self.port = int(port)
+        self.name = name
+        self.log_level = log_level
         self._server = None      # uvicorn.Server when running
         self._thread: Optional[threading.Thread] = None
         self._last_error: Optional[str] = None
@@ -83,17 +86,16 @@ class MCPServerController:
         self._last_error = None
         try:
             import uvicorn
-            from mcp_server import create_mcp_server
         except ImportError as exc:
             self._last_error = f"import failed: {exc}"
             return False
 
         try:
-            mcp = create_mcp_server(api=self.api, vault_id=self.vault_id)
+            mcp = self.server_factory()
             sse_app = mcp.sse_app()
             config = uvicorn.Config(
                 app=sse_app, host=self.host, port=self.port,
-                log_level=self.cfg.get("logging", {}).get("level", "INFO").lower(),
+                log_level=self.log_level.lower(),
                 access_log=True,
                 # Don't let uvicorn re-run logging.dictConfig — app.py already
                 # set up the root logger via basicConfig, and uvicorn's default
@@ -112,9 +114,10 @@ class MCPServerController:
                 asyncio.run(self._server.serve())
             except Exception as exc:  # noqa: BLE001
                 self._last_error = f"server crashed: {exc}"
-                logger.exception("MCP server crashed")
+                logger.exception("%s MCP server crashed", self.name)
 
-        self._thread = threading.Thread(target=runner, daemon=True, name="mcp-sse")
+        self._thread = threading.Thread(
+            target=runner, daemon=True, name=f"{self.name.lower()}-sse")
         self._thread.start()
         return True
 
@@ -176,10 +179,10 @@ class LauncherGUI:
         self._logo_img = None
         self._icon_img = None
 
-        # MCP server controller (created when we have a Vault session)
-        self.mcp_ctrl: Optional[MCPServerController] = None
-        if self.api and self.vault_id:
-            self.mcp_ctrl = MCPServerController(self.api, self.vault_id, self.cfg)
+        # MCP server controllers (created when their config is present)
+        self.mcp_ctrl: Optional[MCPServerController] = self._build_vault_ctrl()
+        # Wrike controller — independent of the Vault session.
+        self.wrike_ctrl: Optional[MCPServerController] = self._build_wrike_ctrl()
 
         self._set_window_icon()
         self._build_ui()
@@ -198,6 +201,55 @@ class LauncherGUI:
         # Closing the X button while MCP is running would drop any connected
         # MCP clients (Claude Desktop, Claude Code) mid-session. Confirm first.
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    # ----- Controller builders ---------------------------------------------
+
+    def _build_vault_ctrl(self) -> Optional["MCPServerController"]:
+        """Build the Vault MCP controller from the live session + cfg['server'].
+        Returns None until a Vault session is attached."""
+        if not (self.api and self.vault_id):
+            return None
+        server_cfg = self.cfg.get("server", {})
+        log_level = self.cfg.get("logging", {}).get("level", "INFO")
+
+        def _vault_factory(api=self.api, vault_id=self.vault_id):
+            from mcp_server import create_mcp_server
+            return create_mcp_server(api=api, vault_id=vault_id)
+
+        return MCPServerController(
+            _vault_factory,
+            server_cfg.get("host", "0.0.0.0"),
+            server_cfg.get("port", 8765),
+            name="Vault",
+            log_level=log_level,
+        )
+
+    def _build_wrike_ctrl(self) -> Optional["MCPServerController"]:
+        """Build the Wrike MCP controller from cfg['wrike'] if a token is set.
+        Independent of the Vault session — returns None when unconfigured."""
+        wrike_cfg = (self.cfg.get("wrike") or {})
+        token = wrike_cfg.get("token")
+        if not token or token.startswith("your-wrike"):
+            return None
+        log_level = self.cfg.get("logging", {}).get("level", "INFO")
+
+        def _wrike_factory(wcfg=wrike_cfg):
+            from wrike_rest_api import WrikeRestAPI, DEFAULT_BASE_URL
+            from wrike_mcp_server import create_wrike_mcp_server
+            wapi = WrikeRestAPI(
+                token=wcfg["token"],
+                base_url=wcfg.get("base_url", DEFAULT_BASE_URL),
+            )
+            return create_wrike_mcp_server(
+                wapi, readonly=bool(wcfg.get("readonly", False)))
+
+        return MCPServerController(
+            _wrike_factory,
+            wrike_cfg.get("host", "0.0.0.0"),
+            wrike_cfg.get("port", 8766),
+            name="Wrike",
+            log_level=log_level,
+        )
 
     def _on_close(self) -> None:
         if self.mcp_ctrl is not None and self.mcp_ctrl.is_running():
@@ -616,9 +668,7 @@ class LauncherGUI:
                 if self.api and self.vault_id:
                     if self.mcp_ctrl and self.mcp_ctrl.is_running():
                         self.mcp_ctrl.stop()
-                    self.mcp_ctrl = MCPServerController(
-                        self.api, self.vault_id, self.cfg,
-                    )
+                    self.mcp_ctrl = self._build_vault_ctrl()
                 self._refresh_mcp_panel()
             else:
                 self.status_var.set(f"Reconnect failed: {err}")
