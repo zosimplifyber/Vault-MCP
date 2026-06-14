@@ -106,6 +106,7 @@ def create_wrike_mcp_server(api: WrikeRestAPI, readonly: bool = False) -> FastMC
         responsibles: Optional[List[str]] = None,
         custom_fields: Optional[List[Dict[str, str]]] = None,
         effort_hours: float = 0,
+        allow_outside: bool = False,
     ) -> str:
         """Create a task in a folder/project. status: Active/Completed/Deferred/
         Cancelled. importance: High/Normal/Low. Dates ISO 'YYYY-MM-DD'.
@@ -115,9 +116,15 @@ def create_wrike_mcp_server(api: WrikeRestAPI, readonly: bool = False) -> FastMC
         from wrike_list_custom_fields. Value formats by field type: Contacts =
         comma-separated contact IDs ("KUAA,KUAB"); Multiple = JSON array string
         ('["Option A"]'); DropDown/Text/Numeric = plain string ("Medium-High").
-        effort_hours: native task Effort (work) in hours; >0 sets it, 0 leaves it."""
+        effort_hours: native task Effort (work) in hours; >0 sets it, 0 leaves it.
+        allow_outside: leave false. If the folder is outside the configured safe
+        zone the call is blocked; only set true after the USER explicitly confirms
+        that out-of-zone creation."""
         if readonly:
             return _readonly_refusal("wrike_create_task")
+        blocked = await api.check_folder_access(folder_id, allow_outside)
+        if blocked:
+            return _fmt(blocked)
         return _fmt(await api.create_task(
             folder_id, title, description=description or None,
             status=status or None, importance=importance or None,
@@ -134,6 +141,7 @@ def create_wrike_mcp_server(api: WrikeRestAPI, readonly: bool = False) -> FastMC
         remove_responsibles: Optional[List[str]] = None,
         custom_fields: Optional[List[Dict[str, str]]] = None,
         effort_hours: float = 0,
+        allow_outside: bool = False,
     ) -> str:
         """Update a task's fields. Only non-empty fields are sent.
 
@@ -141,9 +149,15 @@ def create_wrike_mcp_server(api: WrikeRestAPI, readonly: bool = False) -> FastMC
         only the listed fields change). Get IDs from wrike_list_custom_fields. Value
         formats: Contacts = comma-separated contact IDs; Multiple = JSON array string
         ('["Option A"]'); DropDown/Text/Numeric = plain string.
-        effort_hours: native task Effort (work) in hours; >0 sets it, 0 leaves it."""
+        effort_hours: native task Effort (work) in hours; >0 sets it, 0 leaves it.
+        allow_outside: leave false. If the task is outside the configured safe zone
+        the call is blocked; only set true after the USER explicitly confirms that
+        specific out-of-zone edit."""
         if readonly:
             return _readonly_refusal("wrike_update_task")
+        blocked = await api.check_task_access(task_id, allow_outside)
+        if blocked:
+            return _fmt(blocked)
         return _fmt(await api.update_task(
             task_id, title=title or None, description=description or None,
             status=status or None, importance=importance or None,
@@ -156,6 +170,7 @@ def create_wrike_mcp_server(api: WrikeRestAPI, readonly: bool = False) -> FastMC
     @mcp.tool()
     async def wrike_set_task_fields(
         task_id: str, fields: Dict[str, Any], effort_hours: float = 0,
+        allow_outside: bool = False,
     ) -> str:
         """Set task custom fields BY NAME — auto-resolves field IDs and
         validates/normalizes values, so you do NOT need to call
@@ -171,9 +186,13 @@ def create_wrike_mcp_server(api: WrikeRestAPI, readonly: bool = False) -> FastMC
         effort_hours: native task Effort in hours (>0 sets it).
 
         If any value can't be resolved, NOTHING is written and the error lists
-        valid options. For native title/status/dates/assignee use wrike_update_task."""
+        valid options. For native title/status/dates/assignee use wrike_update_task.
+        allow_outside: leave false unless the USER explicitly confirms an out-of-zone edit."""
         if readonly:
             return _readonly_refusal("wrike_set_task_fields")
+        blocked = await api.check_task_access(task_id, allow_outside)
+        if blocked:
+            return _fmt(blocked)
         return _fmt(await api.set_task_fields_by_name(
             task_id, fields, effort_hours=effort_hours or None))
 
@@ -181,10 +200,15 @@ def create_wrike_mcp_server(api: WrikeRestAPI, readonly: bool = False) -> FastMC
     async def wrike_move_task(
         task_id: str, add_parents: Optional[List[str]] = None,
         remove_parents: Optional[List[str]] = None,
+        allow_outside: bool = False,
     ) -> str:
-        """Move a task between folders by adding/removing parent folder IDs."""
+        """Move a task between folders by adding/removing parent folder IDs.
+        allow_outside: leave false unless the USER confirms moving an out-of-zone task."""
         if readonly:
             return _readonly_refusal("wrike_move_task")
+        blocked = await api.check_task_access(task_id, allow_outside)
+        if blocked:
+            return _fmt(blocked)
         return _fmt(await api.move_task(
             task_id, add_parents=add_parents or None,
             remove_parents=remove_parents or None))
@@ -199,10 +223,15 @@ def create_wrike_mcp_server(api: WrikeRestAPI, readonly: bool = False) -> FastMC
         return _fmt(await api.get_comments(task_id))
 
     @mcp.tool()
-    async def wrike_create_comment(task_id: str, text: str) -> str:
-        """Post a comment to a task."""
+    async def wrike_create_comment(task_id: str, text: str,
+                                   allow_outside: bool = False) -> str:
+        """Post a comment to a task. allow_outside: leave false unless the USER
+        confirms commenting on an out-of-zone task."""
         if readonly:
             return _readonly_refusal("wrike_create_comment")
+        blocked = await api.check_task_access(task_id, allow_outside)
+        if blocked:
+            return _fmt(blocked)
         return _fmt(await api.create_comment(task_id, text))
 
     @mcp.tool()
@@ -213,10 +242,15 @@ def create_wrike_mcp_server(api: WrikeRestAPI, readonly: bool = False) -> FastMC
     @mcp.tool()
     async def wrike_create_timelog(
         task_id: str, hours: float, tracked_date: str, comment: str = "",
+        allow_outside: bool = False,
     ) -> str:
-        """Add a time entry to a task. tracked_date ISO 'YYYY-MM-DD'."""
+        """Add a time entry to a task. tracked_date ISO 'YYYY-MM-DD'.
+        allow_outside: leave false unless the USER confirms an out-of-zone task."""
         if readonly:
             return _readonly_refusal("wrike_create_timelog")
+        blocked = await api.check_task_access(task_id, allow_outside)
+        if blocked:
+            return _fmt(blocked)
         return _fmt(await api.create_timelog(
             task_id, hours, tracked_date, comment=comment or None))
 

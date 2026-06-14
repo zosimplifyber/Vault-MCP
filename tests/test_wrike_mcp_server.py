@@ -21,6 +21,13 @@ class FakeAPI:
         self.calls.append(("create_task", a, k))
         return {"error": False, "status_code": 200, "data": {"data": ["t"]}}
 
+    # Folder guard is disabled in these tests (no allowlist) -> always allow.
+    async def check_task_access(self, task_id, allow_outside=False):
+        return None
+
+    async def check_folder_access(self, folder_id, allow_outside=False):
+        return None
+
 
 async def _tools(mcp):
     return {t.name: t for t in await mcp.list_tools()}

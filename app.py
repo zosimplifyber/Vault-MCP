@@ -201,7 +201,8 @@ async def run_sse_headless(cfg: dict) -> None:
         from wrike_rest_api import WrikeRestAPI, DEFAULT_BASE_URL
         from wrike_mcp_server import create_wrike_mcp_server
         wapi = WrikeRestAPI(token=token,
-                            base_url=wrike_cfg.get("base_url", DEFAULT_BASE_URL))
+                            base_url=wrike_cfg.get("base_url", DEFAULT_BASE_URL),
+                            allowed_folders=wrike_cfg.get("allowed_folders") or None)
         wmcp = create_wrike_mcp_server(
             wapi, readonly=bool(wrike_cfg.get("readonly", False)))
         whost = wrike_cfg.get("host", host)

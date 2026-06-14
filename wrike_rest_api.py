@@ -41,11 +41,17 @@ class WrikeRestAPI:
         token: str,
         base_url: str = DEFAULT_BASE_URL,
         transport: Optional[httpx.AsyncBaseTransport] = None,
+        allowed_folders: Optional[List[str]] = None,
     ) -> None:
         self.token = token
         self.base_url = base_url.rstrip("/")
         # transport is injected by tests (httpx.MockTransport); None in prod.
         self._transport = transport
+        # Folder guard: if set, writes are blocked for tasks located exclusively
+        # outside these folders (and their subfolders) unless explicitly allowed.
+        self.allowed_folders = list(allowed_folders) if allowed_folders else []
+        self._allowed_set: Optional[set] = None      # folder ids in the safe zone
+        self._membership: Dict[str, bool] = {}        # task_id -> inside safe zone
 
     # ------------------------------------------------------------------
     # Encoding / parsing helpers
@@ -143,6 +149,80 @@ class WrikeRestAPI:
             page_params = {"nextPageToken": token}
         return {"error": False, "status_code": 200,
                 "data": {"data": collected, "count": len(collected)}}
+
+    # ------------------------------------------------------------------
+    # Folder guard (write protection)
+    # ------------------------------------------------------------------
+
+    async def _ensure_allowed_set(self) -> set:
+        """Expand allowed_folders to include all descendant folders, once.
+        Empty when no allowlist is configured (guard disabled)."""
+        if self._allowed_set is not None:
+            return self._allowed_set
+        if not self.allowed_folders:
+            self._allowed_set = set()
+            return self._allowed_set
+        f = await self._request("GET", "/folders")
+        folders = {x["id"]: x for x in (f["data"].get("data", []))} \
+            if not f["error"] and isinstance(f["data"], dict) else {}
+        allowed, stack = set(), list(self.allowed_folders)
+        while stack:
+            fid = stack.pop()
+            if fid in allowed:
+                continue
+            allowed.add(fid)
+            fo = folders.get(fid)
+            if fo:
+                stack.extend(fo.get("childIds", []))
+        self._allowed_set = allowed
+        return allowed
+
+    def _blocked(self, what: str) -> Dict[str, Any]:
+        zone = ", ".join(self.allowed_folders)
+        return {"error": True, "status_code": 403, "data": (
+            f"Blocked by folder guard: {what} is located exclusively OUTSIDE the "
+            f"allowed folders ({zone}) and their subfolders. Ask the user to "
+            "confirm this specific out-of-zone edit, then retry the call with "
+            "allow_outside=true.")}
+
+    async def prime_folder_guard(self, task_ids: List[str]) -> None:
+        """Pre-populate the membership cache for many tasks in one batched GET,
+        so subsequent guarded writes don't each fetch parents."""
+        if not self.allowed_folders or not task_ids:
+            return
+        allowed = await self._ensure_allowed_set()
+        for i in range(0, len(task_ids), 90):
+            chunk = task_ids[i:i + 90]
+            res = await self._request("GET", "/tasks/" + ",".join(chunk))
+            for t in (res["data"].get("data", []) if not res["error"] else []):
+                parents = set(t.get("parentIds", [])) | set(t.get("superParentIds", []))
+                self._membership[t["id"]] = bool(parents & allowed)
+
+    async def check_task_access(
+        self, task_id: str, allow_outside: bool = False
+    ) -> Optional[Dict[str, Any]]:
+        """Return a refusal dict if writing this task is blocked, else None."""
+        if not self.allowed_folders or allow_outside:
+            return None
+        allowed = await self._ensure_allowed_set()
+        inside = self._membership.get(task_id)
+        if inside is None:
+            t = await self._request("GET", f"/tasks/{task_id}")
+            rows = t["data"].get("data", []) if not t["error"] and isinstance(t["data"], dict) else []
+            task = rows[0] if rows else {}
+            parents = set(task.get("parentIds", [])) | set(task.get("superParentIds", []))
+            inside = bool(parents & allowed)
+            self._membership[task_id] = inside
+        return None if inside else self._blocked(f"task {task_id}")
+
+    async def check_folder_access(
+        self, folder_id: str, allow_outside: bool = False
+    ) -> Optional[Dict[str, Any]]:
+        """Guard for create-in-folder: the target folder must be in the zone."""
+        if not self.allowed_folders or allow_outside:
+            return None
+        allowed = await self._ensure_allowed_set()
+        return None if folder_id in allowed else self._blocked(f"folder {folder_id}")
 
     # ------------------------------------------------------------------
     # Read

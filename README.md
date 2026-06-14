@@ -83,6 +83,7 @@ To enable it, add a `wrike` block to `config.json`:
 | `wrike.host` | Bind address for the Wrike SSE server (`0.0.0.0` = all interfaces). |
 | `wrike.port` | Port for the Wrike SSE server (default `8766` — distinct from the Vault server's `8765`). |
 | `wrike.readonly` | When `true`, the write tools (`wrike_create_task`, `wrike_update_task`, `wrike_move_task`, `wrike_create_comment`, `wrike_create_timelog`) refuse and make no API call. Read tools are unaffected. |
+| `wrike.allowed_folders` | Optional **folder allowlist** (list of folder IDs). When set, write tools refuse to edit a task located *exclusively outside* these folders and their subfolders — the safe zone. Empty `[]` (or absent) disables the guard. To permit a one-off out-of-zone edit, the user confirms and the tool is re-called with `allow_outside=true`. |
 
 If no `wrike` block (or token) is present, the launcher shows the Wrike panel as **Not configured** and only the Vault server runs — no error.
 

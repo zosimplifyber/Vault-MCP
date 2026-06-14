@@ -243,6 +243,7 @@ class LauncherGUI:
             wapi = WrikeRestAPI(
                 token=wcfg["token"],
                 base_url=wcfg.get("base_url", DEFAULT_BASE_URL),
+                allowed_folders=wcfg.get("allowed_folders") or None,
             )
             return create_wrike_mcp_server(
                 wapi, readonly=bool(wcfg.get("readonly", False)))
