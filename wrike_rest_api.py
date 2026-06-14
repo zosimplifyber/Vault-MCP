@@ -283,6 +283,56 @@ class WrikeRestAPI:
             fields["effortAllocation"] = ea
         return await self._request("PUT", f"/tasks/{task_id}", data=fields)
 
+    async def set_task_fields_by_name(
+        self,
+        task_id: str,
+        fields: Dict[str, Any],
+        effort_hours: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Set custom fields by human NAME (resolving ids + validating/normalizing
+        values) and optionally native effort. Atomic-ish: if any value can't be
+        resolved, nothing is written. Returns the update result with an 'applied'
+        summary of what was set."""
+        from wrike_fields import find_field_def, resolve_field_values
+
+        defs_res = await self.list_custom_fields()
+        if defs_res["error"]:
+            return defs_res
+        field_defs = (defs_res.get("data") or {}).get("data", [])
+
+        # Fetch contacts only when a requested field is a Contacts-type field.
+        need_contacts = any(
+            (find_field_def(field_defs, n) or {}).get("type") == "Contacts"
+            for n in fields)
+        contacts: List[Dict[str, Any]] = []
+        me_id = ""
+        if need_contacts:
+            cres = await self.list_contacts()
+            if not cres["error"]:
+                contacts = (cres.get("data") or {}).get("data", [])
+            mres = await self.list_contacts(me=True)
+            if not mres["error"]:
+                rows = (mres.get("data") or {}).get("data", [])
+                me_id = rows[0]["id"] if rows else ""
+
+        custom_fields, errors, applied = resolve_field_values(
+            field_defs, contacts, me_id, fields)
+        if errors:
+            return {"error": True, "status_code": 0,
+                    "data": {"message": "No changes written — some fields could "
+                             "not be resolved.", "errors": errors,
+                             "would_apply": applied}}
+        if not custom_fields and effort_hours is None:
+            return {"error": True, "status_code": 0,
+                    "data": "No resolvable fields or effort provided."}
+
+        result = await self.update_task(
+            task_id, custom_fields=custom_fields or None, effort_hours=effort_hours)
+        if not result["error"]:
+            result["data"] = {"applied": applied, "effort_hours": effort_hours,
+                              "task": result["data"]}
+        return result
+
     async def move_task(
         self,
         task_id: str,

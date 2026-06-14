@@ -275,8 +275,9 @@ Served by the second server on port `8766` (the `wrike` MCP entry). All IDs are 
 | `wrike_list_projects` | Folders that are projects |
 | `wrike_get_subtasks` | Subtasks of a task |
 | **Write** (refused when `readonly: true`) | |
-| `wrike_create_task` | Create a task in a folder/project |
-| `wrike_update_task` | Update title/description/status/importance/dates/responsibles |
+| `wrike_create_task` | Create a task in a folder/project (incl. custom fields by ID + effort) |
+| `wrike_update_task` | Update title/description/status/importance/dates/responsibles/custom fields/effort |
+| `wrike_set_task_fields` | **Set custom fields BY NAME** (auto-resolves IDs, validates dropdown options, resolves contacts) + effort |
 | `wrike_move_task` | Add/remove a task's parent folders |
 | `wrike_create_comment` | Post a comment to a task |
 | `wrike_create_timelog` | Add a time-tracking entry to a task |

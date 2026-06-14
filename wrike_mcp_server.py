@@ -154,6 +154,30 @@ def create_wrike_mcp_server(api: WrikeRestAPI, readonly: bool = False) -> FastMC
             effort_hours=effort_hours or None))
 
     @mcp.tool()
+    async def wrike_set_task_fields(
+        task_id: str, fields: Dict[str, Any], effort_hours: float = 0,
+    ) -> str:
+        """Set task custom fields BY NAME — auto-resolves field IDs and
+        validates/normalizes values, so you do NOT need to call
+        wrike_list_custom_fields first.
+
+        fields: {field name -> value}, e.g.
+          {"Contractor": "Xometry", "Uncertainty Tier": "High", "Owner": "me"}
+        - DropDown / Multiple values match the field's allowed options
+          (case-insensitive, partial ok: "Xometry" -> "Xometry (Job Shop)").
+        - Contacts fields ("Owner") resolve names/emails to contact IDs;
+          "me" = token owner. Multiple values: comma-separated string or a list.
+        - Other types (Text/Numeric/Currency/Date/Checkbox) pass through.
+        effort_hours: native task Effort in hours (>0 sets it).
+
+        If any value can't be resolved, NOTHING is written and the error lists
+        valid options. For native title/status/dates/assignee use wrike_update_task."""
+        if readonly:
+            return _readonly_refusal("wrike_set_task_fields")
+        return _fmt(await api.set_task_fields_by_name(
+            task_id, fields, effort_hours=effort_hours or None))
+
+    @mcp.tool()
     async def wrike_move_task(
         task_id: str, add_parents: Optional[List[str]] = None,
         remove_parents: Optional[List[str]] = None,
