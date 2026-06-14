@@ -206,6 +206,17 @@ class WrikeRestAPI:
     # Write
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _effort_allocation(hours: Optional[float]) -> Optional[Dict[str, Any]]:
+        """Build a Wrike effortAllocation object from a duration in hours.
+        hours>0 -> a 'Basic' total-effort allocation (totalEffort is minutes);
+        hours==0 -> clears effort ('None'); None -> leave effort untouched."""
+        if hours is None:
+            return None
+        if hours <= 0:
+            return {"mode": "None"}
+        return {"mode": "Basic", "totalEffort": int(round(hours * 60))}
+
     async def create_task(
         self,
         folder_id: str,
@@ -216,6 +227,8 @@ class WrikeRestAPI:
         start_date: Optional[str] = None,
         due_date: Optional[str] = None,
         responsibles: Optional[List[str]] = None,
+        custom_fields: Optional[List[Dict[str, str]]] = None,
+        effort_hours: Optional[float] = None,
     ) -> Dict[str, Any]:
         fields: Dict[str, Any] = {
             "title": title, "description": description,
@@ -229,6 +242,11 @@ class WrikeRestAPI:
             if due_date:
                 dates["due"] = due_date
             fields["dates"] = dates
+        if custom_fields:
+            fields["customFields"] = custom_fields
+        ea = self._effort_allocation(effort_hours)
+        if ea is not None:
+            fields["effortAllocation"] = ea
         return await self._request("POST", f"/folders/{folder_id}/tasks", data=fields)
 
     async def update_task(
@@ -242,6 +260,8 @@ class WrikeRestAPI:
         due_date: Optional[str] = None,
         add_responsibles: Optional[List[str]] = None,
         remove_responsibles: Optional[List[str]] = None,
+        custom_fields: Optional[List[Dict[str, str]]] = None,
+        effort_hours: Optional[float] = None,
     ) -> Dict[str, Any]:
         fields: Dict[str, Any] = {
             "title": title, "description": description,
@@ -256,6 +276,11 @@ class WrikeRestAPI:
             if due_date:
                 dates["due"] = due_date
             fields["dates"] = dates
+        if custom_fields:
+            fields["customFields"] = custom_fields
+        ea = self._effort_allocation(effort_hours)
+        if ea is not None:
+            fields["effortAllocation"] = ea
         return await self._request("PUT", f"/tasks/{task_id}", data=fields)
 
     async def move_task(

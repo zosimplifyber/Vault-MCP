@@ -104,17 +104,27 @@ def create_wrike_mcp_server(api: WrikeRestAPI, readonly: bool = False) -> FastMC
         folder_id: str, title: str, description: str = "", status: str = "",
         importance: str = "", start_date: str = "", due_date: str = "",
         responsibles: Optional[List[str]] = None,
+        custom_fields: Optional[List[Dict[str, str]]] = None,
+        effort_hours: float = 0,
     ) -> str:
         """Create a task in a folder/project. status: Active/Completed/Deferred/
         Cancelled. importance: High/Normal/Low. Dates ISO 'YYYY-MM-DD'.
-        responsibles: list of contact IDs."""
+        responsibles: list of contact IDs.
+
+        custom_fields: list of {"id": <customFieldId>, "value": <string>} — get IDs
+        from wrike_list_custom_fields. Value formats by field type: Contacts =
+        comma-separated contact IDs ("KUAA,KUAB"); Multiple = JSON array string
+        ('["Option A"]'); DropDown/Text/Numeric = plain string ("Medium-High").
+        effort_hours: native task Effort (work) in hours; >0 sets it, 0 leaves it."""
         if readonly:
             return _readonly_refusal("wrike_create_task")
         return _fmt(await api.create_task(
             folder_id, title, description=description or None,
             status=status or None, importance=importance or None,
             start_date=start_date or None, due_date=due_date or None,
-            responsibles=responsibles or None))
+            responsibles=responsibles or None,
+            custom_fields=custom_fields or None,
+            effort_hours=effort_hours or None))
 
     @mcp.tool()
     async def wrike_update_task(
@@ -122,8 +132,16 @@ def create_wrike_mcp_server(api: WrikeRestAPI, readonly: bool = False) -> FastMC
         importance: str = "", start_date: str = "", due_date: str = "",
         add_responsibles: Optional[List[str]] = None,
         remove_responsibles: Optional[List[str]] = None,
+        custom_fields: Optional[List[Dict[str, str]]] = None,
+        effort_hours: float = 0,
     ) -> str:
-        """Update a task's fields. Only non-empty fields are sent."""
+        """Update a task's fields. Only non-empty fields are sent.
+
+        custom_fields: list of {"id": <customFieldId>, "value": <string>} (merges —
+        only the listed fields change). Get IDs from wrike_list_custom_fields. Value
+        formats: Contacts = comma-separated contact IDs; Multiple = JSON array string
+        ('["Option A"]'); DropDown/Text/Numeric = plain string.
+        effort_hours: native task Effort (work) in hours; >0 sets it, 0 leaves it."""
         if readonly:
             return _readonly_refusal("wrike_update_task")
         return _fmt(await api.update_task(
@@ -131,7 +149,9 @@ def create_wrike_mcp_server(api: WrikeRestAPI, readonly: bool = False) -> FastMC
             status=status or None, importance=importance or None,
             start_date=start_date or None, due_date=due_date or None,
             add_responsibles=add_responsibles or None,
-            remove_responsibles=remove_responsibles or None))
+            remove_responsibles=remove_responsibles or None,
+            custom_fields=custom_fields or None,
+            effort_hours=effort_hours or None))
 
     @mcp.tool()
     async def wrike_move_task(

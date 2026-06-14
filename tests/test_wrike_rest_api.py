@@ -151,6 +151,40 @@ async def test_create_task_posts_form_fields():
     assert "responsibles=%5B%22KUAA%22%5D" in store["body"]
 
 
+async def test_update_task_sends_custom_fields_and_effort():
+    store = {}
+    api = make_api(_record_handler(store))
+    await api.update_task(
+        "IEAA1",
+        custom_fields=[{"id": "CF1", "value": "Medium-High"}],
+        effort_hours=8)
+    body = store["body"]
+    assert "customFields=" in body
+    assert "CF1" in body and "Medium-High" in body
+    # effortAllocation -> 8h == 480 minutes, mode Basic
+    assert "effortAllocation=" in body
+    assert "480" in body
+    assert "Basic" in body
+
+
+def test_effort_allocation_helper_minutes_and_clear():
+    from wrike_rest_api import WrikeRestAPI as W
+    assert W._effort_allocation(None) is None
+    assert W._effort_allocation(0) == {"mode": "None"}
+    assert W._effort_allocation(8) == {"mode": "Basic", "totalEffort": 480}
+    assert W._effort_allocation(0.25) == {"mode": "Basic", "totalEffort": 15}
+
+
+async def test_create_task_passes_custom_fields_through():
+    store = {}
+    api = make_api(_record_handler(store))
+    await api.create_task(
+        "IEAF9", "t",
+        custom_fields=[{"id": "CFOWNER", "value": "KUASHWPR"}])
+    assert "customFields=" in store["body"]
+    assert "CFOWNER" in store["body"] and "KUASHWPR" in store["body"]
+
+
 async def test_create_comment_posts_text():
     store = {}
     api = make_api(_record_handler(store))
