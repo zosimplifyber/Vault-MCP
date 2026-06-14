@@ -58,6 +58,34 @@ cp config.json.example config.json
 | `logging.level` | Log verbosity: `DEBUG`, `INFO`, `WARNING`, or `ERROR` |
 | `logging.file` | Path to the rotating log file (relative to project root) |
 
+### Wrike MCP server (optional second server)
+
+This project also bundles a **second, independent MCP server for [Wrike](https://www.wrike.com)** that runs on its own port alongside the Vault server. It exposes Wrike tasks, folders/projects, comments, timelogs, and metadata as `wrike_*` tools. It is managed from the same launcher dashboard (its own **WRIKE MCP SERVER** panel) and is independent of the Vault session — it runs even if Vault sign-in fails.
+
+To enable it, add a `wrike` block to `config.json`:
+
+```json
+{
+    "wrike": {
+        "token": "your-wrike-permanent-access-token-here",
+        "base_url": "https://www.wrike.com/api/v4",
+        "host": "0.0.0.0",
+        "port": 8766,
+        "readonly": false
+    }
+}
+```
+
+| Field | Description |
+|---|---|
+| `wrike.token` | Wrike **permanent access token**. Create one at Wrike → **Apps & Integrations → API** → *Permanent access token* → **Create token**. |
+| `wrike.base_url` | API base URL. Default `https://www.wrike.com/api/v4` (US data center). EU-hosted accounts use `https://app-eu.wrike.com/api/v4`. |
+| `wrike.host` | Bind address for the Wrike SSE server (`0.0.0.0` = all interfaces). |
+| `wrike.port` | Port for the Wrike SSE server (default `8766` — distinct from the Vault server's `8765`). |
+| `wrike.readonly` | When `true`, the write tools (`wrike_create_task`, `wrike_update_task`, `wrike_move_task`, `wrike_create_comment`, `wrike_create_timelog`) refuse and make no API call. Read tools are unaffected. |
+
+If no `wrike` block (or token) is present, the launcher shows the Wrike panel as **Not configured** and only the Vault server runs — no error.
+
 ## Running the Server
 
 ### Recommended: launcher dashboard (default)
@@ -116,15 +144,22 @@ In `~/.claude.json` (user-level) or `.claude/settings.json` (project-level):
     "vault": {
       "type": "sse",
       "url": "http://127.0.0.1:8765/sse"
+    },
+    "wrike": {
+      "type": "sse",
+      "url": "http://127.0.0.1:8766/sse"
     }
   }
 }
 ```
 
+The `wrike` entry is the second, independent server — include it only if you've configured a `wrike` block in `config.json`. Both servers are served by the same running launcher.
+
 Or via CLI:
 
 ```bash
 claude mcp add --transport sse vault http://127.0.0.1:8765/sse
+claude mcp add --transport sse wrike http://127.0.0.1:8766/sse
 ```
 
 ### Claude Desktop
@@ -226,6 +261,35 @@ The single visible-to-the-user 401 entry above is harmless — the retry on the 
 | **Files / utilities** | |
 | `vault_watermark_pdfs_in_folder` | Download every PDF in a Vault folder, watermark it, save locally |
 
+## Available Wrike Tools
+
+Served by the second server on port `8766` (the `wrike` MCP entry). All IDs are Wrike permalink IDs (tasks `IEAA…`, folders `IEAF…`, contacts `KUAA…`). Use `wrike_list_folders` / `wrike_search_tasks` to discover IDs first.
+
+| Tool | Description |
+|---|---|
+| **Read** | |
+| `wrike_search_tasks` | List/filter tasks (optional title, status, folder scope) |
+| `wrike_get_task` | Full detail for one task |
+| `wrike_list_folders` | The folder/project tree |
+| `wrike_get_folder` | One folder/project's detail |
+| `wrike_list_projects` | Folders that are projects |
+| `wrike_get_subtasks` | Subtasks of a task |
+| **Write** (refused when `readonly: true`) | |
+| `wrike_create_task` | Create a task in a folder/project |
+| `wrike_update_task` | Update title/description/status/importance/dates/responsibles |
+| `wrike_move_task` | Add/remove a task's parent folders |
+| `wrike_create_comment` | Post a comment to a task |
+| `wrike_create_timelog` | Add a time-tracking entry to a task |
+| **Comments / timelogs (read)** | |
+| `wrike_get_comments` | Comments on a task |
+| `wrike_get_timelogs` | Time entries on a task |
+| **Metadata** | |
+| `wrike_list_contacts` | Users/contacts in the account |
+| `wrike_get_account` | Account info |
+| `wrike_list_custom_fields` | Custom field definitions |
+| `wrike_list_workflows` | Workflows and their statuses |
+| `wrike_list_access_roles` | Access roles |
+
 ## Known issues / caveats
 
 ### `vault_submit_job` and the `*.create.*` job family
@@ -260,6 +324,8 @@ Vault-MCP/
 ├── app.py                      # Entry point — config, logging, mode dispatch (sse / stdio / gui / workflow)
 ├── mcp_server.py               # FastMCP tool definitions (REST tools + SOAP write paths)
 ├── vault_rest_api.py           # Async Vault REST client
+├── wrike_mcp_server.py         # FastMCP tool definitions for the Wrike server (wrike_* tools)
+├── wrike_rest_api.py           # Async Wrike API v4 client (second, independent MCP server)
 ├── bom_purchasing.py           # Purchasing-sheet generation engine
 ├── mfg_package.py              # Manufacturing-order package builder engine (PDF + STEP + Excel BOM)
 ├── pdf_watermark.py            # PDF watermark helper (RELEASED / FOR REVIEW overlays)
