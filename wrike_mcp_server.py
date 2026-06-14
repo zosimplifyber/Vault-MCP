@@ -1,0 +1,198 @@
+"""
+Wrike MCP Server
+Exposes Wrike API v4 operations as MCP tools via SSE transport.
+Built by create_wrike_mcp_server(); run as a second, independent server
+alongside the Vault MCP server (see gui/launcher.py / app.py).
+"""
+
+import json
+import logging
+from typing import Any, Dict, List, Optional
+
+from mcp.server.fastmcp import FastMCP
+
+from wrike_rest_api import WrikeRestAPI
+
+logger = logging.getLogger(__name__)
+
+
+def create_wrike_mcp_server(api: WrikeRestAPI, readonly: bool = False) -> FastMCP:
+    """Build a FastMCP instance wired to a WrikeRestAPI client.
+
+    ``readonly`` makes the create/update/move/comment/timelog tools refuse.
+    """
+    mcp = FastMCP(
+        name="wrike-mcp",
+        instructions=(
+            "MCP server for Wrike (project management). Authentication uses a "
+            "permanent access token from config.json. Tools are prefixed "
+            "'wrike_'. IDs are Wrike permalink IDs (e.g. tasks 'IEAA…', folders "
+            "'IEAF…', contacts 'KUAA…'). Use wrike_list_folders / "
+            "wrike_search_tasks to discover IDs before reading or writing."
+        ),
+    )
+
+    def _fmt(result: Dict[str, Any]) -> str:
+        return json.dumps(result, indent=2, default=str)
+
+    def _readonly_refusal(op: str) -> str:
+        return _fmt({
+            "error": True,
+            "data": (f"Refused: '{op}' is a write operation and the Wrike MCP "
+                     "server is in read-only mode (set wrike.readonly=false in "
+                     "config.json to enable writes)."),
+        })
+
+    # ------------------------------------------------------------------
+    # Read
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    async def wrike_get_account() -> str:
+        """Get Wrike account information (id, name, date format, subscription)."""
+        return _fmt(await api.get_account())
+
+    @mcp.tool()
+    async def wrike_list_contacts(me_only: bool = False) -> str:
+        """List contacts/users in the account. Set me_only=true for just the
+        token owner."""
+        return _fmt(await api.list_contacts(me=me_only))
+
+    @mcp.tool()
+    async def wrike_search_tasks(
+        title: str = "", status: str = "", folder_id: str = "",
+        page_size: int = 100,
+    ) -> str:
+        """Search/list tasks. Optional title substring, status
+        (Active/Completed/Deferred/Cancelled), and folder_id to scope to one
+        folder/project."""
+        return _fmt(await api.search_tasks(
+            title=title or None, status=status or None,
+            folder_id=folder_id or None, page_size=page_size))
+
+    @mcp.tool()
+    async def wrike_get_task(task_id: str) -> str:
+        """Get full detail for one task by its Wrike ID."""
+        return _fmt(await api.get_task(task_id))
+
+    @mcp.tool()
+    async def wrike_list_folders() -> str:
+        """List the folder/project tree (ids, titles, parents)."""
+        return _fmt(await api.list_folders())
+
+    @mcp.tool()
+    async def wrike_get_folder(folder_id: str) -> str:
+        """Get one folder/project's detail by ID."""
+        return _fmt(await api.get_folder(folder_id))
+
+    @mcp.tool()
+    async def wrike_list_projects() -> str:
+        """List folders that are projects (have a project owner/status/dates)."""
+        return _fmt(await api.list_projects())
+
+    @mcp.tool()
+    async def wrike_get_subtasks(task_id: str) -> str:
+        """List the subtasks of a task."""
+        return _fmt(await api.get_subtasks(task_id))
+
+    # ------------------------------------------------------------------
+    # Write
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    async def wrike_create_task(
+        folder_id: str, title: str, description: str = "", status: str = "",
+        importance: str = "", start_date: str = "", due_date: str = "",
+        responsibles: Optional[List[str]] = None,
+    ) -> str:
+        """Create a task in a folder/project. status: Active/Completed/Deferred/
+        Cancelled. importance: High/Normal/Low. Dates ISO 'YYYY-MM-DD'.
+        responsibles: list of contact IDs."""
+        if readonly:
+            return _readonly_refusal("wrike_create_task")
+        return _fmt(await api.create_task(
+            folder_id, title, description=description or None,
+            status=status or None, importance=importance or None,
+            start_date=start_date or None, due_date=due_date or None,
+            responsibles=responsibles or None))
+
+    @mcp.tool()
+    async def wrike_update_task(
+        task_id: str, title: str = "", description: str = "", status: str = "",
+        importance: str = "", start_date: str = "", due_date: str = "",
+        add_responsibles: Optional[List[str]] = None,
+        remove_responsibles: Optional[List[str]] = None,
+    ) -> str:
+        """Update a task's fields. Only non-empty fields are sent."""
+        if readonly:
+            return _readonly_refusal("wrike_update_task")
+        return _fmt(await api.update_task(
+            task_id, title=title or None, description=description or None,
+            status=status or None, importance=importance or None,
+            start_date=start_date or None, due_date=due_date or None,
+            add_responsibles=add_responsibles or None,
+            remove_responsibles=remove_responsibles or None))
+
+    @mcp.tool()
+    async def wrike_move_task(
+        task_id: str, add_parents: Optional[List[str]] = None,
+        remove_parents: Optional[List[str]] = None,
+    ) -> str:
+        """Move a task between folders by adding/removing parent folder IDs."""
+        if readonly:
+            return _readonly_refusal("wrike_move_task")
+        return _fmt(await api.move_task(
+            task_id, add_parents=add_parents or None,
+            remove_parents=remove_parents or None))
+
+    # ------------------------------------------------------------------
+    # Comments / timelogs
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    async def wrike_get_comments(task_id: str) -> str:
+        """Get comments on a task."""
+        return _fmt(await api.get_comments(task_id))
+
+    @mcp.tool()
+    async def wrike_create_comment(task_id: str, text: str) -> str:
+        """Post a comment to a task."""
+        if readonly:
+            return _readonly_refusal("wrike_create_comment")
+        return _fmt(await api.create_comment(task_id, text))
+
+    @mcp.tool()
+    async def wrike_get_timelogs(task_id: str) -> str:
+        """Get time-tracking entries on a task."""
+        return _fmt(await api.get_timelogs(task_id))
+
+    @mcp.tool()
+    async def wrike_create_timelog(
+        task_id: str, hours: float, tracked_date: str, comment: str = "",
+    ) -> str:
+        """Add a time entry to a task. tracked_date ISO 'YYYY-MM-DD'."""
+        if readonly:
+            return _readonly_refusal("wrike_create_timelog")
+        return _fmt(await api.create_timelog(
+            task_id, hours, tracked_date, comment=comment or None))
+
+    # ------------------------------------------------------------------
+    # Metadata
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    async def wrike_list_custom_fields() -> str:
+        """List custom field definitions in the account."""
+        return _fmt(await api.list_custom_fields())
+
+    @mcp.tool()
+    async def wrike_list_workflows() -> str:
+        """List workflows and their custom statuses."""
+        return _fmt(await api.list_workflows())
+
+    @mcp.tool()
+    async def wrike_list_access_roles() -> str:
+        """List access roles defined in the account."""
+        return _fmt(await api.list_access_roles())
+
+    return mcp
