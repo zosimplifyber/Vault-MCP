@@ -168,6 +168,22 @@ def create_wrike_mcp_server(api: WrikeRestAPI, readonly: bool = False) -> FastMC
             effort_hours=effort_hours or None))
 
     @mcp.tool()
+    async def wrike_create_folder(
+        parent_id: str, title: str, description: str = "",
+        allow_outside: bool = False,
+    ) -> str:
+        """Create a subfolder / project folder under parent_id.
+        allow_outside: leave false unless the USER confirms creating outside the
+        safe zone."""
+        if readonly:
+            return _readonly_refusal("wrike_create_folder")
+        blocked = await api.check_folder_access(parent_id, allow_outside)
+        if blocked:
+            return _fmt(blocked)
+        return _fmt(await api.create_folder(parent_id, title,
+                                            description=description or None))
+
+    @mcp.tool()
     async def wrike_set_task_fields(
         task_id: str, fields: Dict[str, Any], effort_hours: float = 0,
         allow_outside: bool = False,

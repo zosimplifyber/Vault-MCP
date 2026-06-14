@@ -423,6 +423,15 @@ class WrikeRestAPI:
             "addParents": add_parents, "removeParents": remove_parents,
         })
 
+    async def create_folder(
+        self, parent_id: str, title: str, description: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Create a subfolder (or project folder) under ``parent_id``."""
+        data: Dict[str, Any] = {"title": title}
+        if description:
+            data["description"] = description
+        return await self._request("POST", f"/folders/{parent_id}/folders", data=data)
+
     # ------------------------------------------------------------------
     # Comments / timelogs
     # ------------------------------------------------------------------

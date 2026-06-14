@@ -185,6 +185,15 @@ async def test_create_task_passes_custom_fields_through():
     assert "CFOWNER" in store["body"] and "KUASHWPR" in store["body"]
 
 
+async def test_create_folder_posts_title_to_parent():
+    store = {}
+    api = make_api(_record_handler(store))
+    await api.create_folder("IEAF1", "Step Test")
+    assert store["method"] == "POST"
+    assert store["path"].endswith("/folders/IEAF1/folders")
+    assert "title=Step+Test" in store["body"]
+
+
 async def test_create_comment_posts_text():
     store = {}
     api = make_api(_record_handler(store))
