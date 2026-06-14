@@ -5,6 +5,13 @@
         "password": "your-password-here",
         "database": "Vault"
     },
+    "wrike": {
+        "token": "your-wrike-permanent-access-token-here",
+        "base_url": "https://www.wrike.com/api/v4",
+        "host": "0.0.0.0",
+        "port": 8766,
+        "readonly": false
+    },
     "server": {
         "host": "0.0.0.0",
         "port": 8765
