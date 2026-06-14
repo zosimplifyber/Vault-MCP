@@ -186,17 +186,37 @@ async def run_sse_headless(cfg: dict) -> None:
     logger.info("  Vault database: %s", vault_cfg["database"])
     logger.info("  Vault server  : %s", vault_cfg["servername"])
 
-    sse_app = mcp.sse_app()
-    config = uvicorn.Config(
-        app=sse_app,
-        host=host,
-        port=port,
-        log_level=cfg.get("logging", {}).get("level", "INFO").lower(),
-        access_log=True,
+    log_level = cfg.get("logging", {}).get("level", "INFO").lower()
+    servers = [uvicorn.Server(uvicorn.Config(
+        app=mcp.sse_app(), host=host, port=port,
+        log_level=log_level, access_log=True,
         log_config=None,  # use parent's logging setup; see launcher.py for context
-    )
-    server = uvicorn.Server(config)
-    await server.serve()
+    ))]
+
+    # Wrike MCP server — independent second server on its own port. Started
+    # only when a permanent token is configured; absence is not an error.
+    wrike_cfg = cfg.get("wrike") or {}
+    token = wrike_cfg.get("token")
+    if token and not token.startswith("your-wrike"):
+        from wrike_rest_api import WrikeRestAPI, DEFAULT_BASE_URL
+        from wrike_mcp_server import create_wrike_mcp_server
+        wapi = WrikeRestAPI(token=token,
+                            base_url=wrike_cfg.get("base_url", DEFAULT_BASE_URL))
+        wmcp = create_wrike_mcp_server(
+            wapi, readonly=bool(wrike_cfg.get("readonly", False)))
+        whost = wrike_cfg.get("host", host)
+        wport = int(wrike_cfg.get("port", 8766))
+        logger.info("Starting Wrike MCP Server (SSE, headless)")
+        logger.info("  SSE endpoint  : http://%s:%d/sse",
+                    "localhost" if whost == "0.0.0.0" else whost, wport)
+        servers.append(uvicorn.Server(uvicorn.Config(
+            app=wmcp.sse_app(), host=whost, port=wport,
+            log_level=log_level, access_log=True, log_config=None,
+        )))
+    else:
+        logger.info("Wrike MCP server not started (no wrike.token in config).")
+
+    await asyncio.gather(*(s.serve() for s in servers))
 
 
 def run_sse(cfg: dict) -> None:
