@@ -334,3 +334,30 @@ def test_coerce_normalizes_float_row_order_from_txt(tmp_path):
     assert list(out["Row Order"]) == ["1", "14", "14.1"]   # not "14.0"
     children = bp.build_children_map(out)
     assert children[1] == [2]   # "14" is the parent of "14.1"
+
+
+def test_row_order_tenth_child_not_collapsed(tmp_path):
+    lines = ["Item\tPart Number\tQTY\tDescription", "2\tSF-2\t1\tassy"]
+    for k in range(1, 11):
+        lines.append(f"2.{k}\tSF-2{k}\t1\tchild{k}")
+    (tmp_path / "bom.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    df = bp.read_bom_file(str(tmp_path / "bom.txt"))
+    out, err = bp.coerce_bom_dataframe(df)
+    assert err is None
+    assert list(out["Row Order"]) == ["2"] + [f"2.{k}" for k in range(1, 11)]
+    children = bp.build_children_map(out)
+    assert children[0] == list(range(1, 11))   # all 10 distinct children under "2"
+
+
+def test_unmatched_note_dedupes_repeated_part_numbers(tmp_path):
+    import openpyxl
+    df = _hier_df()
+    dup = df[df["Number"] == "SF-21"].copy()
+    dup["Row Order"] = "3"
+    df2 = pd.concat([df, dup], ignore_index=True)
+    df2.loc[df2["Number"] == "SF-21", "Vendor"] = None
+    out = tmp_path / "s.xlsx"
+    bp.build_purchasing_sheet(df2, str(out), "ASM")
+    ws = openpyxl.load_workbook(str(out))["Purchasing"]
+    text = "\n".join(str(c.value) for col in ws.iter_cols() for c in col if c.value)
+    assert "Unmatched (1)" in text   # de-duped: SF-21 counted once, not twice

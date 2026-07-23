@@ -402,6 +402,7 @@ def build_purchasing_sheet(
     df: pd.DataFrame, output_path: str, assembly_number: str
 ) -> str:
     """Write the formatted purchasing workbook (Purchasing + By Vendor tabs)."""
+    df = df.reset_index(drop=True)
     wb = Workbook()
     ws = wb.active
     ws.title = "Purchasing"
@@ -482,7 +483,9 @@ def build_purchasing_sheet(
             fill = PatternFill("solid", fgColor=UNMATCHED_FILL)
             num_val = row.get("Number")
             if pd.notna(num_val):
-                unmatched_nums.append(str(num_val))
+                num_str = str(num_val)
+                if num_str not in unmatched_nums:
+                    unmatched_nums.append(num_str)
 
         for ci, col_name in enumerate(ALL_COLUMNS, 1):
             c = ws.cell(row=ri, column=ci)
@@ -890,16 +893,22 @@ def coerce_bom_dataframe(
 def read_bom_file(bom_file_path: str) -> pd.DataFrame:
     """Read a BOM export into a DataFrame by extension.
 
-    .csv → comma; .txt → tab-delimited (Inventor's text export); .xls/.xlsx →
-    first sheet. Raises ValueError on an unsupported extension.
+    .csv -> comma; .txt -> tab-delimited (Inventor's text export); .xls/.xlsx ->
+    first sheet. Identity/hierarchy columns are forced to string so a
+    numeric-looking value ("14", "2.10", an all-numeric part number) is never
+    coerced to float — float coercion collapses "2.10" and "2.1" to the same
+    value and breaks the dotted-depth BOM hierarchy parser. Raises ValueError on
+    an unsupported extension.
     """
+    str_cols = {c: str for c in
+                ("Item", "Row Order", "Position Number", "Part Number", "Number")}
     ext = os.path.splitext(bom_file_path)[1].lower()
     if ext == ".csv":
-        return pd.read_csv(bom_file_path)
+        return pd.read_csv(bom_file_path, dtype=str_cols)
     if ext == ".txt":
-        return pd.read_csv(bom_file_path, sep="\t")
+        return pd.read_csv(bom_file_path, sep="\t", dtype=str_cols)
     if ext in (".xls", ".xlsx"):
-        return pd.read_excel(bom_file_path, sheet_name=0)
+        return pd.read_excel(bom_file_path, sheet_name=0, dtype=str_cols)
     raise ValueError(f"Unsupported file type: {ext}. Use .xlsx, .xls, .csv, or .txt.")
 
 
