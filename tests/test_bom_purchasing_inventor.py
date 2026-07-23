@@ -180,3 +180,19 @@ def test_assembly_detected_by_children_without_category(tmp_path):
     cost_col = header.index("Cost Per") + 1
     # Row 5 is "2" (assembly) → Cost Per is a SUM formula over its child rows.
     assert str(ws.cell(5, cost_col).value).startswith("=SUM(")
+
+
+def test_assembly_costs_sheet_lists_assemblies_and_grand_total(tmp_path):
+    import openpyxl
+    out = tmp_path / "s.xlsx"
+    bp.build_purchasing_sheet(_hier_df(), str(out), "ASM")
+    wb = openpyxl.load_workbook(str(out))
+    assert "Assembly Costs" in wb.sheetnames
+    ws = wb["Assembly Costs"]
+    cells = [c.value for col in ws.iter_cols() for c in col]
+    text = "\n".join(str(v) for v in cells if v is not None)
+    assert "SF-2" in text                     # the one assembly is listed
+    assert "GRAND TOTAL" in text
+    # grand total is a formula referencing the Purchasing sheet
+    assert any(isinstance(v, str) and v.startswith("=") and "Purchasing!" in v
+               for v in cells)
