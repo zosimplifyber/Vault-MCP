@@ -1,0 +1,47 @@
+Item	Part Number	Thumbnail	BOM Structure	Unit QTY	QTY	Stock Number	Description	REV
+1	SF-001580	(NonDisplayable)	Normal	Each	2		kft90 lower hot press adapter plate	
+2	SF-001803	(NonDisplayable)	Normal	Each	1		kft90 generic bladder tool	1
+2.9	SF-001555	(NonDisplayable)	Normal	Each	1		soft press base plate gasket	1
+2.1	SF-001542	(NonDisplayable)	Normal	Each	1		soft press base plate	1
+2.5	SF-001540	(NonDisplayable)	Normal	Each	2		soft press alignment receiver (r)	1
+2.4	SF-001541	(NonDisplayable)	Normal	Each	2		soft press alignment receiver (l)	1
+2.3	SF-001515	(NonDisplayable)	Normal	Each	4		schunk clamping pins	1
+2.8	SF-001885	(NonDisplayable)	Purchased	Each	8		hexagon socket head cap screw	1
+2.7	SF-001554	(NonDisplayable)	Normal	Each	2		2 mm wide, 1 mm id buna-n o-ring	1
+2.2	SF-001883	(NonDisplayable)	Purchased	Each	2			1
+2.6	SF-001884	(NonDisplayable)	Purchased	Each	8			1
+3	SF-001709	(NonDisplayable)	Normal	Each	2		kft 90 vacuum head reused parts	1
+4	SF-001728	(NonDisplayable)	Normal	Each	1		kft 90 upper hot tool reused assembly	2
+4.1	SF-001545	(NonDisplayable)	Normal	Each	1		temperature probe - kft 90 - original - lower mold	2
+4.4	SF-001532	(NonDisplayable)	Normal	Each	4		ktf 90 - original - upper hot press - locating pin	2
+4.2	SF-001769	(NonDisplayable)	Normal	Each	1		kft 90 - original - upper heater core simplified	1
+4.3	Hotpress_Heating_Plate_92034699	(NonDisplayable)	Normal	Each	1		STEP AP214	ANY
+5	SF-001705	(NonDisplayable)	Normal	Each	1		kft 90 transfer station assembly	1
+6	SF-001708	(NonDisplayable)	Normal	Each	2		kft 90 lower hot tool reused assembly	2
+6.1	SF-001545	(NonDisplayable)	Normal	Each	1		temperature probe - kft 90 - original - lower mold	2
+6.4	SF-001550	(NonDisplayable)	Normal	Each	1		kft 90 - original - lower heater core simplified	2
+6.2	SF-001539	(NonDisplayable)	Normal	Each	2		alignment pin receiver (l)	2
+6.3	SF-001538	(NonDisplayable)	Normal	Each	2		alignment pin - receiver - right - kft 90	2
+6.5	Hotpress_Heating_Plate_92034699	(NonDisplayable)	Normal	Each	1		STEP AP214	ANY
+7	SF-001706	(NonDisplayable)	Normal	Each	1		kft 90 cutting station assembly	1
+8	SF-001649	(NonDisplayable)	Purchased	Each	120		iso 4762 m6 x 20	2
+9	SF-001655	(NonDisplayable)	Purchased	Each	39		hexagon socket head cap screw	2
+10	ISO 4762 - M6 x 55 - Stainless Steel	(NonDisplayable)	Purchased	Each	4		hexagon socket head cap screw	1
+11	SF-001742	(NonDisplayable)	Purchased	Each	39		heavy-vibration-resistant spring lock washers for socket head screws	A
+12	SF-001658	(NonDisplayable)	Purchased	Each	124		heavy-vibration-resistant spring lock washers for socket head screws	2
+13	SF-001730	(NonDisplayable)	Normal	Each	1		bmw kft90 hot a mold adapter plate	
+14	CD-001621	(NonDisplayable)	Normal	Each	1		bmw kft90 bladder assembly	1
+14.3	SF-001649	(NonDisplayable)	Purchased	Each	6		iso 4762 m6 x 20	2
+14.1	SF-001940	(NonDisplayable)	Normal	Each	1		bmw kft90 bladder adapter plate	1
+14.2	CD-001623	(NonDisplayable)	Normal	Each	1		bmw kft90 bladder	
+15	SF-001938	(NonDisplayable)	Normal	Each	2		bmw kft 90 vacuum insert assembly	1
+15.3	SF-001916	(NonDisplayable)	Purchased	Each	9		washers, iso 7089	1
+15.5	SF-001936	(NonDisplayable)	Purchased	Each	9		hexagon socket countersunk head cap screws	1
+15.2	SF-001922	(NonDisplayable)	Normal	Each	1		bmw vacuum screen backer	1
+15.1	SF-001921	(NonDisplayable)	Normal	Each	1		bmw vacuum screen	1
+15.6	SF-001937	(NonDisplayable)	Normal	Each	1		bmw vacuum deckle plate	1
+15.4	ISO 4032 M5	(NonDisplayable)	Purchased	Each	9		Hexagon nuts, style 1 - Product grades A and B	1
+16	CD-001566	(NonDisplayable)	Normal	Each	1		bmw hot press part	1
+17	SF-001919	(NonDisplayable)	Normal	Each	2		bmw hot b mold	1
+18	SF-001918	(NonDisplayable)	Normal	Each	1		bmw hot a mold	2
+19	SF-001924	(NonDisplayable)	Normal	Each	2		bmw forming part	1

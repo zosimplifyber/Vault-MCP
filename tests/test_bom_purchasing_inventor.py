@@ -281,3 +281,56 @@ def test_assembly_buy_row_is_not_flagged_unmatched(tmp_path):
     assert "Unmatched" not in text
     # and SF-2's row (row 5) is not amber-highlighted
     assert not (ws.cell(5, num_col).fill.fgColor.rgb or "").endswith(bp.UNMATCHED_FILL)
+
+
+def test_cd001608_end_to_end(tmp_path, monkeypatch):
+    import openpyxl
+    fixture = os.path.join(ROOT, "tests", "fixtures", "CD-001608-inventor-bom.txt")
+    assert os.path.isfile(fixture)
+
+    # Hermetic: no reference file → everything unmatched, costs blank.
+    monkeypatch.setattr(bp, "find_purchased_items_file", lambda: None)
+
+    result = bp.generate_from_file(fixture, "CD-001608", str(tmp_path))
+    assert not result.get("error"), result
+
+    wb = openpyxl.load_workbook(result["output_path"])
+    assert {"Purchasing", "By Vendor", "Assembly Costs"}.issubset(wb.sheetnames)
+
+    n_rows = len(bp.read_bom_file(fixture))     # 46 BOM lines
+    ws = wb["Purchasing"]
+    header = [c.value for c in ws[3]]
+    num_col = header.index("Number") + 1
+    qty_col = header.index("Item Qty") + 1
+    numbers = [ws.cell(r, num_col).value for r in range(4, 4 + n_rows)]
+    qtys = [ws.cell(r, qty_col).value for r in range(4, 4 + n_rows)]
+
+    assert "SF-001580" in numbers                # real part number populated
+    assert 120 in qtys                           # a real quantity from QTY
+    # a library part with no SF number still appears (will be unmatched)
+    assert any(isinstance(n, str) and n.startswith("ISO 4762") for n in numbers)
+
+    acost = "\n".join(
+        str(c.value) for col in wb["Assembly Costs"].iter_cols()
+        for c in col if c.value
+    )
+    assert "CD-001621" in acost and "GRAND TOTAL" in acost
+
+
+def test_coerce_normalizes_float_row_order_from_txt(tmp_path):
+    # A .txt whose Item column is all single-level numerics parses as float64;
+    # ensure Row Order comes out as clean strings so hierarchy parsing works.
+    p = tmp_path / "bom.txt"
+    p.write_text(
+        "Item\tPart Number\tQTY\tDescription\n"
+        "1\tSF-1\t2\tleaf\n"
+        "14\tSF-2\t1\tassy\n"
+        "14.1\tSF-3\t8\tchild\n",
+        encoding="utf-8",
+    )
+    df = bp.read_bom_file(str(p))
+    out, err = bp.coerce_bom_dataframe(df)
+    assert err is None
+    assert list(out["Row Order"]) == ["1", "14", "14.1"]   # not "14.0"
+    children = bp.build_children_map(out)
+    assert children[1] == [2]   # "14" is the parent of "14.1"

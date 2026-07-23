@@ -864,6 +864,18 @@ def coerce_bom_dataframe(
 
     df = df.reset_index(drop=True)
 
+    # Row Order can arrive as float64: pandas infers a column of "1"/"2.1"
+    # numeric strings as floats when the BOM has no multi-level (x.y.z) rows,
+    # which corrupts the dotted-depth hierarchy parser ("14" -> "14.0", landing
+    # a parent at the same depth as its "14.1" child). Normalize to clean strings.
+    def _clean_row_order(v):
+        if pd.isna(v):
+            return v
+        if isinstance(v, float) and v.is_integer():
+            return str(int(v))
+        return str(v)
+    df["Row Order"] = df["Row Order"].map(_clean_row_order)
+
     blank_number = df["Number"].isna() | (df["Number"].astype(str).str.strip() == "")
     if blank_number.all():
         return df, ("No part numbers found — the BOM needs a 'Part Number' "
