@@ -724,7 +724,9 @@ def coerce_bom_dataframe(
         rename: dict[str, str] = {}
         for inv_name, canon in INVENTOR_FIELD_MAP.items():
             src = lower.get(inv_name.lower())
-            if src is not None and canon not in rename.values():
+            if (src is not None
+                    and canon not in rename.values()
+                    and canon not in df.columns):
                 rename[src] = canon
         df = df.rename(columns=rename)
         if "Source" in df.columns:
@@ -742,7 +744,8 @@ def coerce_bom_dataframe(
     if blank_number.all():
         return df, ("No part numbers found — the BOM needs a 'Part Number' "
                     "(Inventor) or 'Number' (Vault) column.")
-    if df["Item Qty"].isna().all():
+    blank_qty = df["Item Qty"].isna() | (df["Item Qty"].astype(str).str.strip() == "")
+    if blank_qty.all():
         return df, ("No quantities found — the BOM needs a 'QTY' (Inventor) "
                     "or 'Item Qty' (Vault) column.")
     return df, None

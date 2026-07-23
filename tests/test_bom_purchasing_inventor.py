@@ -57,3 +57,28 @@ def test_coerce_errors_when_number_mixes_none_and_blank():
     })
     out, err = bp.coerce_bom_dataframe(df)
     assert err is not None and "part number" in err.lower()
+
+
+def test_coerce_does_not_crash_on_both_number_and_part_number():
+    # Inventor branch triggers (missing most canonical cols) but Number already
+    # exists alongside its synonym Part Number -> must not create a duplicate col.
+    df = pd.DataFrame({
+        "Number": ["SF-1", "SF-2"],
+        "Part Number": ["X-1", "X-2"],
+        "QTY": [1, 2],
+        "Description": ["a", "b"],
+    })
+    out, err = bp.coerce_bom_dataframe(df)
+    assert err is None
+    assert list(out["Number"]) == ["SF-1", "SF-2"]      # canonical wins
+    assert list(out["Item Qty"]) == [1, 2]
+
+
+def test_coerce_errors_when_all_quantities_blank():
+    df = pd.DataFrame({
+        "Part Number": ["A", "B"],
+        "QTY": ["", ""],
+        "Description": ["a", "b"],
+    })
+    out, err = bp.coerce_bom_dataframe(df)
+    assert err is not None and "quantit" in err.lower()
