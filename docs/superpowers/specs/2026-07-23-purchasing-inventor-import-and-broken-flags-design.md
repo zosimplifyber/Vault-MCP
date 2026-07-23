@@ -126,6 +126,19 @@ GRAND TOTAL — <assembly_number>                   $  3,140.00
 - `<assembly_number>` is the value already passed into the generator (drives the
   `{assembly_number}-PurchasingExport.xlsx` filename); not read from the BOM.
 
+**Unmatched parts must be shown (not hidden):**
+
+- In the **line-item sheet**, any row whose `Number` is not found in the
+  reference file is **visually flagged** — the row (or its empty cost cells) is
+  shaded/highlighted so a `$0` line reads as "no price found," not "free."
+- A visible **Unmatched list** — part number, description, extended qty — is
+  written (a labeled block/section on the sheet or a small dedicated sheet),
+  along with the count. This mirrors the `unmatched_parts` already returned in
+  the result payload.
+- Any **Assembly Costs** total that includes unmatched descendants is marked
+  (e.g. a trailing `*` + footnote "includes unpriced parts") so a partial
+  subtotal is not mistaken for complete.
+
 ### 1.4 Export reminder (shown in the tool)
 
 Surface this guidance in the purchasing GUI (a dialog before file selection)
