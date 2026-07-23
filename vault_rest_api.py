@@ -105,8 +105,12 @@ class VaultRestAPI:
         json_data: Optional[Dict[str, Any]],
         extra_headers: Optional[Dict[str, str]],
         timeout: float,
+        include_auth: bool = True,
     ) -> Dict[str, Any]:
-        headers = self._auth_headers()
+        headers = (
+            self._auth_headers() if include_auth
+            else {"Content-Type": "application/json"}
+        )
         if extra_headers:
             headers.update(extra_headers)
 
@@ -160,11 +164,13 @@ class VaultRestAPI:
         json_data: Optional[Dict[str, Any]] = None,
         extra_headers: Optional[Dict[str, str]] = None,
         timeout: float = 30.0,
+        include_auth: bool = True,
     ) -> Dict[str, Any]:
         result = await self._send_once(
             method, endpoint,
             params=params, json_data=json_data,
             extra_headers=extra_headers, timeout=timeout,
+            include_auth=include_auth,
         )
 
         # Auto-reauth on 401: Vault returns 401 + errorCode 8000 ("do not
@@ -189,6 +195,7 @@ class VaultRestAPI:
                     method, endpoint,
                     params=params, json_data=json_data,
                     extra_headers=extra_headers, timeout=timeout,
+                    include_auth=include_auth,
                 )
 
         result.pop("_token_used", None)
@@ -234,6 +241,11 @@ class VaultRestAPI:
                     "appCode": app_code,
                 }
             },
+            # Sign-in is unauthenticated. Never attach a (possibly expired)
+            # Bearer token: the Vault server 401s the sign-in itself when a
+            # stale Authorization header rides along — which is exactly the
+            # auto-reauth-on-401 case, where the cached token has just expired.
+            include_auth=False,
         )
         if not result["error"]:
             data = result["data"]
