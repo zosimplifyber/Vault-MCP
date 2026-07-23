@@ -751,6 +751,22 @@ def coerce_bom_dataframe(
     return df, None
 
 
+def read_bom_file(bom_file_path: str) -> pd.DataFrame:
+    """Read a BOM export into a DataFrame by extension.
+
+    .csv → comma; .txt → tab-delimited (Inventor's text export); .xls/.xlsx →
+    first sheet. Raises ValueError on an unsupported extension.
+    """
+    ext = os.path.splitext(bom_file_path)[1].lower()
+    if ext == ".csv":
+        return pd.read_csv(bom_file_path)
+    if ext == ".txt":
+        return pd.read_csv(bom_file_path, sep="\t")
+    if ext in (".xls", ".xlsx"):
+        return pd.read_excel(bom_file_path, sheet_name=0)
+    raise ValueError(f"Unsupported file type: {ext}. Use .xlsx, .xls, .csv, or .txt.")
+
+
 def generate_from_file(
     bom_file_path: str,
     assembly_number: str,

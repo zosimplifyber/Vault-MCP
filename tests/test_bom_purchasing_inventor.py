@@ -82,3 +82,17 @@ def test_coerce_errors_when_all_quantities_blank():
     })
     out, err = bp.coerce_bom_dataframe(df)
     assert err is not None and "quantit" in err.lower()
+
+
+def test_read_bom_file_reads_tab_delimited_txt(tmp_path):
+    p = tmp_path / "bom.txt"
+    p.write_text(
+        "Item\tPart Number\tQTY\tDescription\n"
+        "1\tSF-001580\t2\tadapter plate\n"
+        "2.1\tSF-001885\t8\thex screw\n",
+        encoding="utf-8",
+    )
+    df = bp.read_bom_file(str(p))
+    assert list(df.columns[:4]) == ["Item", "Part Number", "QTY", "Description"]
+    assert len(df) == 2
+    assert str(df.iloc[1]["Part Number"]) == "SF-001885"
