@@ -278,11 +278,56 @@ class LauncherGUI:
 
     def _build_ui(self) -> None:
         self._build_header()
+        # Status bar first so its bottom strip is reserved before the
+        # scrollable area claims the remaining space with expand=True.
+        self._build_status_bar()
+        self._build_scroll_area()
+        # Panels build into self.content (the scrollable inner frame) so the
+        # whole dashboard is reachable by scrolling without maximizing.
         self._build_vault_panel()
         self._build_mcp_panel()
         self._build_wrike_panel()
         self._build_tools_panel()
-        self._build_status_bar()
+
+    def _build_scroll_area(self) -> None:
+        """Vertically-scrollable container for the panels.
+
+        A ``tk.Canvas`` holds an inner ``self.content`` frame; the panels parent
+        to that frame instead of the root. The header stays pinned at the top
+        and the status bar at the bottom — only the panels scroll."""
+        outer = tk.Frame(self.root, bg=LIGHT_GRAY)
+        outer.pack(fill="both", expand=True)
+
+        canvas = tk.Canvas(outer, bg=LIGHT_GRAY, highlightthickness=0)
+        vsb = tk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=vsb.set)
+        vsb.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+
+        content = tk.Frame(canvas, bg=LIGHT_GRAY)
+        win_id = canvas.create_window((0, 0), window=content, anchor="nw")
+        self.content = content
+        self._scroll_canvas = canvas
+
+        def _on_content_configure(_event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+        content.bind("<Configure>", _on_content_configure)
+
+        def _on_canvas_configure(event):
+            # Match the inner frame to the canvas width, and when the window is
+            # taller than the panels, stretch it so the TOOLS card's white
+            # background fills the viewport instead of leaving a gap.
+            canvas.itemconfigure(win_id, width=event.width)
+            canvas.itemconfigure(
+                win_id, height=max(content.winfo_reqheight(), event.height))
+        canvas.bind("<Configure>", _on_canvas_configure)
+
+        # Mouse-wheel scrolling, bound only while the pointer is over the area
+        # so child tool windows keep their own wheel behavior.
+        def _on_wheel(event):
+            canvas.yview_scroll(int(-event.delta / 120), "units")
+        canvas.bind("<Enter>", lambda _e: canvas.bind_all("<MouseWheel>", _on_wheel))
+        canvas.bind("<Leave>", lambda _e: canvas.unbind_all("<MouseWheel>"))
 
     def _build_header(self) -> None:
         header = tk.Frame(self.root, bg=DARK_BLUE, height=72)
@@ -321,7 +366,7 @@ class LauncherGUI:
     # -- Vault panel ---------------------------------------------------------
 
     def _build_vault_panel(self) -> None:
-        card = tk.Frame(self.root, bg=PALE_BLUE,
+        card = tk.Frame(self.content, bg=PALE_BLUE,
                         highlightthickness=1, highlightbackground=GRAY_BDR)
         card.pack(fill="x", padx=18, pady=(14, 8))
 
@@ -376,7 +421,7 @@ class LauncherGUI:
     # -- MCP panel -----------------------------------------------------------
 
     def _build_mcp_panel(self) -> None:
-        card = tk.Frame(self.root, bg=PALE_BLUE,
+        card = tk.Frame(self.content, bg=PALE_BLUE,
                         highlightthickness=1, highlightbackground=GRAY_BDR)
         card.pack(fill="x", padx=18, pady=8)
 
@@ -453,7 +498,7 @@ class LauncherGUI:
     # -- Wrike MCP panel -----------------------------------------------------
 
     def _build_wrike_panel(self) -> None:
-        card = tk.Frame(self.root, bg=PALE_BLUE,
+        card = tk.Frame(self.content, bg=PALE_BLUE,
                         highlightthickness=1, highlightbackground=GRAY_BDR)
         card.pack(fill="x", padx=18, pady=8)
 
@@ -511,7 +556,7 @@ class LauncherGUI:
     # -- Tools panel ---------------------------------------------------------
 
     def _build_tools_panel(self) -> None:
-        card = tk.Frame(self.root, bg=WHITE,
+        card = tk.Frame(self.content, bg=WHITE,
                         highlightthickness=1, highlightbackground=GRAY_BDR)
         card.pack(fill="both", expand=True, padx=18, pady=(8, 14))
 
