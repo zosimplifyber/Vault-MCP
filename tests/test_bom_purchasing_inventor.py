@@ -196,3 +196,49 @@ def test_assembly_costs_sheet_lists_assemblies_and_grand_total(tmp_path):
     # grand total is a formula referencing the Purchasing sheet
     assert any(isinstance(v, str) and v.startswith("=") and "Purchasing!" in v
                for v in cells)
+
+
+def _purchasing_col_letter(ws_purchasing, name):
+    from openpyxl.utils import get_column_letter
+    header = [c.value for c in ws_purchasing[3]]
+    return get_column_letter(header.index(name) + 1)
+
+
+def test_assembly_costs_formulas_reference_exact_cells(tmp_path):
+    import openpyxl
+    # Two top-level assemblies (A, B), each with one nested child.
+    df = pd.DataFrame({
+        "Number":                 ["A", "A1", "B", "B1"],
+        "Row Order":              ["1", "1.1", "2", "2.1"],
+        "Position Number":        [None, None, None, None],
+        "Item Qty":               [1, 3, 2, 4],
+        "Units":                  ["Each", "Each", "Each", "Each"],
+        "Category Name":          [None, None, None, None],
+        "Revision":               [None, None, None, None],
+        "State":                  [None, None, None, None],
+        "Title (Item,CO)":        [None, None, None, None],
+        "Description (Item,CO)":  ["asmA", "childA", "asmB", "childB"],
+        "Source":                 ["Make", "Buy", "Make", "Buy"],
+        "Material":               [None, None, None, None],
+        "Material Finish":        [None, None, None, None],
+        "Vendor":                 [None, "V", None, "V"],
+        "Cost Per":               [None, 1.0, None, 2.0],
+        "Vendor Number":          [None, None, None, None],
+        "HS/HTS Code":            [None, None, None, None],
+        "Shipping":               [None, None, None, None],
+        "Tax/Tariff":             [None, None, None, None],
+        "Lead Time (Business Days)": [None, None, None, None],
+    })
+    out = tmp_path / "s.xlsx"
+    bp.build_purchasing_sheet(df, str(out), "ASM")
+    wb = openpyxl.load_workbook(str(out))
+    pur = wb["Purchasing"]
+    cost_col = _purchasing_col_letter(pur, "Cost Per")
+    sub_col = _purchasing_col_letter(pur, "Sub Total")
+    ac = wb["Assembly Costs"]
+    # Purchasing data starts at row 4: A->row4, B->row6 (positional index * 1 + 4).
+    # Assembly Costs data starts at row 3 (its own HDR=2). Two assemblies: A, B.
+    assert ac.cell(3, 4).value == f"=Purchasing!{cost_col}4"   # A cost-to-make-one
+    assert ac.cell(4, 4).value == f"=Purchasing!{cost_col}6"   # B cost-to-make-one
+    # Grand total row = 5; sums exactly the two top-level Sub Total cells.
+    assert ac.cell(5, 4).value == f"=Purchasing!{sub_col}4+Purchasing!{sub_col}6"

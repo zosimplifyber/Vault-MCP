@@ -527,7 +527,7 @@ def build_purchasing_sheet(
         )
 
     _build_vendor_tab(wb, df)
-    _build_assembly_costs_tab(wb, df)
+    _build_assembly_costs_tab(wb, df, children_map, FIRST_DATA_ROW)
     wb.save(output_path)
     return output_path
 
@@ -632,18 +632,16 @@ def _build_vendor_tab(wb: Workbook, df: pd.DataFrame) -> None:
         )
 
 
-def _build_assembly_costs_tab(wb: Workbook, df: pd.DataFrame) -> None:
+def _build_assembly_costs_tab(
+    wb: Workbook, df: pd.DataFrame, children_map: dict, first_data_row: int,
+) -> None:
     """Add the 'Assembly Costs' summary — each sub-assembly's cost-to-make-one
     (references the Purchasing sheet's roll-up formulas) plus a grand total for
     the whole build."""
-    children_map = build_children_map(df)
     all_children = {ci for kids in children_map.values() for ci in kids}
     assemblies = [i for i in range(len(df)) if children_map.get(i)]
     top_level = [i for i in range(len(df)) if i not in all_children]
 
-    # Purchasing-sheet geometry (must match build_purchasing_sheet).
-    HDR_ROW = 3
-    FIRST_DATA_ROW = HDR_ROW + 1
     cost_col = get_column_letter(ALL_COLUMNS.index("Cost Per") + 1)
     sub_col = get_column_letter(ALL_COLUMNS.index("Sub Total") + 1)
 
@@ -660,6 +658,7 @@ def _build_assembly_costs_tab(wb: Workbook, df: pd.DataFrame) -> None:
     c.fill = PatternFill("solid", fgColor=DARK_BLUE)
     c.alignment = Alignment(horizontal="center", vertical="center")
     ws.row_dimensions[1].height = 40
+    _add_logo(ws)
 
     HDR = 2
     for ci, name in enumerate(cols, 1):
@@ -668,13 +667,14 @@ def _build_assembly_costs_tab(wb: Workbook, df: pd.DataFrame) -> None:
         cc.fill = PatternFill("solid", fgColor=DARK_BLUE)
         cc.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         cc.border = bdr
+    ws.row_dimensions[HDR].height = 36
 
     alt_fill = PatternFill("solid", fgColor=PALE_BLUE)
     white_fill = PatternFill("solid", fgColor=WHITE)
     for n, i in enumerate(assemblies):
         ri = HDR + 1 + n
         row = df.iloc[i]
-        purch_row = FIRST_DATA_ROW + i
+        purch_row = first_data_row + i
         vals = [
             None if pd.isna(row.get("Row Order")) else row.get("Row Order"),
             None if pd.isna(row.get("Number")) else row.get("Number"),
@@ -697,12 +697,21 @@ def _build_assembly_costs_tab(wb: Workbook, df: pd.DataFrame) -> None:
     tc.alignment = Alignment(horizontal="right", vertical="center")
     grand = ws.cell(row=total_row, column=4)
     if top_level:
-        refs = "+".join(f"Purchasing!{sub_col}{FIRST_DATA_ROW + i}" for i in top_level)
+        refs = "+".join(f"Purchasing!{sub_col}{first_data_row + i}" for i in top_level)
         grand.value = f"={refs}"
     else:
         grand.value = 0
     grand.number_format = DOLLAR_FMT
     grand.font = Font(name="Arial", bold=True, color=DARK_BLUE, size=10)
+
+    for ci in range(1, len(cols) + 1):
+        hc = ws.cell(row=HDR, column=ci)
+        hc.border = Border(
+            top=Side(style="medium", color=MID_BLUE),
+            left=Side(style="thin", color=GRAY_BDR),
+            right=Side(style="thin", color=GRAY_BDR),
+            bottom=Side(style="thin", color=GRAY_BDR),
+        )
 
     widths = {"Item": 12, "Part #": 16, "Description": 46, "Cost to Make One": 18}
     for ci, name in enumerate(cols, 1):
