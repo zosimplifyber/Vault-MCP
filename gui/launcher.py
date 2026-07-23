@@ -179,6 +179,9 @@ class LauncherGUI:
         self._logo_img = None
         self._icon_img = None
 
+        # Tool-row buttons, keyed by title — lets tests/status code find them
+        self.tool_buttons: dict[str, tk.Button] = {}
+
         # MCP server controllers (created when their config is present)
         self.mcp_ctrl: Optional[MCPServerController] = self._build_vault_ctrl()
         # Wrike controller — independent of the Vault session.
@@ -579,6 +582,7 @@ class LauncherGUI:
             "Open Workflow",
             self._on_open_workflow,
             primary=True,
+            broken=True,
         )
         self._tool_row(
             body,
@@ -599,6 +603,7 @@ class LauncherGUI:
             "Open Builder",
             self._on_open_mfg_package,
             primary=False,
+            broken=True,
         )
         self._tool_row(
             body,
@@ -608,6 +613,7 @@ class LauncherGUI:
             "Open Lookup",
             self._on_open_property_check,
             primary=False,
+            broken=True,
         )
         self._tool_row(
             body,
@@ -627,23 +633,36 @@ class LauncherGUI:
             primary=False,
         )
 
-    def _tool_row(self, parent, title, desc, btn_text, command, *, primary):
+    def _tool_row(self, parent, title, desc, btn_text, command, *,
+                  primary, broken=False):
         row = tk.Frame(parent, bg=WHITE, pady=8)
         row.pack(fill="x")
         text = tk.Frame(row, bg=WHITE)
         text.pack(side="left", fill="x", expand=True)
+
+        title_text = title if not broken else f"{title}   ⛔ BROKEN — Item Master retired"
         tk.Label(
-            text, text=title, bg=WHITE, fg=DARK_BLUE,
+            text, text=title_text, bg=WHITE,
+            fg=(RUST_ORANGE if broken else DARK_BLUE),
             font=("Arial", 11, "bold"), anchor="w",
         ).pack(fill="x")
+
+        shown_desc = desc if not broken else (
+            "Disabled — depends on the retired Item Master. A CAD/iProperty "
+            "rewrite is planned."
+        )
         tk.Label(
-            text, text=desc, bg=WHITE, fg=DARK_GRAY,
-            font=("Arial", 9), anchor="w", justify="left",
-            wraplength=400,
+            text, text=shown_desc, bg=WHITE,
+            fg=(RUST_ORANGE if broken else DARK_GRAY),
+            font=("Arial", 9), anchor="w", justify="left", wraplength=400,
         ).pack(fill="x", pady=(2, 0))
-        self._brand_button(
-            row, f"  {btn_text}  ", command, primary=primary,
-        ).pack(side="right", padx=(12, 0))
+
+        btn = self._brand_button(row, f"  {btn_text}  ", command, primary=primary)
+        if broken:
+            btn.configure(state="disabled")
+        btn.pack(side="right", padx=(12, 0))
+        self.tool_buttons[title] = btn
+
         # Subtle separator
         tk.Frame(parent, bg=GRAY_BDR, height=1).pack(fill="x", pady=(4, 0))
 
