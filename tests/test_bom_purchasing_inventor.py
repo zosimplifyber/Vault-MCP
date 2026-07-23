@@ -242,3 +242,22 @@ def test_assembly_costs_formulas_reference_exact_cells(tmp_path):
     assert ac.cell(4, 4).value == f"=Purchasing!{cost_col}6"   # B cost-to-make-one
     # Grand total row = 5; sums exactly the two top-level Sub Total cells.
     assert ac.cell(5, 4).value == f"=Purchasing!{sub_col}4+Purchasing!{sub_col}6"
+
+
+def test_unmatched_parts_are_highlighted_and_listed(tmp_path):
+    import openpyxl
+    df = _hier_df()
+    # SF-21 is a Buy part with no Vendor → unmatched.
+    df.loc[df["Number"] == "SF-21", "Vendor"] = None
+    df.loc[df["Number"] == "SF-21", "Cost Per"] = None
+    out = tmp_path / "s.xlsx"
+    bp.build_purchasing_sheet(df, str(out), "ASM")
+    ws = openpyxl.load_workbook(str(out))["Purchasing"]
+    header = [c.value for c in ws[3]]
+    num_col = header.index("Number") + 1
+    # the screw row (4+2=6) Number cell is filled with the unmatched color
+    fill = ws.cell(6, num_col).fill
+    assert fill.fgColor.rgb and fill.fgColor.rgb.endswith(bp.UNMATCHED_FILL)
+    # an "Unmatched" note listing SF-21 appears somewhere below the table
+    text = "\n".join(str(c.value) for col in ws.iter_cols() for c in col if c.value)
+    assert "Unmatched" in text and "SF-21" in text

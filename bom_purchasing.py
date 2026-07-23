@@ -33,6 +33,7 @@ GRAY_BDR = "CCCCCC"
 DARK_GRAY = "888888"
 WHITE = "FFFFFF"
 OLIVE_GREEN = "D8E4BC"
+UNMATCHED_FILL = "FCE4D6"  # light orange — a Buy part with no price found
 
 
 # ---------------------------------------------------------------------------
@@ -469,6 +470,14 @@ def build_purchasing_sheet(
         else:
             fill = alt_fill if (ri - HDR_ROW) % 2 == 0 else white_fill
 
+        is_unmatched = (
+            not is_assembly
+            and str(row.get("Source", "")).strip() in {"Buy", "Other"}
+            and pd.isna(row.get("Vendor"))
+        )
+        if is_unmatched:
+            fill = PatternFill("solid", fgColor=UNMATCHED_FILL)
+
         for ci, col_name in enumerate(ALL_COLUMNS, 1):
             c = ws.cell(row=ri, column=ci)
 
@@ -510,6 +519,25 @@ def build_purchasing_sheet(
             c.fill = fill
             c.border = bdr
             c.alignment = body_align
+
+    # Unmatched note — list Buy parts with no reference match so a $0 line is
+    # clearly "no price found", not "free".
+    unmatched_nums = [
+        str(r.get("Number"))
+        for _, r in df.iterrows()
+        if str(r.get("Source", "")).strip() in {"Buy", "Other"}
+        and pd.isna(r.get("Vendor")) and pd.notna(r.get("Number"))
+    ]
+    if unmatched_nums:
+        note_row = FIRST_DATA_ROW + len(df) + 1
+        ws.merge_cells(start_row=note_row, start_column=1,
+                       end_row=note_row, end_column=n_cols)
+        nc = ws.cell(row=note_row, column=1)
+        nc.value = (f"Unmatched ({len(unmatched_nums)}) — no price in reference: "
+                    + ", ".join(unmatched_nums))
+        nc.font = Font(name="Arial", size=9, italic=True, color=DARK_GRAY)
+        nc.fill = PatternFill("solid", fgColor=UNMATCHED_FILL)
+        nc.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
 
     # Column widths & freeze
     for ci, col_name in enumerate(ALL_COLUMNS, 1):
