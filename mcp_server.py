@@ -1372,9 +1372,14 @@ def create_mcp_server(api: VaultRestAPI, vault_id: str) -> FastMCP:
         output_dir: str = "",
     ) -> str:
         """
-        Build a purchasing sheet from a manually exported Vault BOM file
-        (.xls, .xlsx, or .csv). Use this when working from a file on disk
-        rather than a live Vault lookup.
+        Build a purchasing sheet from a manually exported BOM file. Use this
+        when working from a file on disk rather than a live Vault lookup.
+
+        Accepts a Vault BOM export or an Inventor BOM export (auto-detected):
+        .xlsx, .xls, .csv, or tab-delimited .txt. For Inventor, use a
+        Structured / All-Levels view and include at least Item, Part Number,
+        and QTY (Description, Unit QTY, BOM Structure, REV, Material, and
+        Material Finish are used when present).
 
         Args:
             bom_file_path: Absolute path to the BOM export file.

@@ -272,7 +272,7 @@ class PurchasingGUI:
         rb_vault.pack(side="left", padx=(0, 16))
 
         tk.Radiobutton(
-            toggles, text="Import BOM file (.xlsx / .csv)",
+            toggles, text="Import BOM file (Inventor or Vault: .xlsx/.xls/.csv/.txt)",
             variable=self.source_var, value="file",
             bg=WHITE, fg=DARK_BLUE,
             activebackground=WHITE, activeforeground=DARK_BLUE,
@@ -602,9 +602,20 @@ class PurchasingGUI:
     # ----- Action handlers -------------------------------------------------
 
     def _on_browse_bom(self) -> None:
+        messagebox.showinfo(
+            "Before you export from Inventor",
+            "1. Sort the BOM by Description (descending), then renumber the items.\n"
+            "2. Use a Structured / All-Levels BOM view (needed for per-assembly costs).\n"
+            "3. Include columns —\n"
+            "     Required:    Item, Part Number, QTY\n"
+            "     Recommended: Description, Unit QTY, BOM Structure, REV,\n"
+            "                  Material, Material Finish\n"
+            "4. Export as .xlsx (preferred), tab-delimited .txt, or .csv.",
+            parent=self.root,
+        )
         path = filedialog.askopenfilename(
-            title="Select Vault BOM Export",
-            filetypes=[("Excel / CSV", "*.xls *.xlsx *.csv"),
+            title="Select a BOM export (Inventor or Vault)",
+            filetypes=[("BOM export", "*.xls *.xlsx *.csv *.txt"),
                        ("All files", "*.*")],
             parent=self.root,
         )
@@ -649,7 +660,7 @@ class PurchasingGUI:
             if not bom_path:
                 messagebox.showerror(
                     "Missing BOM file",
-                    "Select a Vault BOM export (.xlsx, .xls or .csv).",
+                    "Select a BOM export (.xlsx, .xls, .csv, or .txt).",
                     parent=self.root,
                 )
                 return
