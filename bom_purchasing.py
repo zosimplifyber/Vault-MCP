@@ -145,6 +145,29 @@ VAULT_FIELD_MAP: dict[str, str] = {
 }
 
 
+# Inventor BOM export headers → our canonical BOM columns (case-insensitive).
+INVENTOR_FIELD_MAP: dict[str, str] = {
+    "Item": "Row Order",
+    "Part Number": "Number",
+    "QTY": "Item Qty",
+    "Unit QTY": "Units",
+    "BOM Structure": "Source",
+    "Description": "Description (Item,CO)",
+    "REV": "Revision",
+    "Material": "Material",
+    "Material Finish": "Material Finish",
+}
+
+# Inventor "BOM Structure" values → our canonical "Source" values.
+SOURCE_VALUE_MAP: dict[str, str] = {
+    "Purchased": "Buy",
+    "Normal": "Make",
+    "Phantom": "Make",
+    "Inseparable": "Make",
+    "Reference": "Make",
+}
+
+
 def vault_bom_to_dataframe(vault_bom: list[dict[str, Any]]) -> pd.DataFrame:
     """Convert a Vault BOM rows list into a DataFrame matching BOM_COLUMNS.
 
@@ -681,6 +704,47 @@ def generate_from_vault_bom(
         "unmatched_parts": unmatched,
         "warnings": warnings,
     }
+
+
+def coerce_bom_dataframe(
+    df: pd.DataFrame,
+) -> tuple[pd.DataFrame, str | None]:
+    """Normalize a raw BOM DataFrame (Vault-canonical OR Inventor export).
+
+    Returns (normalized_df, error_message). error_message is None on success.
+    Guarantees the result carries every BOM_COLUMNS entry plus 'Material' and
+    'Material Finish' (missing ones filled with None), a positional index, and
+    translated Source values. Errors if the critical Number/Item Qty are absent.
+    """
+    df = df.rename(columns={c: str(c).strip() for c in df.columns})
+
+    if not set(BOM_COLUMNS).issubset(df.columns):
+        # Inventor export — map its headers case-insensitively.
+        lower = {c.lower(): c for c in df.columns}
+        rename: dict[str, str] = {}
+        for inv_name, canon in INVENTOR_FIELD_MAP.items():
+            src = lower.get(inv_name.lower())
+            if src is not None and canon not in rename.values():
+                rename[src] = canon
+        df = df.rename(columns=rename)
+        if "Source" in df.columns:
+            df["Source"] = df["Source"].map(
+                lambda v: SOURCE_VALUE_MAP.get(str(v).strip(), v)
+            )
+
+    for col in BOM_COLUMNS + ["Material", "Material Finish"]:
+        if col not in df.columns:
+            df[col] = None
+
+    df = df.reset_index(drop=True)
+
+    if df["Number"].isna().all() or (df["Number"].astype(str).str.strip() == "").all():
+        return df, ("No part numbers found — the BOM needs a 'Part Number' "
+                    "(Inventor) or 'Number' (Vault) column.")
+    if df["Item Qty"].isna().all():
+        return df, ("No quantities found — the BOM needs a 'QTY' (Inventor) "
+                    "or 'Item Qty' (Vault) column.")
+    return df, None
 
 
 def generate_from_file(
