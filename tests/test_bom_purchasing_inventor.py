@@ -261,3 +261,23 @@ def test_unmatched_parts_are_highlighted_and_listed(tmp_path):
     # an "Unmatched" note listing SF-21 appears somewhere below the table
     text = "\n".join(str(c.value) for col in ws.iter_cols() for c in col if c.value)
     assert "Unmatched" in text and "SF-21" in text
+
+
+def test_assembly_buy_row_is_not_flagged_unmatched(tmp_path):
+    import openpyxl
+    # An assembly (has a child) dirtily tagged Source "Buy" with no Vendor must
+    # NOT be highlighted or listed — its cost comes from the child roll-up.
+    df = _hier_df()
+    df.loc[df["Number"] == "SF-2", "Source"] = "Buy"
+    df.loc[df["Number"] == "SF-2", "Vendor"] = None
+    out = tmp_path / "s.xlsx"
+    bp.build_purchasing_sheet(df, str(out), "ASM")
+    ws = openpyxl.load_workbook(str(out))["Purchasing"]
+    header = [c.value for c in ws[3]]
+    num_col = header.index("Number") + 1
+    # SF-1 (Vendor Acme) and SF-21 (Vendor Bolts Inc) are matched; SF-2 is an
+    # assembly → no row is unmatched, so no note is written.
+    text = "\n".join(str(c.value) for col in ws.iter_cols() for c in col if c.value)
+    assert "Unmatched" not in text
+    # and SF-2's row (row 5) is not amber-highlighted
+    assert not (ws.cell(5, num_col).fill.fgColor.rgb or "").endswith(bp.UNMATCHED_FILL)

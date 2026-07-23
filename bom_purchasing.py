@@ -457,6 +457,7 @@ def build_purchasing_sheet(
     FIRST_DATA_ROW = HDR_ROW + 1
     DOLLAR_FMT = '"$"#,##0.00'
     DOLLAR_COLS = {"Cost Per", "Shipping", "Tax/Tariff", "Sub Total"}
+    unmatched_nums: list[str] = []
 
     for ri, (df_idx, row) in enumerate(df.iterrows(), start=FIRST_DATA_ROW):
         category = str(row.get("Category Name", "")).strip().lower()
@@ -470,13 +471,18 @@ def build_purchasing_sheet(
         else:
             fill = alt_fill if (ri - HDR_ROW) % 2 == 0 else white_fill
 
+        vendor = row.get("Vendor")
+        vendor_blank = pd.isna(vendor) or str(vendor).strip() == ""
         is_unmatched = (
             not is_assembly
             and str(row.get("Source", "")).strip() in {"Buy", "Other"}
-            and pd.isna(row.get("Vendor"))
+            and vendor_blank
         )
         if is_unmatched:
             fill = PatternFill("solid", fgColor=UNMATCHED_FILL)
+            num_val = row.get("Number")
+            if pd.notna(num_val):
+                unmatched_nums.append(str(num_val))
 
         for ci, col_name in enumerate(ALL_COLUMNS, 1):
             c = ws.cell(row=ri, column=ci)
@@ -522,12 +528,6 @@ def build_purchasing_sheet(
 
     # Unmatched note — list Buy parts with no reference match so a $0 line is
     # clearly "no price found", not "free".
-    unmatched_nums = [
-        str(r.get("Number"))
-        for _, r in df.iterrows()
-        if str(r.get("Source", "")).strip() in {"Buy", "Other"}
-        and pd.isna(r.get("Vendor")) and pd.notna(r.get("Number"))
-    ]
     if unmatched_nums:
         note_row = FIRST_DATA_ROW + len(df) + 1
         ws.merge_cells(start_row=note_row, start_column=1,
