@@ -47,3 +47,13 @@ def test_coerce_errors_when_no_part_number():
     df = pd.DataFrame({"QTY": [1, 2], "Description": ["a", "b"]})
     out, err = bp.coerce_bom_dataframe(df)
     assert err is not None and "part number" in err.lower()
+
+
+def test_coerce_errors_when_number_mixes_none_and_blank():
+    df = pd.DataFrame({
+        "Part Number": [None, "", None],
+        "QTY": [1, 2, 3],
+        "Description": ["a", "b", "c"],
+    })
+    out, err = bp.coerce_bom_dataframe(df)
+    assert err is not None and "part number" in err.lower()

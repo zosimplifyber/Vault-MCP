@@ -738,7 +738,8 @@ def coerce_bom_dataframe(
 
     df = df.reset_index(drop=True)
 
-    if df["Number"].isna().all() or (df["Number"].astype(str).str.strip() == "").all():
+    blank_number = df["Number"].isna() | (df["Number"].astype(str).str.strip() == "")
+    if blank_number.all():
         return df, ("No part numbers found — the BOM needs a 'Part Number' "
                     "(Inventor) or 'Number' (Vault) column.")
     if df["Item Qty"].isna().all():
