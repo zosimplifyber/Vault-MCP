@@ -772,36 +772,31 @@ def generate_from_file(
     assembly_number: str,
     output_dir: str = "",
 ) -> dict[str, Any]:
-    """Build a purchasing sheet from a manually exported Vault BOM file."""
+    """Build a purchasing sheet from an exported BOM file.
+
+    Accepts a Vault BOM export (canonical columns) or an Inventor BOM export
+    (auto-detected + header-mapped). Supports .xlsx/.xls/.csv/.txt(tab).
+    """
     if not os.path.isfile(bom_file_path):
         return {"error": True, "message": f"BOM file not found: {bom_file_path}"}
 
-    ext = os.path.splitext(bom_file_path)[1].lower()
     try:
-        if ext == ".csv":
-            df = pd.read_csv(bom_file_path)
-        elif ext in (".xls", ".xlsx"):
-            df = pd.read_excel(bom_file_path, sheet_name=0)
-        else:
-            return {
-                "error": True,
-                "message": f"Unsupported file type: {ext}. Use .xls, .xlsx, or .csv.",
-            }
-    except Exception as exc:
+        raw = read_bom_file(bom_file_path)
+    except ValueError as exc:
+        return {"error": True, "message": str(exc)}
+    except Exception as exc:  # noqa: BLE001
         return {"error": True, "message": f"Could not read BOM file: {exc}"}
 
-    missing = [c for c in BOM_COLUMNS if c not in df.columns]
-    if missing:
-        return {
-            "error": True,
-            "message": (
-                f"BOM file is missing expected columns: {', '.join(missing)}. "
-                "Verify this is a Vault BOM export with default columns."
-            ),
-        }
+    df, err = coerce_bom_dataframe(raw)
+    if err:
+        return {"error": True, "message": err}
 
-    df = df[BOM_COLUMNS].copy()
+    # Material precedence: the export's Material wins where non-blank; the
+    # reference file only fills blanks.
+    export_material = df["Material"].copy()
     df, matched, total, unmatched, warnings = _enrich_with_reference(df)
+    keep = export_material.notna() & (export_material.astype(str).str.strip() != "")
+    df.loc[keep, "Material"] = export_material[keep]
 
     if not output_dir:
         output_dir = os.path.dirname(bom_file_path)

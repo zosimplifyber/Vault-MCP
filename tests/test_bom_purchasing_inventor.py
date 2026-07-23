@@ -96,3 +96,39 @@ def test_read_bom_file_reads_tab_delimited_txt(tmp_path):
     assert list(df.columns[:4]) == ["Item", "Part Number", "QTY", "Description"]
     assert len(df) == 2
     assert str(df.iloc[1]["Part Number"]) == "SF-001885"
+
+
+def test_generate_from_file_inventor_export_populates(tmp_path, monkeypatch):
+    p = tmp_path / "bom.txt"
+    p.write_text(
+        "Item\tPart Number\tBOM Structure\tUnit QTY\tQTY\tDescription\tREV\tMaterial\tMaterial Finish\n"
+        "1\tSF-001580\tNormal\tEach\t2\tadapter plate\t\tAluminum\t\n"
+        "2\tSF-001803\tNormal\tEach\t1\tbladder tool\t1\t\t\n"
+        "2.1\tSF-001885\tPurchased\tEach\t8\thex screw\t1\tSteel\tBlack Oxide\n",
+        encoding="utf-8",
+    )
+
+    # Reference "enrichment" that would overwrite Material — prove export wins.
+    def fake_enrich(df):
+        df = df.copy()
+        df["Material"] = "REF-MATERIAL"
+        df["Vendor"] = "Acme"
+        df["Cost Per"] = 1.5
+        return df, 1, 1, [], []
+    monkeypatch.setattr(bp, "_enrich_with_reference", fake_enrich)
+
+    out_dir = tmp_path / "out"
+    result = bp.generate_from_file(str(p), "CD-001608", str(out_dir))
+    assert not result.get("error"), result
+    assert os.path.isfile(result["output_path"])
+
+    import openpyxl
+    wb = openpyxl.load_workbook(result["output_path"])
+    ws = wb["Purchasing"]
+    header = [c.value for c in ws[3]]
+    mat_col = header.index("Material") + 1
+    num_col = header.index("Number") + 1
+    mats = {ws.cell(r, num_col).value: ws.cell(r, mat_col).value
+            for r in range(4, 4 + 3)}
+    assert mats["SF-001580"] == "Aluminum"       # from export
+    assert mats["SF-001803"] == "REF-MATERIAL"   # blank in export → ref
