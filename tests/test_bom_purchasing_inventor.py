@@ -132,3 +132,51 @@ def test_generate_from_file_inventor_export_populates(tmp_path, monkeypatch):
             for r in range(4, 4 + 3)}
     assert mats["SF-001580"] == "Aluminum"       # from export
     assert mats["SF-001803"] == "REF-MATERIAL"   # blank in export → ref
+
+
+def _hier_df():
+    # 2 is an assembly (has child 2.1); 1 is a leaf part.
+    return pd.DataFrame({
+        "Number": ["SF-1", "SF-2", "SF-21"],
+        "Row Order": ["1", "2", "2.1"],
+        "Position Number": [None, None, None],
+        "Item Qty": [2, 1, 8],
+        "Units": ["Each", "Each", "Each"],
+        "Category Name": [None, None, None],   # Inventor exports have none
+        "Revision": [None, "1", "1"],
+        "State": [None, None, None],
+        "Title (Item,CO)": [None, None, None],
+        "Description (Item,CO)": ["leaf", "assy", "screw"],
+        "Source": ["Buy", "Make", "Buy"],
+        "Material": ["Al", None, "Steel"],
+        "Material Finish": [None, None, "Black Oxide"],
+        "Vendor": ["Acme", None, "Bolts Inc"],
+        "Cost Per": [1.0, None, 0.25],
+        "Vendor Number": [None, None, None],
+        "HS/HTS Code": [None, None, None],
+        "Shipping": [None, None, None],
+        "Tax/Tariff": [None, None, None],
+        "Lead Time (Business Days)": [None, None, None],
+    })
+
+
+def test_material_finish_is_a_column_and_populates(tmp_path):
+    import openpyxl
+    out = tmp_path / "s.xlsx"
+    bp.build_purchasing_sheet(_hier_df(), str(out), "ASM")
+    ws = openpyxl.load_workbook(str(out))["Purchasing"]
+    header = [c.value for c in ws[3]]
+    assert "Material Finish" in header
+    mf_col = header.index("Material Finish") + 1
+    assert ws.cell(6, mf_col).value == "Black Oxide"  # row 4+2 = the screw
+
+
+def test_assembly_detected_by_children_without_category(tmp_path):
+    import openpyxl
+    out = tmp_path / "s.xlsx"
+    bp.build_purchasing_sheet(_hier_df(), str(out), "ASM")
+    ws = openpyxl.load_workbook(str(out))["Purchasing"]
+    header = [c.value for c in ws[3]]
+    cost_col = header.index("Cost Per") + 1
+    # Row 5 is "2" (assembly) → Cost Per is a SUM formula over its child rows.
+    assert str(ws.cell(5, cost_col).value).startswith("=SUM(")

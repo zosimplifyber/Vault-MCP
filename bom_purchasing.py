@@ -57,8 +57,9 @@ BOM_COLUMNS = [
 ]
 
 PURCHASE_COLUMNS = [
-    "Material", "Vendor", "Vendor Number", "Cost Per", "HS/HTS Code",
-    "Shipping", "Tax/Tariff", "Sub Total", "Lead Time (Business Days)",
+    "Material", "Material Finish", "Vendor", "Vendor Number", "Cost Per",
+    "HS/HTS Code", "Shipping", "Tax/Tariff", "Sub Total",
+    "Lead Time (Business Days)",
 ]
 
 LOOKUP_COLUMNS = [
@@ -72,7 +73,8 @@ COLUMN_WIDTHS = {
     "Number": 14, "Row Order": 12, "Position Number": 16,
     "Item Qty": 10, "Units": 8, "Category Name": 22, "Revision": 10,
     "State": 14, "Title (Item,CO)": 22, "Description (Item,CO)": 44,
-    "Source": 10, "Material": 22, "Vendor": 18, "Vendor Number": 18,
+    "Source": 10, "Material": 22, "Material Finish": 18,
+    "Vendor": 18, "Vendor Number": 18,
     "Cost Per": 12, "HS/HTS Code": 14, "Shipping": 12, "Tax/Tariff": 12,
     "Sub Total": 14, "Lead Time (Business Days)": 24,
 }
@@ -457,8 +459,10 @@ def build_purchasing_sheet(
 
     for ri, (df_idx, row) in enumerate(df.iterrows(), start=FIRST_DATA_ROW):
         category = str(row.get("Category Name", "")).strip().lower()
-        is_assembly = "assembly" in category
         child_indices = children_map.get(df_idx, [])
+        # Inventor exports carry no Category Name — a row with children IS an
+        # assembly, so detect by structure as well as category.
+        is_assembly = ("assembly" in category) or bool(child_indices)
 
         if is_assembly:
             fill = olive_fill
@@ -470,6 +474,10 @@ def build_purchasing_sheet(
 
             if col_name in BOM_COLUMNS:
                 val = row.get(col_name)
+                c.value = None if pd.isna(val) else val
+
+            elif col_name == "Material Finish":
+                val = row.get("Material Finish")
                 c.value = None if pd.isna(val) else val
 
             elif col_name in LOOKUP_COLUMNS:
