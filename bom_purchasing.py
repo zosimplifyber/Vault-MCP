@@ -808,8 +808,7 @@ def _enrich_with_reference(df: pd.DataFrame, reference_path: str = "") -> tuple[
                     ref_df = purchasing_reference.load_mslist_dataframe(
                         cfg["mslist"], cfg.get("column_map"))
                 except Exception as exc:  # noqa: BLE001
-                    warnings.append(
-                        f"Microsoft List reference unavailable ({exc}); using the Excel file.")
+                    warnings.append(f"Microsoft List reference unavailable ({exc}).")
                     ref_df = None
             # 3) Excel auto-discovery (unless the source is pinned to 'mslist').
             if ref_df is None and cfg.get("source") != "mslist":
@@ -824,9 +823,9 @@ def _enrich_with_reference(df: pd.DataFrame, reference_path: str = "") -> tuple[
 
     if ref_df is None:
         warnings.append(
-            "Purchased items reference not found. Ensure OneDrive is syncing the "
-            "Purchasing folder (or sign in to the Microsoft List), or the columns "
-            "Material/Vendor/Cost Per will be left blank."
+            "No purchasing reference available — sign in to the Microsoft List "
+            "(the Sign in button, or `python -m purchasing_reference --login`); "
+            "Material / Vendor / Cost Per are left blank."
         )
         return df, matched, total, unmatched, warnings
 

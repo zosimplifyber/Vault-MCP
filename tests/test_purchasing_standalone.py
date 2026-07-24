@@ -41,16 +41,25 @@ def test_reference_path_override_is_used(tmp_path, monkeypatch):
     assert vendors.get("SF-1") == "Acme"   # from the override, not OneDrive
 
 
-def test_no_reference_path_falls_back_to_autofind(tmp_path, monkeypatch):
-    hits = {}
-    monkeypatch.setattr(
-        bp, "find_purchased_items_file", lambda: hits.setdefault("called", True) and None
-    )
+def test_default_source_is_mslist_only_no_excel_autofind(tmp_path, monkeypatch):
+    # Default source is Microsoft-List-only: without a sign-in, generation still
+    # succeeds (costs blank) and must NOT fall back to the Excel file.
+    import purchasing_reference as pref
+    monkeypatch.setattr(pref, "resolve_reference_config", lambda override=None: {
+        "source": "mslist",
+        "mslist": {"tenant_id": "T", "client_id": "C"},
+        "column_map": {},
+    })
+    monkeypatch.setattr(pref, "load_mslist_dataframe",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("not signed in")))
+    called = {"find": False}
+    monkeypatch.setattr(bp, "find_purchased_items_file",
+                        lambda: called.__setitem__("find", True) or None)
     bom = tmp_path / "bom.txt"
     bom.write_text("Item\tPart Number\tQTY\tDescription\n1\tSF-1\t2\tp\n", encoding="utf-8")
-    result = bp.generate_from_file(str(bom), "ASM", str(tmp_path))  # no reference_path
+    result = bp.generate_from_file(str(bom), "ASM", str(tmp_path))
     assert not result.get("error"), result
-    assert hits.get("called")   # default path still auto-discovers
+    assert called["find"] is False   # List-only default: no Excel auto-discovery
 
 
 def test_standalone_does_not_import_app_or_vault():

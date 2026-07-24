@@ -14,7 +14,7 @@
         "allowed_folders": []
     },
     "purchasing_reference": {
-        "source": "auto",
+        "source": "mslist",
         "mslist": {
             "site_hostname": "netorgft6579427.sharepoint.com",
             "site_path": "/sites/Simplifyber",

@@ -40,7 +40,7 @@ SCOPES = ["Sites.Read.All"]
 # Non-secret defaults. The client/tenant IDs come from an Entra app registration
 # (public client) and are safe to bundle (a public-client id is not a secret).
 DEFAULT_CONFIG: dict[str, Any] = {
-    "source": "auto",                        # "auto" | "excel" | "mslist"
+    "source": "mslist",                      # "mslist" (default) | "auto" | "excel"
     "mslist": {
         # Non-secret Entra app-registration IDs (public client). Safe to bundle.
         "tenant_id": "66328e6d-6557-413a-9061-8797e292ea89",   # Directory (tenant) ID
