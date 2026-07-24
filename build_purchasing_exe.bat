@@ -21,7 +21,7 @@ exit /b 1
 :found
 echo  Using Python: %PYTHON% >> "%LOG%"
 echo  Installing required packages...
-%PYTHON% -m pip install pandas openpyxl xlrd pyinstaller pillow >> "%LOG%" 2>&1
+%PYTHON% -m pip install pandas openpyxl xlrd pyinstaller pillow msal httpx >> "%LOG%" 2>&1
 if %ERRORLEVEL% neq 0 (
     echo  ERROR: package install failed. See build_purchasing_log.txt
     pause
@@ -29,7 +29,7 @@ if %ERRORLEVEL% neq 0 (
 )
 
 echo  Building .exe -- this takes 60-120 seconds, please wait...
-%PYTHON% -m PyInstaller --onefile --windowed --name "Simplifyber_BOM_Purchasing" --clean --distpath "." --add-data "Simplifyber_Logo.png;." --add-data "Simplifyber_Logo_White.png;." purchasing_standalone.py >> "%LOG%" 2>&1
+%PYTHON% -m PyInstaller --onefile --windowed --name "Simplifyber_BOM_Purchasing" --clean --distpath "." --add-data "Simplifyber_Logo.png;." --add-data "Simplifyber_Logo_White.png;." --collect-all msal --hidden-import httpx purchasing_standalone.py >> "%LOG%" 2>&1
 if %ERRORLEVEL% neq 0 (
     echo  ERROR: PyInstaller build failed. See build_purchasing_log.txt
     pause

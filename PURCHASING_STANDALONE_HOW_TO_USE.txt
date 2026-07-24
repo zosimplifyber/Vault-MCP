@@ -46,9 +46,13 @@ main app is required.
 
    1. Double-click  Simplifyber_BOM_Purchasing.exe
    2. "Browse..." next to BOM File -> pick your export.
-   3. (Optional) If the Purchased Items reference file is not found
-      automatically, click "Browse for a different file..." and select
-      "purchased items.xlsx".
+   3. Purchased Items reference (fills in Vendor / Cost / Material):
+        - Click "Sign in to Microsoft" and sign in with your Simplifyber
+          account (one time). A browser opens to the Microsoft sign-in page
+          and a dialog shows a short code to enter. The tool then reads the
+          Purchased Items Microsoft List directly.
+        - Or click "Browse for a file instead..." to use a purchased-items
+          Excel file. If you skip this, the cost columns are left blank.
    4. Type your Assembly / Job Number (auto-filled from the file name).
    5. Pick a "Save Output To" folder (defaults to your Desktop).
    6. Click "Generate Purchasing Sheet".
@@ -75,10 +79,11 @@ main app is required.
  Windows SmartScreen: "Windows protected your PC"
    -> Click "More info" -> "Run anyway". (The .exe is unsigned.)
 
- "Not found automatically" for the reference file
-   -> Make sure OneDrive is syncing the Purchasing folder, or use the
-      "Browse for a different file..." button to point at it. Without it,
-      the Vendor/Cost columns are left blank for the purchasing team.
+ Reference data (Vendor / Cost / Material) comes out blank
+   -> Click "Sign in to Microsoft" to read the Purchased Items list, or
+      "Browse for a file instead..." to pick a purchased-items Excel file.
+      If a browser sign-in page does not open on its own, go to
+      https://microsoft.com/devicelogin and enter the code shown in the dialog.
 
  Nothing happens on double-click
    -> Check your antivirus, or right-click -> Run as administrator.

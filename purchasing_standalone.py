@@ -11,10 +11,12 @@ from __future__ import annotations
 
 import os
 import threading
+import webbrowser
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
 import bom_purchasing as bp
+import purchasing_reference as pref
 
 DARK_BLUE, MID_BLUE, LIGHT_GRAY, PALE_BLUE = "#1F3864", "#2E75B6", "#F2F2F2", "#EAF3FB"
 
@@ -84,9 +86,15 @@ class App(tk.Tk):
         self.ref_label = tk.Label(ref, textvariable=self.ref_status_var, bg=PALE_BLUE,
                                   font=("Arial", 9), anchor="w", wraplength=440, justify="left")
         self.ref_label.grid(row=1, column=0, sticky="w", pady=(2, 4))
-        tk.Button(ref, text="Browse for a different file…", command=self._browse_ref,
+        btns = tk.Frame(ref, bg=PALE_BLUE)
+        btns.grid(row=2, column=0, sticky="w")
+        self.signin_btn = tk.Button(btns, text="Sign in to Microsoft", command=self._sign_in,
+                                    bg=MID_BLUE, fg="white", relief="flat", font=("Arial", 8),
+                                    padx=8, pady=1, cursor="hand2")
+        self.signin_btn.pack(side="left", padx=(0, 8))
+        tk.Button(btns, text="Browse for a file instead…", command=self._browse_ref,
                   bg=LIGHT_GRAY, fg=DARK_BLUE, relief="flat", font=("Arial", 8),
-                  cursor="hand2").grid(row=2, column=0, sticky="w")
+                  cursor="hand2").pack(side="left")
 
         self.bom_var = tk.StringVar()
         self._label(body, "BOM File (Inventor or Vault export):").grid(row=1, column=0, sticky="w")
@@ -113,7 +121,18 @@ class App(tk.Tk):
                  ).grid(row=8, column=0, sticky="w", pady=(8, 0))
 
     def _detect_reference_file(self):
-        self._set_reference_file(bp.find_purchased_items_file())
+        cfg = pref.resolve_reference_config()
+        if pref.mslist_is_configured(cfg):
+            if pref.has_cached_login():
+                self.ref_status_var.set("✓  Microsoft List (Purchased Items) — signed in")
+                self.ref_label.config(fg="#1F6B2E")
+            else:
+                self.ref_status_var.set(
+                    "Microsoft List (Purchased Items): click 'Sign in to Microsoft' to use it "
+                    "(otherwise the Excel file is used if found).")
+                self.ref_label.config(fg="#8B4000")
+        else:
+            self._set_reference_file(bp.find_purchased_items_file())
 
     def _set_reference_file(self, path):
         self._ref_path = path
@@ -132,6 +151,43 @@ class App(tk.Tk):
             filetypes=[("Excel files", "*.xlsx *.xls"), ("All files", "*.*")])
         if path:
             self._set_reference_file(path)
+
+    def _sign_in(self):
+        cfg = pref.resolve_reference_config()
+        if not pref.mslist_is_configured(cfg):
+            messagebox.showinfo("Not configured", "No Microsoft List is configured for this build.")
+            return
+        self.signin_btn.config(state="disabled")
+        self.ref_status_var.set("Starting Microsoft sign-in…")
+
+        def run():
+            try:
+                pref.acquire_token(cfg["mslist"], interactive=True, printer=self._device_printer)
+                self.after(0, self._on_sign_in_done, None)
+            except Exception as exc:  # noqa: BLE001
+                self.after(0, self._on_sign_in_done, str(exc))
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def _device_printer(self, message):
+        # Called from the worker thread; marshal the code prompt onto the UI thread.
+        def show():
+            try:
+                webbrowser.open("https://microsoft.com/devicelogin")
+            except Exception:
+                pass
+            messagebox.showinfo("Sign in to Microsoft", message)
+        self.after(0, show)
+
+    def _on_sign_in_done(self, error):
+        self.signin_btn.config(state="normal")
+        if error:
+            self.ref_status_var.set("Sign-in failed — see dialog.")
+            self.ref_label.config(fg="#8B4000")
+            messagebox.showerror("Sign-in failed", error)
+            return
+        self.ref_status_var.set("✓  Microsoft List (Purchased Items) — signed in")
+        self.ref_label.config(fg="#1F6B2E")
 
     def _browse_bom(self):
         messagebox.showinfo("Before you export from Inventor", REMINDER)
