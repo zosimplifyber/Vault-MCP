@@ -1,0 +1,87 @@
+===================================================================
+  Simplifyber  BOM  ->  Purchasing Sheet   (Standalone Tool)
+  Setup & Use
+===================================================================
+
+This standalone tool turns a Bill of Materials export (from Autodesk
+Inventor OR Autodesk Vault) into a formatted Simplifyber purchasing
+workbook. It runs on its own -- NO Vault connection, MCP server, or the
+main app is required.
+
+-------------------------------------------------------------------
+ FIRST-TIME BUILD  (do this once, on a machine that has Python)
+-------------------------------------------------------------------
+
+ Requirements:
+   * Python 3.10 or newer   (https://www.python.org/downloads/)
+       -> IMPORTANT: tick "Add Python to PATH" during install.
+
+ Steps:
+   1. Open this folder (the Vault-MCP project folder).
+   2. Double-click:  build_purchasing_exe.bat
+   3. Wait 60-120 seconds. It installs the needed packages and builds:
+          Simplifyber_BOM_Purchasing.exe
+   4. Share that .exe with your team (e.g. via SharePoint).
+      Team members do NOT need Python, Vault, or the MCP to run it.
+
+-------------------------------------------------------------------
+ EXPORT YOUR BOM  (from Autodesk Inventor -- recommended)
+-------------------------------------------------------------------
+
+   1. Open the assembly's BOM.
+   2. Use a STRUCTURED / ALL-LEVELS view (needed for per-assembly costs).
+   3. Sort by Description (descending), then renumber the items.
+   4. Include columns:
+        Required:     Item, Part Number, QTY
+        Recommended:  Description, Unit QTY, BOM Structure, REV,
+                      Material, Material Finish
+   5. Export as .xlsx (preferred), tab-delimited .txt, or .csv.
+
+   (A Vault BOM export with the standard columns also works -- the tool
+    auto-detects Inventor vs Vault layouts.)
+
+-------------------------------------------------------------------
+ RUN THE TOOL  (every team member)
+-------------------------------------------------------------------
+
+   1. Double-click  Simplifyber_BOM_Purchasing.exe
+   2. "Browse..." next to BOM File -> pick your export.
+   3. (Optional) If the Purchased Items reference file is not found
+      automatically, click "Browse for a different file..." and select
+      "purchased items.xlsx".
+   4. Type your Assembly / Job Number (auto-filled from the file name).
+   5. Pick a "Save Output To" folder (defaults to your Desktop).
+   6. Click "Generate Purchasing Sheet".
+
+-------------------------------------------------------------------
+ WHAT YOU GET
+-------------------------------------------------------------------
+
+ A file named  {Assembly}-PurchasingExport.xlsx  with three tabs:
+   * Purchasing      -- every BOM line + purchasing columns; Vendor / Cost
+                        auto-filled from the reference file where matched.
+                        Unmatched (unpriced) buy parts are highlighted and
+                        listed below the table.
+   * By Vendor       -- purchased parts grouped by vendor with line totals.
+   * Assembly Costs  -- each sub-assembly's cost-to-make-one plus a grand
+                        total. A "*" (and footnote) marks any total that
+                        includes unpriced parts, so a partial figure is not
+                        mistaken for complete.
+
+-------------------------------------------------------------------
+ TROUBLESHOOTING
+-------------------------------------------------------------------
+
+ Windows SmartScreen: "Windows protected your PC"
+   -> Click "More info" -> "Run anyway". (The .exe is unsigned.)
+
+ "Not found automatically" for the reference file
+   -> Make sure OneDrive is syncing the Purchasing folder, or use the
+      "Browse for a different file..." button to point at it. Without it,
+      the Vendor/Cost columns are left blank for the purchasing team.
+
+ Nothing happens on double-click
+   -> Check your antivirus, or right-click -> Run as administrator.
+
+ build_purchasing_exe.bat: "'pip' is not recognized"
+   -> Reinstall Python and tick "Add Python to PATH".

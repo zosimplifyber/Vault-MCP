@@ -35,6 +35,11 @@ Log/
 .claude/scheduled_tasks.lock
 .claude/settings.local.json
 
+# Standalone PyInstaller build outputs — build the .exe locally, don't commit it
+*.exe
+*.spec
+build_purchasing_log.txt
+
 # OS junk
 .DS_Store
 Thumbs.db
