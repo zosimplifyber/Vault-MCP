@@ -108,6 +108,33 @@ def cmd_add_from_bom(args) -> int:
     return 0
 
 
+def cmd_check_write(args) -> int:
+    """Definitive write-access test: create one throwaway row, then delete it."""
+    client = _connect_client()
+    sentinel = {"Title": "ZZ-WRITE-CHECK (auto-delete)"}
+    print("Creating a throwaway list item to test write access…")
+    try:
+        created = client.create_list_item(sentinel)
+    except Exception as exc:
+        msg = str(exc)
+        print(f"WRITE FAILED: {msg}")
+        if "403" in msg or "denied" in msg.lower() or "authoriz" in msg.lower():
+            print("\n-> The app registration is missing delegated "
+                  "Sites.ReadWrite.All (with admin consent). Add it, then re-run "
+                  "`python -m supplier_pricing probe` and try again.")
+        return 1
+    item_id = str((created or {}).get("id", ""))
+    print(f"  created item id={item_id}. Deleting it…")
+    try:
+        client.delete_item(item_id)
+        print("WRITE OK - created and deleted a row. You have write access.")
+        return 0
+    except Exception as exc:
+        print(f"Created id={item_id} but could NOT delete it: {exc}\n"
+              f"-> Please remove the 'ZZ-WRITE-CHECK' row manually.")
+        return 1
+
+
 def cmd_probe(args) -> int:
     import purchasing_update
     return purchasing_update.probe()
@@ -164,6 +191,10 @@ def build_parser() -> argparse.ArgumentParser:
     ab.add_argument("--buy-only", action="store_true",
                     help="only add Buy/Other parts (skip Make)")
     ab.set_defaults(func=cmd_add_from_bom)
+
+    cw = sub.add_parser("check-write",
+                        help="safely test write access (creates + deletes one row)")
+    cw.set_defaults(func=cmd_check_write)
 
     pr = sub.add_parser("probe", help="sign in (write scope) and print list columns")
     pr.set_defaults(func=cmd_probe)

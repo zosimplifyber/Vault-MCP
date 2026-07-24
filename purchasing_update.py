@@ -263,6 +263,16 @@ class GraphListClient:
                 f"Graph POST item {resp.status_code}: {resp.text[:200]}")
         return resp.json()
 
+    def delete_item(self, item_id: str) -> None:
+        """DELETE a list item by id."""
+        url = f"{GRAPH}/sites/{self.site_id}/lists/{self.list_id}/items/{item_id}"
+        headers = {"Authorization": f"Bearer {self.token}"}
+        with httpx.Client(timeout=30) as client:
+            resp = client.delete(url, headers=headers)
+        if resp.status_code >= 400:
+            raise RuntimeError(
+                f"Graph DELETE item {item_id} {resp.status_code}: {resp.text[:200]}")
+
 
 def probe(printer=print) -> int:
     """Device-code sign-in (write scope) + print the target list's columns."""
