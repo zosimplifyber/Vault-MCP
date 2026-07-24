@@ -1964,4 +1964,11 @@ def create_mcp_server(api: VaultRestAPI, vault_id: str) -> FastMCP:
             "single-SOAP-call write."
         )
 
+    # McMaster -> Microsoft List price updates (additive; safe no-op if absent).
+    try:
+        import supplier_pricing.mcp_tools as _supplier_pricing_tools
+        _supplier_pricing_tools.register(mcp)
+    except Exception:  # pragma: no cover - never block server startup on this
+        pass
+
     return mcp

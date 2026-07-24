@@ -9,3 +9,7 @@ pandas>=2.0.0            # BOM tabular processing for the purchasing-sheet tools
 openpyxl>=3.1.0          # Writes the formatted .xlsx purchasing sheets
 xlrd>=2.0.0              # Lets pandas read legacy .xls Vault BOM exports
 msal>=1.30.0            # Microsoft auth (device-code) for the purchasing Microsoft-List reference
+playwright>=1.40.0      # McMaster browser price fallback (run `playwright install chromium` once)
+# Optional: only for the McMaster OFFICIAL API with a .pfx client cert.
+# The default McMaster path is the browser fallback (no cert needed).
+# requests-pkcs12>=1.24  # uncomment if you use a PKCS#12 client certificate
