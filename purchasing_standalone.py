@@ -39,7 +39,6 @@ class App(tk.Tk):
         self.geometry("600x520")
         self.resizable(False, False)
         self.configure(bg=LIGHT_GRAY)
-        self._ref_path = None
         self._icon_img = None
         self._set_window_icon()
         self._build_ui()
@@ -86,21 +85,16 @@ class App(tk.Tk):
         self.ref_label = tk.Label(ref, textvariable=self.ref_status_var, bg=PALE_BLUE,
                                   font=("Arial", 9), anchor="w", wraplength=440, justify="left")
         self.ref_label.grid(row=1, column=0, sticky="w", pady=(2, 4))
-        btns = tk.Frame(ref, bg=PALE_BLUE)
-        btns.grid(row=2, column=0, sticky="w")
-        self.signin_btn = tk.Button(btns, text="Sign in to Microsoft", command=self._sign_in,
+        self.signin_btn = tk.Button(ref, text="Sign in to Microsoft", command=self._sign_in,
                                     bg=MID_BLUE, fg="white", relief="flat", font=("Arial", 8),
                                     padx=8, pady=1, cursor="hand2")
-        self.signin_btn.pack(side="left", padx=(0, 8))
-        tk.Button(btns, text="Browse for a file instead…", command=self._browse_ref,
-                  bg=LIGHT_GRAY, fg=DARK_BLUE, relief="flat", font=("Arial", 8),
-                  cursor="hand2").pack(side="left")
+        self.signin_btn.grid(row=2, column=0, sticky="w")
 
         self.bom_var = tk.StringVar()
         self._label(body, "BOM File (Inventor or Vault export):").grid(row=1, column=0, sticky="w")
         self._browse_row(body, self.bom_var, 2, self._browse_bom)
 
-        self.out_var = tk.StringVar(value=os.path.join(os.path.expanduser("~"), "Desktop"))
+        self.out_var = tk.StringVar(value=os.path.join(os.path.expanduser("~"), "Downloads"))
         self._label(body, "Save Output To:").grid(row=3, column=0, sticky="w")
         self._browse_row(body, self.out_var, 4, self._browse_out)
 
@@ -132,25 +126,13 @@ class App(tk.Tk):
                     "(otherwise the Excel file is used if found).")
                 self.ref_label.config(fg="#8B4000")
         else:
-            self._set_reference_file(bp.find_purchased_items_file())
-
-    def _set_reference_file(self, path):
-        self._ref_path = path
-        if path:
-            self.ref_status_var.set(f"✓  {os.path.basename(path)}  (found automatically)")
-            self.ref_label.config(fg="#1F6B2E")
-        else:
-            self.ref_status_var.set(
-                "⚠  Not found automatically. Cost columns will be blank unless you "
-                "browse for the file below.")
-            self.ref_label.config(fg="#8B4000")
-
-    def _browse_ref(self):
-        path = filedialog.askopenfilename(
-            title="Select Purchased Items Reference File",
-            filetypes=[("Excel files", "*.xlsx *.xls"), ("All files", "*.*")])
-        if path:
-            self._set_reference_file(path)
+            path = bp.find_purchased_items_file()
+            if path:
+                self.ref_status_var.set(f"✓  Excel reference: {os.path.basename(path)}")
+                self.ref_label.config(fg="#1F6B2E")
+            else:
+                self.ref_status_var.set("No purchasing reference found — cost columns left blank.")
+                self.ref_label.config(fg="#8B4000")
 
     def _sign_in(self):
         cfg = pref.resolve_reference_config()
@@ -206,7 +188,7 @@ class App(tk.Tk):
 
     def _generate(self):
         bom_path = self.bom_var.get().strip()
-        out_dir = self.out_var.get().strip() or os.path.join(os.path.expanduser("~"), "Desktop")
+        out_dir = self.out_var.get().strip() or os.path.join(os.path.expanduser("~"), "Downloads")
         asm = self.asm_var.get().strip()
         if not bom_path:
             messagebox.showwarning("Missing input", "Please select a BOM file.")
@@ -216,7 +198,7 @@ class App(tk.Tk):
             return
         self.btn.config(state="disabled")
         self.status_var.set("Generating…")
-        ref = self._ref_path or ""
+        ref = ""   # reference comes from the Microsoft List (or auto-found Excel)
 
         def run():
             try:

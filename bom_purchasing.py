@@ -871,7 +871,7 @@ def generate_from_vault_bom(
     warnings.extend(ref_warnings)
 
     if not output_dir:
-        output_dir = os.path.join(os.path.expanduser("~"), "Desktop")
+        output_dir = os.path.join(os.path.expanduser("~"), "Downloads")
     os.makedirs(output_dir, exist_ok=True)
     out_file = os.path.join(output_dir, f"{assembly_number}-PurchasingExport.xlsx")
 
