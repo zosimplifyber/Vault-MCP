@@ -71,6 +71,13 @@ LOOKUP_COLUMNS = [
 
 ALL_COLUMNS = BOM_COLUMNS + PURCHASE_COLUMNS
 
+# Header display labels — the sheet's header cell shows these instead of the
+# internal canonical column name (which the vendor/costing logic keys on).
+HEADER_LABELS = {
+    "Description (Item,CO)": "Description",
+    "Title (Item,CO)": "Title",
+}
+
 COLUMN_WIDTHS = {
     "Number": 14, "Row Order": 12, "Position Number": 16,
     "Item Qty": 10, "Units": 8, "Revision": 10,
@@ -421,7 +428,7 @@ def build_purchasing_sheet(
     hdr_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
     bdr = _border()
     for ci, name in enumerate(ALL_COLUMNS, 1):
-        c = ws.cell(row=HDR_ROW, column=ci, value=name)
+        c = ws.cell(row=HDR_ROW, column=ci, value=HEADER_LABELS.get(name, name))
         c.font = hdr_font
         c.fill = hdr_fill
         c.alignment = hdr_align
@@ -566,7 +573,7 @@ def _build_vendor_tab(wb: Workbook, df: pd.DataFrame) -> None:
     # Headers
     HDR = 2
     for ci, name in enumerate(VENDOR_COLUMNS, 1):
-        c = ws.cell(row=HDR, column=ci, value=name)
+        c = ws.cell(row=HDR, column=ci, value=HEADER_LABELS.get(name, name))
         c.font = Font(name="Arial", bold=True, color=WHITE, size=10)
         c.fill = PatternFill("solid", fgColor=DARK_BLUE)
         c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
