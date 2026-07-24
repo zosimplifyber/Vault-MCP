@@ -17,9 +17,10 @@ Design notes
 * ``msal`` and ``pandas`` are imported lazily, so importing this module (and
   therefore ``bom_purchasing``) never hard-requires ``msal``; the Excel-only path
   works even if ``msal`` is missing.
-* It ships INERT: with no ``client_id``/``tenant_id`` configured,
-  ``mslist_is_configured`` is False and callers stay on Excel — zero behavior
-  change until go-live.
+* Safe by default: the non-secret app-registration IDs are bundled, so the List
+  is "configured", but reading it still requires a per-user device-code sign-in.
+  Until a user signs in (no token cache), the loader short-circuits instantly and
+  callers fall back to Excel — so existing users see no change until they opt in.
 * The returned DataFrame uses the SAME canonical column names the Excel path
   produces (``Number`` + the LOOKUP columns), so ``lookup_purchased_data`` is
   unchanged.
@@ -132,10 +133,10 @@ def has_cached_login() -> bool:
 # --------------------------------------------------------------------------- auth
 
 def _token_cache_path() -> str:
+    # Pure path computation (no side effects) — callers that only read the path
+    # (has_cached_login, the offline short-circuit) must not create directories.
     base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
-    d = os.path.join(base, "Simplifyber")
-    os.makedirs(d, exist_ok=True)
-    return os.path.join(d, "purchasing_msal_cache.bin")
+    return os.path.join(base, "Simplifyber", "purchasing_msal_cache.bin")
 
 
 def _load_cache():
@@ -154,7 +155,9 @@ def _load_cache():
 def _save_cache(cache) -> None:
     if getattr(cache, "has_state_changed", False):
         try:
-            with open(_token_cache_path(), "w", encoding="utf-8") as f:
+            p = _token_cache_path()
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            with open(p, "w", encoding="utf-8") as f:
                 f.write(cache.serialize())
         except Exception:
             pass
@@ -247,7 +250,9 @@ def _column_display_map(token: str, site_id: str, list_id: str) -> dict[str, str
 
 def _iter_items(token: str, site_id: str, list_id: str):
     url: str | None = f"{GRAPH}/sites/{site_id}/lists/{list_id}/items"
-    params: dict | None = {"$expand": "fields", "$top": "999"}
+    # 200 is Graph's documented max page size for list items; nextLink paging
+    # below collects the rest. (A larger $top can 400 on some tenants.)
+    params: dict | None = {"$expand": "fields", "$top": "200"}
     while url:
         data = _graph_get(token, url, params=params)
         for item in data.get("value", []):

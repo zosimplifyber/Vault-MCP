@@ -798,23 +798,29 @@ def _enrich_with_reference(df: pd.DataFrame, reference_path: str = "") -> tuple[
         if ref_df is None:
             warnings.append(f"Found reference file at {reference_path} but could not read it.")
     else:
-        cfg = purchasing_reference.resolve_reference_config()
-        # 2) Microsoft List, when configured (and someone has signed in).
-        if cfg.get("source") in ("auto", "mslist") and purchasing_reference.mslist_is_configured(cfg):
-            try:
-                ref_df = purchasing_reference.load_mslist_dataframe(
-                    cfg["mslist"], cfg.get("column_map"))
-            except Exception as exc:  # noqa: BLE001
-                warnings.append(
-                    f"Microsoft List reference unavailable ({exc}); using the Excel file.")
-                ref_df = None
-        # 3) Excel auto-discovery (unless the source is pinned to 'mslist').
-        if ref_df is None and cfg.get("source") != "mslist":
-            path = find_purchased_items_file()
-            if path:
-                ref_df = load_reference_file(path)
-                if ref_df is None:
-                    warnings.append(f"Found reference file at {path} but could not read it.")
+        # Wrapped so reference resolution can NEVER break sheet generation — any
+        # failure just leaves the purchasing columns blank with a warning.
+        try:
+            cfg = purchasing_reference.resolve_reference_config()
+            # 2) Microsoft List, when configured (and someone has signed in).
+            if cfg.get("source") in ("auto", "mslist") and purchasing_reference.mslist_is_configured(cfg):
+                try:
+                    ref_df = purchasing_reference.load_mslist_dataframe(
+                        cfg["mslist"], cfg.get("column_map"))
+                except Exception as exc:  # noqa: BLE001
+                    warnings.append(
+                        f"Microsoft List reference unavailable ({exc}); using the Excel file.")
+                    ref_df = None
+            # 3) Excel auto-discovery (unless the source is pinned to 'mslist').
+            if ref_df is None and cfg.get("source") != "mslist":
+                path = find_purchased_items_file()
+                if path:
+                    ref_df = load_reference_file(path)
+                    if ref_df is None:
+                        warnings.append(f"Found reference file at {path} but could not read it.")
+        except Exception as exc:  # noqa: BLE001
+            warnings.append(f"Could not resolve a purchasing reference ({exc}); columns left blank.")
+            ref_df = None
 
     if ref_df is None:
         warnings.append(

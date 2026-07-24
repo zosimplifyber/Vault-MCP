@@ -57,6 +57,7 @@ def test_load_mslist_dataframe_maps_fields(monkeypatch):
 
 
 def test_load_mslist_dataframe_follows_paging(monkeypatch):
+    calls: list[tuple] = []
     pages = {
         "p1": {"value": [{"fields": {"f1": "SF-1"}}],
                "@odata.nextLink": "https://graph.microsoft.com/v1.0/PAGE2"},
@@ -64,6 +65,7 @@ def test_load_mslist_dataframe_follows_paging(monkeypatch):
     }
 
     def fake_get(token, url, params=None):
+        calls.append((url, params))
         if "/lists/LIST/columns" in url:
             return {"value": [{"name": "f1", "displayName": "Part Number"}]}
         if url.endswith("/PAGE2"):
@@ -79,6 +81,19 @@ def test_load_mslist_dataframe_follows_paging(monkeypatch):
     monkeypatch.setattr(pref, "_graph_get", fake_get)
     df = pref.load_mslist_dataframe(dict(pref.DEFAULT_CONFIG["mslist"]), token="T")
     assert list(df["Number"]) == ["SF-1", "SF-2"]   # both pages collected
+    # The nextLink already carries the query, so it must be re-fetched with no params.
+    assert [p for (u, p) in calls if u.endswith("/PAGE2")] == [None]
+
+
+def test_resolve_config_keeps_baked_ids_when_config_omits_them(monkeypatch):
+    # A config.json block that omits tenant/client must NOT clobber the bundled IDs.
+    monkeypatch.setattr(pref, "_config_json_block",
+                        lambda: {"source": "auto", "mslist": {"list_name": "Custom List"}})
+    cfg = pref.resolve_reference_config()
+    assert cfg["mslist"]["client_id"] == pref.DEFAULT_CONFIG["mslist"]["client_id"]
+    assert cfg["mslist"]["tenant_id"] == pref.DEFAULT_CONFIG["mslist"]["tenant_id"]
+    assert cfg["mslist"]["list_name"] == "Custom List"   # provided override applied
+    assert pref.mslist_is_configured(cfg) is True
 
 
 def test_enrich_falls_back_to_excel_when_mslist_fails(tmp_path, monkeypatch):
