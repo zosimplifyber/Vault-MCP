@@ -17,6 +17,7 @@ import subprocess
 import sys
 import threading
 import queue
+import webbrowser
 from pathlib import Path
 from typing import Any, Optional
 
@@ -28,6 +29,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
 import bom_purchasing  # noqa: E402
+import purchasing_reference  # noqa: E402
 from vault_rest_api import VaultRestAPI  # noqa: E402
 
 # Reuse brand palette + helpers from the workflow GUI for visual consistency
@@ -157,7 +159,7 @@ class PurchasingGUI:
         self.part_var = self.pn_var
         self.busy = False  # SearchDialog reads this to refuse mid-flight searches
         self.bom_var = tk.StringVar()
-        self.out_var = tk.StringVar(value=os.path.join(os.path.expanduser("~"), "Desktop"))
+        self.out_var = tk.StringVar(value=os.path.join(os.path.expanduser("~"), "Downloads"))
         self.asm_var = tk.StringVar()
         self.ref_status_var = tk.StringVar(value="Searching for reference file…")
         self.status_var = tk.StringVar(value="Ready.")
@@ -220,7 +222,7 @@ class PurchasingGUI:
         card.pack(fill="x", padx=18, pady=(14, 8))
 
         tk.Label(
-            card, text="  PURCHASED ITEMS REFERENCE FILE",
+            card, text="  PURCHASED ITEMS REFERENCE (MICROSOFT LIST)",
             bg=DARK_BLUE, fg=WHITE,
             font=("Arial", 10, "bold"),
             anchor="w", padx=10, pady=6,
@@ -236,6 +238,12 @@ class PurchasingGUI:
             anchor="w", justify="left", wraplength=520,
         )
         self.ref_label.pack(fill="x")
+        self.signin_btn = tk.Button(
+            body, text="Sign in to Microsoft", command=self._sign_in,
+            bg=MID_BLUE, fg=WHITE, relief="flat", font=("Arial", 8),
+            padx=8, pady=2, cursor="hand2",
+        )
+        self.signin_btn.pack(anchor="w", pady=(6, 0))
 
     # -- Source panel (toggle between Vault lookup and File import) ---------
 
@@ -528,21 +536,67 @@ class PurchasingGUI:
             self.file_frame.pack(fill="x", pady=(4, 0))
 
     def _refresh_reference_status(self) -> None:
+        cfg = purchasing_reference.resolve_reference_config()
+        if purchasing_reference.mslist_is_configured(cfg):
+            if purchasing_reference.has_cached_login():
+                self.ref_status_var.set(
+                    "OK   Microsoft List (Purchased Items) — signed in."
+                )
+                self.ref_label.configure(fg="#1F6B2E")
+            else:
+                self.ref_status_var.set(
+                    "Not signed in — click 'Sign in to Microsoft' to fill Vendor / Cost / "
+                    "Material from the Purchased Items list. Until then those columns are blank."
+                )
+                self.ref_label.configure(fg=RUST_ORANGE)
+            return
+        # No Microsoft List configured — fall back to showing the Excel file status.
         info = bom_purchasing.reference_file_status()
         if info.get("found"):
-            path = info.get("path", "")
-            count = info.get("part_count", 0)
             self.ref_status_var.set(
-                f"OK   {os.path.basename(path)}  ({count} parts)\n{path}"
+                f"OK   {os.path.basename(info.get('path', ''))}  "
+                f"({info.get('part_count', 0)} parts)"
             )
             self.ref_label.configure(fg="#1F6B2E")
         else:
             self.ref_status_var.set(
-                "WARN  Reference file not found. "
-                "Material/Vendor/Cost Per columns will be blank.\n"
-                f"Expected: {info.get('expected', '(unknown)')}"
+                "WARN  No purchasing reference available — cost columns will be blank."
             )
             self.ref_label.configure(fg=RUST_ORANGE)
+
+    def _sign_in(self) -> None:
+        cfg = purchasing_reference.resolve_reference_config()
+        if not purchasing_reference.mslist_is_configured(cfg):
+            messagebox.showinfo("Not configured",
+                                "No Microsoft List is configured.", parent=self.root)
+            return
+        self.signin_btn.configure(state="disabled")
+        self.ref_status_var.set("Starting Microsoft sign-in…")
+
+        def worker() -> None:
+            try:
+                purchasing_reference.acquire_token(
+                    cfg["mslist"], interactive=True, printer=self._device_printer)
+                self.root.after(0, self._on_sign_in_done, None)
+            except Exception as exc:  # noqa: BLE001
+                self.root.after(0, self._on_sign_in_done, str(exc))
+
+        threading.Thread(target=worker, daemon=True, name="purchasing-signin").start()
+
+    def _device_printer(self, message: str) -> None:
+        def show() -> None:
+            try:
+                webbrowser.open("https://microsoft.com/devicelogin")
+            except Exception:
+                pass
+            messagebox.showinfo("Sign in to Microsoft", message, parent=self.root)
+        self.root.after(0, show)
+
+    def _on_sign_in_done(self, error: Optional[str]) -> None:
+        self.signin_btn.configure(state="normal")
+        if error:
+            messagebox.showerror("Sign-in failed", error, parent=self.root)
+        self._refresh_reference_status()
 
     # ----- Cross-thread queue ----------------------------------------------
 
