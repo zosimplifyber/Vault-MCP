@@ -109,7 +109,7 @@ def test_generate_from_file_inventor_export_populates(tmp_path, monkeypatch):
     )
 
     # Reference "enrichment" that would overwrite Material — prove export wins.
-    def fake_enrich(df):
+    def fake_enrich(df, reference_path=""):
         df = df.copy()
         df["Material"] = "REF-MATERIAL"
         df["Vendor"] = "Acme"
