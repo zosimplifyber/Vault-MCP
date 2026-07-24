@@ -44,7 +44,7 @@ def _run_update(*, apply: bool, only_missing: bool, limit: int | None) -> dict:
 def _print_report(report: dict) -> None:
     c = report["counts"]
     mode = "APPLIED" if not report["dry_run"] else "DRY-RUN (no writes)"
-    print(f"\n=== McMaster price update — {mode} ===")
+    print(f"\n=== McMaster price update - {mode} ===")
     print(f"scanned={c['scanned']} mcmaster={c['mcmaster']} priced={c['priced']} "
           f"applied={report['applied']} not_found={c['not_found']} "
           f"no_vendor_number={c['no_vendor_number']} "

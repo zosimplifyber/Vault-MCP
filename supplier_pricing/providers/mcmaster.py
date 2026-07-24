@@ -185,12 +185,8 @@ def make_mcmaster_provider(config: dict | None = None) -> PriceProvider:
     cfg = (config or {}).get("mcmaster", {}) if config else {}
     cert = cfg.get("api_cert")
     if cert:
-        cert_tuple = cert
-        if cfg.get("api_cert_password"):
-            # httpx accepts (certfile, keyfile, password) — pass through as given.
-            cert_tuple = cert
         return McMasterApiProvider(
-            cert=cert_tuple, cert_password=cfg.get("api_cert_password", ""),
+            cert=cert, cert_password=cfg.get("api_cert_password", ""),
             user=cfg.get("api_user", ""), password=cfg.get("api_password", ""),
         )
     return McMasterBrowserProvider(user_data_dir=cfg.get("user_data_dir", ""))
