@@ -89,8 +89,9 @@ def _print_add_report(report: dict) -> None:
           f"added={report['created']}  updated={report.get('updated', 0)}  "
           f"errors={len(errs)}  by_source={report['by_source']}")
     for r in report["rows"]:
-        print(f"  + {r['number']:<14} [{r['source'] or '-':<6}] "
-              f"{str(r['description'] or '')[:44]}  ({r['status']})")
+        desc = str(r.get("description") or "").strip()
+        print(f"  + {r['number']}  [{r['source'] or '-'}]  {r['status']}"
+              + (f"  {desc[:50]}" if desc else ""))
     for e in errs:
         print(f"  ! {e['number']}: {e['error'][:120]}")
 

@@ -85,8 +85,9 @@ def launch_bom_list_sync_gui(*, cfg=None, parent=None, **_ignored) -> None:
             f"By source: {report['by_source']}")
         for r in report["rows"]:
             mark = "!" if r["status"] == "error" else "+"
-            log(f"   {mark} {r['number']:<14}[{r['source'] or '-'}] "
-                f"{str(r['description'] or '')[:50]}")
+            desc = str(r.get("description") or "").strip()
+            log(f"   {mark} {r['number']}  [{r['source'] or '-'}]  {r['status']}"
+                + (f"  {desc[:50]}" if desc else ""))
         errs = report.get("errors", [])
         if errs:
             log(f"\n{len(errs)} row(s) failed to write:")
