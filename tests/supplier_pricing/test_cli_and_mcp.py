@@ -8,6 +8,7 @@ if ROOT not in sys.path:
 from supplier_pricing import cli  # noqa: E402
 from supplier_pricing.providers.mcmaster import (  # noqa: E402
     McMasterApiProvider, McMasterBrowserProvider, make_mcmaster_provider,
+    _DisabledProvider,
 )
 
 
@@ -30,14 +31,32 @@ class TestParser:
 
 
 class TestProviderFactory:
-    def test_no_cert_gives_browser_provider(self):
-        assert isinstance(make_mcmaster_provider({}), McMasterBrowserProvider)
+    def test_no_cert_default_disables_scraping(self):
+        # Safe by default: no cert + no opt-in => never scrapes.
+        prov = make_mcmaster_provider({})
+        assert isinstance(prov, _DisabledProvider)
+        r = prov.get_price("1078A331")
+        assert not r.ok()
+        assert "scraping is DISABLED" in r.error
+        assert r.source == "mcmaster:disabled"
+
+    def test_no_cert_with_allow_scrape_gives_browser(self):
+        prov = make_mcmaster_provider({}, allow_scrape=True)
+        assert isinstance(prov, McMasterBrowserProvider)
+
+    def test_config_allow_scrape_flag_gives_browser(self):
+        prov = make_mcmaster_provider({"mcmaster": {"allow_scrape": True}})
+        assert isinstance(prov, McMasterBrowserProvider)
 
     def test_cert_gives_api_provider(self):
         prov = make_mcmaster_provider({"mcmaster": {"api_cert": "cert.pfx",
                                                     "api_user": "u",
                                                     "api_password": "p"}})
         assert isinstance(prov, McMasterApiProvider)
+
+    def test_mode_api_without_cert_refuses_to_scrape(self):
+        prov = make_mcmaster_provider({"mcmaster": {"mode": "api"}})
+        assert isinstance(prov, _DisabledProvider)
 
 
 class FakeMcp:

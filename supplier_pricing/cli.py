@@ -22,19 +22,23 @@ def _print_json(obj) -> None:
 
 def cmd_price(args) -> int:
     sp = supplier_pricing_block()
-    provider = make_mcmaster_provider(sp)
+    provider = make_mcmaster_provider(sp, allow_scrape=args.allow_scrape)
     result = provider.get_price(args.part_number, qty=args.qty)
+    close = getattr(provider, "close", None)
+    if close:
+        close()
     _print_json(result.to_dict())
     return 0 if result.ok() else 1
 
 
-def _run_update(*, apply: bool, only_missing: bool, limit: int | None) -> dict:
+def _run_update(*, apply: bool, only_missing: bool, limit: int | None,
+                allow_scrape: bool = False) -> dict:
     from purchasing_update import GraphListClient, update_mcmaster_prices
     cfg = load_config()
     sp = supplier_pricing_block(cfg)
     client = GraphListClient.connect(cfg=None, list_name=update_list_name(sp),
                                      interactive=False)
-    provider = make_mcmaster_provider(sp)
+    provider = make_mcmaster_provider(sp, allow_scrape=allow_scrape)
     try:
         return update_mcmaster_prices(
             client, provider, dry_run=not apply, only_missing=only_missing,
@@ -66,7 +70,7 @@ def _print_report(report: dict) -> None:
 
 def cmd_update(args) -> int:
     report = _run_update(apply=args.apply, only_missing=args.only_missing,
-                         limit=args.limit)
+                         limit=args.limit, allow_scrape=args.allow_scrape)
     _print_report(report)
     return 0
 
@@ -103,6 +107,9 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("price", help="look up one McMaster part's price")
     sp.add_argument("part_number")
     sp.add_argument("--qty", type=int, default=1)
+    sp.add_argument("--allow-scrape", action="store_true",
+                    help="allow the browser fallback if no API cert is configured "
+                         "(scraping may violate McMaster's terms — off by default)")
     sp.set_defaults(func=cmd_price)
 
     su = sub.add_parser("update-list", help="update McMaster prices in the List")
@@ -111,6 +118,9 @@ def build_parser() -> argparse.ArgumentParser:
     su.add_argument("--only-missing", action="store_true",
                     help="only price rows that have no cost yet")
     su.add_argument("--limit", type=int, default=None)
+    su.add_argument("--allow-scrape", action="store_true",
+                    help="allow the browser fallback if no API cert is configured "
+                         "(scraping may violate McMaster's terms — off by default)")
     su.set_defaults(func=cmd_update)
 
     pr = sub.add_parser("probe", help="sign in (write scope) and print list columns")

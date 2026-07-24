@@ -50,13 +50,17 @@ python -m supplier_pricing login-mcmaster            # browser-fallback sign-in
   "update": { "list_name": "Engineering Purchased Parts" },
   "write_field_map": { "Cost Per": "", "Lead Time (Business Days)": "" },
   "mcmaster": {
+    "mode": "auto",                 // "auto" | "api" | "browser"
     "api_cert": "", "api_cert_password": "",
     "api_user": "", "api_password": "",
+    "allow_scrape": false,
     "user_data_dir": ""
   }
 }
 ```
-- Empty McMaster `api_cert` ⇒ browser fallback (the expected default).
+- `mode`: `auto` = API if a cert is set, else disabled (no scraping); `api` =
+  API only (never scrapes); `browser` = scrape.
+- Empty McMaster `api_cert` + `allow_scrape:false` ⇒ **disabled** (safe default).
 - Empty `write_field_map` values ⇒ the tool auto-detects the columns; fill them in
   from `probe` output if auto-detect picks the wrong column.
 
@@ -74,19 +78,33 @@ python -m supplier_pricing login-mcmaster            # browser-fallback sign-in
    "Engineering Purchased Parts" columns (display → internal) and the detected
    field roles. If `Cost Per` / `Lead Time` weren't detected correctly, set them
    in `write_field_map` (display → internal name from the probe output).
-3. **Enable McMaster pricing** — the **browser fallback works out of the box**:
-   McMaster shows list prices **without a login**, and the price selector is
-   confirmed live (`price 1078A331` -> $7.08). Just make sure Playwright + its
-   browser are installed:
-   ```bash
-   python -m pip install playwright && python -m playwright install chromium
-   ```
-   No `login-mcmaster` needed for list pricing (it only helps if you want
-   contract pricing tied to your account).
-   - **Official API (optional):** obtain API access (email
-     eprocurement@mcmaster.com — approval-gated) and put the cert/creds in
-     `config.json` for contract pricing. A `.pfx` cert may need PEM conversion —
-     ping me to finalize.
+3. **Enable McMaster pricing.** Scraping mcmaster.com can get your account banned,
+   so **browser scraping is OFF by default** — the tool refuses (`source:
+   mcmaster:disabled`) unless you either configure the official API or explicitly
+   opt in to the browser.
+   - **Official API (recommended, sanctioned).** Requires a McMaster **client
+     certificate** (`.pfx`) + password + API username/password — McMaster issues
+     these to approved API customers (email eprocurement@mcmaster.com). Put them
+     in `config.json` (git-ignored — **never** paste secrets into chat):
+     ```json
+     "supplier_pricing": { "mcmaster": {
+       "mode": "api",
+       "api_cert": "C:\\\\path\\\\to\\\\mcmaster.pfx",
+       "api_cert_password": "…",
+       "api_user": "…",
+       "api_password": "…"
+     }}
+     ```
+     `mode: "api"` guarantees it never scrapes. The `.pfx` is attached to every
+     request via `requests-pkcs12` (`pip install requests-pkcs12`).
+   - **Browser fallback (opt-in).** Only if you don't have API access and accept
+     the risk: pass `--allow-scrape` (or set `mcmaster.allow_scrape: true`). It
+     reads the public list price (confirmed live: `1078A331` -> $7.08); no login
+     needed. Requires `pip install playwright && python -m playwright install chromium`.
+
+**Confirm which path is active** — every result includes a `source`:
+`mcmaster:api` (official API ✓) · `mcmaster:web` (scraping) · `mcmaster:disabled`
+(nothing configured). Run `python -m supplier_pricing price 1078A331` and check it.
 4. **Dry-run, then apply:**
    ```bash
    python -m supplier_pricing update-list --only-missing --limit 5   # review

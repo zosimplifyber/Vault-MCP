@@ -72,10 +72,18 @@ class McMasterApiProvider(PriceProvider):
     # -- http -------------------------------------------------------------
     def _http(self):
         if self._client is None:
-            import httpx
-            # PKCS#12 client cert support: prefer requests-pkcs12-style loading via
-            # httpx's SSLContext. Kept lazy so importing this module is cheap.
-            self._client = httpx.Client(timeout=30, cert=self._cert)
+            import requests
+            session = requests.Session()
+            cert = self._cert
+            if cert and str(cert).lower().endswith((".pfx", ".p12")):
+                # McMaster issues a PKCS#12 client certificate. requests_pkcs12
+                # attaches it (in memory) to every HTTPS request.
+                from requests_pkcs12 import Pkcs12Adapter
+                session.mount("https://", Pkcs12Adapter(
+                    pkcs12_filename=cert, pkcs12_password=self._cert_password))
+            elif cert:
+                session.cert = cert     # already-PEM cert path or (cert, key) tuple
+            self._client = session
         return self._client
 
     def _auth_headers(self) -> dict:
@@ -223,13 +231,53 @@ class McMasterBrowserProvider(PriceProvider):
         self.close()
 
 
-def make_mcmaster_provider(config: dict | None = None) -> PriceProvider:
-    """Pick the API provider when a cert is configured, else the browser fallback."""
+class _DisabledProvider(PriceProvider):
+    """Returned when neither the API is configured nor scraping is allowed.
+
+    Every lookup fails safely with an explanatory message — the tool never scrapes
+    McMaster (ban risk) unless you opt in.
+    """
+    vendor_key = "mcmaster"
+
+    def __init__(self, reason: str):
+        self.reason = reason
+
+    def get_price(self, part_number: str, qty: int = 1) -> PriceResult:
+        return _err(part_number, self.reason, "mcmaster:disabled")
+
+
+_NO_API_REASON = (
+    "No McMaster API certificate configured. Browser scraping is DISABLED by "
+    "default to protect your account from bans. Configure the official API "
+    "(supplier_pricing.mcmaster.api_cert + api_cert_password + api_user + "
+    "api_password), or pass --allow-scrape / set mcmaster.allow_scrape=true to "
+    "use the browser fallback deliberately."
+)
+
+
+def make_mcmaster_provider(config: dict | None = None, *,
+                           allow_scrape: bool = False) -> PriceProvider:
+    """Choose a McMaster provider, safe by default.
+
+    - API cert configured (mode auto/api) -> official API (no scraping).
+    - mode "api" but no cert -> disabled (refuses to scrape).
+    - no cert, scraping not allowed -> disabled (default; protects the account).
+    - no cert, scraping explicitly allowed (flag/config/mode "browser") -> browser.
+    """
     cfg = (config or {}).get("mcmaster", {}) if config else {}
     cert = cfg.get("api_cert")
-    if cert:
+    mode = (cfg.get("mode") or "auto").lower()
+
+    if cert and mode in ("auto", "api"):
         return McMasterApiProvider(
             cert=cert, cert_password=cfg.get("api_cert_password", ""),
             user=cfg.get("api_user", ""), password=cfg.get("api_password", ""),
         )
-    return McMasterBrowserProvider(user_data_dir=cfg.get("user_data_dir", ""))
+    if mode == "api":
+        return _DisabledProvider(
+            "McMaster mode is 'api' but no api_cert is configured; refusing to scrape.")
+
+    allow = allow_scrape or bool(cfg.get("allow_scrape")) or mode == "browser"
+    if allow:
+        return McMasterBrowserProvider(user_data_dir=cfg.get("user_data_dir", ""))
+    return _DisabledProvider(_NO_API_REASON)

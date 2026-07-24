@@ -10,29 +10,38 @@ import json
 
 def register(mcp) -> None:
     @mcp.tool()
-    def purchasing_get_mcmaster_price(part_number: str, qty: int = 1) -> str:
+    def purchasing_get_mcmaster_price(part_number: str, qty: int = 1,
+                                      allow_scrape: bool = False) -> str:
         """
         Look up the current McMaster-Carr unit price for an exact part number.
 
-        Uses the official McMaster API when a client certificate is configured,
-        otherwise a browser fallback. Lead time is always reported as 1 business
-        day (McMaster ships same-day; their API exposes no lead time). Returns a
-        JSON PriceResult (unit_price, price_breaks, source, error).
+        Uses the official McMaster API when a client certificate is configured. If
+        no cert is configured, browser scraping is DISABLED by default (it can get
+        your account banned) and this returns an error explaining how to enable the
+        API; pass allow_scrape=True to deliberately use the browser fallback. Lead
+        time is always reported as 1 business day. Check the returned `source`:
+        "mcmaster:api" (safe) vs "mcmaster:web" (scraping) vs "mcmaster:disabled".
 
         Args:
             part_number: Exact McMaster part number (e.g. "1078A331").
             qty: Quantity, for quantity-break pricing (default 1).
+            allow_scrape: Permit the browser fallback when no API cert is set.
         """
         from .config import supplier_pricing_block
         from .providers.mcmaster import make_mcmaster_provider
-        provider = make_mcmaster_provider(supplier_pricing_block())
-        return json.dumps(provider.get_price(part_number, qty=qty).to_dict(),
-                          indent=2, default=str)
+        provider = make_mcmaster_provider(supplier_pricing_block(),
+                                          allow_scrape=allow_scrape)
+        result = provider.get_price(part_number, qty=qty)
+        close = getattr(provider, "close", None)
+        if close:
+            close()
+        return json.dumps(result.to_dict(), indent=2, default=str)
 
     @mcp.tool()
     def purchasing_update_mcmaster_prices(dry_run: bool = True,
                                           only_missing: bool = False,
-                                          limit: int | None = None) -> str:
+                                          limit: int | None = None,
+                                          allow_scrape: bool = False) -> str:
         """
         Update McMaster-Carr prices in the "Engineering Purchased Parts" Microsoft
         List. For every list row whose Vendor is McMaster and that has a Vendor
@@ -54,5 +63,5 @@ def register(mcp) -> None:
         """
         from .cli import _run_update
         report = _run_update(apply=not dry_run, only_missing=only_missing,
-                             limit=limit)
+                             limit=limit, allow_scrape=allow_scrape)
         return json.dumps(report, indent=2, default=str)
