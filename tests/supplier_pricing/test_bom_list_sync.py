@@ -32,6 +32,7 @@ EXISTING = [
 class FakeClient:
     def __init__(self):
         self.created = []
+        self.patched = []
 
     def column_display_map(self):
         return dict(DISP)
@@ -43,6 +44,9 @@ class FakeClient:
     def create_list_item(self, fields):
         self.created.append(dict(fields))
         return {"id": str(100 + len(self.created)), "fields": fields}
+
+    def patch_fields(self, item_id, fields):
+        self.patched.append((item_id, dict(fields)))
 
 
 def bom():
@@ -87,6 +91,25 @@ class TestApply:
         assert w["field_2"] == "widget bracket"     # description
         assert w["field_3"] == "aluminum"           # material
 
+    def test_title_and_vendor_number_come_from_bom_not_the_number(self):
+        client = FakeClient()
+        df = pd.DataFrame({
+            "Number": ["SF-999001"],
+            "Title (Item,CO)": ["CD-001574"],      # BOM Title, distinct from number
+            "Description (Item,CO)": ["bmw bladder"],
+            "Material": ["aluminum"],
+            "Vendor": ["Acme"],
+            "Vendor Number": ["https://example.com/p"],   # from BOM Web Link
+            "Source": ["Buy"],
+        })
+        bls.add_missing_bom_rows(client, df, dry_run=False)
+        f = client.created[0]
+        assert f["Title"] == "SF-999001"           # part number -> built-in key
+        assert f["field_1"] == "CD-001574"         # Title (Item,CO) != number
+        assert f["field_1"] != f["Title"]
+        assert f["field_4"] == "Acme"
+        assert f["field_5"] == "https://example.com/p"
+
     def test_nan_cells_are_skipped_and_output_is_json_safe(self):
         import json
         client = FakeClient()
@@ -109,6 +132,34 @@ class TestApply:
         titles = {c["Title"] for c in client.created}
         assert titles == {"SF-999001"}              # SF-999002 is a Make part
         assert report["created"] == 1
+
+    def test_update_existing_patches_present_rows_without_the_key(self):
+        # SF-000067 is already in the list; with update_existing it should be
+        # PATCHed (title/desc) but NOT re-created, and Title (key) is not patched.
+        client = FakeClient()
+        df = pd.DataFrame({
+            "Number": ["SF-000067"],
+            "Title (Item,CO)": ["CD-000900"],
+            "Description (Item,CO)": ["updated desc"],
+            "Material": ["plastic"],
+            "Source": ["Buy"],
+        })
+        report = bls.add_missing_bom_rows(client, df, dry_run=False,
+                                          update_existing=True)
+        assert client.created == []                 # not re-added
+        assert report["updated"] == 1
+        item_id, patch = client.patched[0]
+        assert item_id == "1"                       # matched existing item id
+        assert "Title" not in patch                 # never patch the key field
+        assert patch["field_1"] == "CD-000900"
+        assert patch["field_2"] == "updated desc"
+
+    def test_update_existing_off_by_default(self):
+        client = FakeClient()
+        df = pd.DataFrame({"Number": ["SF-000067"],
+                           "Description (Item,CO)": ["x"], "Source": ["Buy"]})
+        bls.add_missing_bom_rows(client, df, dry_run=False)
+        assert client.patched == []                 # default leaves existing alone
 
     def test_one_failing_create_does_not_abort_the_batch(self):
         class FlakyClient(FakeClient):

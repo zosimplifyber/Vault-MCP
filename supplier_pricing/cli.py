@@ -86,7 +86,8 @@ def _print_add_report(report: dict) -> None:
     print(f"\n=== BOM -> List add - {mode} ===")
     errs = report.get("errors", [])
     print(f"already in list={report['existing_count']}  missing={len(report['missing'])}  "
-          f"added={report['created']}  errors={len(errs)}  by_source={report['by_source']}")
+          f"added={report['created']}  updated={report.get('updated', 0)}  "
+          f"errors={len(errs)}  by_source={report['by_source']}")
     for r in report["rows"]:
         print(f"  + {r['number']:<14} [{r['source'] or '-':<6}] "
               f"{str(r['description'] or '')[:44]}  ({r['status']})")
@@ -103,7 +104,8 @@ def cmd_add_from_bom(args) -> int:
     sources = {"Buy", "Other"} if args.buy_only else None
     client = _connect_client()
     report = bom_list_sync.add_missing_bom_rows(
-        client, df, dry_run=not args.apply, sources=sources)
+        client, df, dry_run=not args.apply, sources=sources,
+        update_existing=args.update_existing)
     _print_add_report(report)
     return 0
 
@@ -190,6 +192,10 @@ def build_parser() -> argparse.ArgumentParser:
                     help="actually create the rows (default is a dry run)")
     ab.add_argument("--buy-only", action="store_true",
                     help="only add Buy/Other parts (skip Make)")
+    ab.add_argument("--update-existing", action="store_true",
+                    help="also PATCH parts already in the list with the BOM's "
+                         "Title/Description/Material/Vendor/Vendor Number "
+                         "(leaves Cost/Lead untouched)")
     ab.set_defaults(func=cmd_add_from_bom)
 
     cw = sub.add_parser("check-write",

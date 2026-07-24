@@ -68,7 +68,8 @@ def register(mcp) -> None:
 
     @mcp.tool()
     def purchasing_add_bom_items_to_list(bom_file: str, dry_run: bool = True,
-                                         buy_only: bool = False) -> str:
+                                         buy_only: bool = False,
+                                         update_existing: bool = False) -> str:
         """
         Add parts from an exported BOM to the "Engineering Purchased Parts"
         Microsoft List when they are not already present (matched by part number).
@@ -93,5 +94,6 @@ def register(mcp) -> None:
         sources = {"Buy", "Other"} if buy_only else None
         client = _connect_client()
         report = bom_list_sync.add_missing_bom_rows(
-            client, df, dry_run=dry_run, sources=sources)
+            client, df, dry_run=dry_run, sources=sources,
+            update_existing=update_existing)
         return json.dumps(report, indent=2, default=str)

@@ -29,6 +29,7 @@ def launch_bom_list_sync_gui(*, cfg=None, parent=None, **_ignored) -> None:
 
     path_var = tk.StringVar()
     buyonly_var = tk.BooleanVar(value=False)
+    update_var = tk.BooleanVar(value=False)
     state: dict = {"report": None, "busy": False}
 
     top = tk.Frame(win, padx=12, pady=10)
@@ -46,6 +47,9 @@ def launch_bom_list_sync_gui(*, cfg=None, parent=None, **_ignored) -> None:
     tk.Button(top, text="Browse…", command=browse).grid(row=0, column=2)
     tk.Checkbutton(top, text="Only add Buy/Other parts (skip Make)",
                    variable=buyonly_var).grid(row=1, column=1, sticky="w", pady=(6, 0))
+    tk.Checkbutton(top, text="Also update parts already in the list "
+                   "(fix Title/Vendor/etc.; leaves Cost/Lead)",
+                   variable=update_var).grid(row=2, column=1, sticky="w")
 
     btns = tk.Frame(win, padx=12)
     btns.pack(fill="x")
@@ -73,8 +77,11 @@ def launch_bom_list_sync_gui(*, cfg=None, parent=None, **_ignored) -> None:
     def show_report(report: dict, applied: bool) -> None:
         state["report"] = report
         n = len(report["missing"])
+        upd = report.get("updated", 0)
         log(f"\n{'ADDED' if applied else 'Found'} {report['created'] if applied else n} "
-            f"missing part(s). Already in list: {report['existing_count']}. "
+            f"missing part(s)"
+            + (f", {'UPDATED ' if applied else ''}{upd} existing" if update_var.get() else "")
+            + f". Already in list: {report['existing_count']}. "
             f"By source: {report['by_source']}")
         for r in report["rows"]:
             mark = "!" if r["status"] == "error" else "+"
@@ -116,7 +123,8 @@ def launch_bom_list_sync_gui(*, cfg=None, parent=None, **_ignored) -> None:
                 client = _connect_client()
                 sources = {"Buy", "Other"} if buyonly_var.get() else None
                 report = bom_list_sync.add_missing_bom_rows(
-                    client, df, dry_run=not apply, sources=sources)
+                    client, df, dry_run=not apply, sources=sources,
+                    update_existing=update_var.get())
                 post(lambda: show_report(report, apply))
             except Exception as exc:                       # noqa: BLE001
                 msg = str(exc)
