@@ -55,7 +55,7 @@ PURCHASED_ITEMS_SHEET = "purchased parts"
 # ---------------------------------------------------------------------------
 BOM_COLUMNS = [
     "Number", "Row Order", "Position Number", "Item Qty", "Units",
-    "Revision", "State", "Description (Item,CO)", "Source",
+    "Revision", "Description (Item,CO)", "Source",
 ]
 
 PURCHASE_COLUMNS = [
@@ -74,7 +74,7 @@ ALL_COLUMNS = BOM_COLUMNS + PURCHASE_COLUMNS
 COLUMN_WIDTHS = {
     "Number": 14, "Row Order": 12, "Position Number": 16,
     "Item Qty": 10, "Units": 8, "Revision": 10,
-    "State": 14, "Description (Item,CO)": 44,
+    "Description (Item,CO)": 44,
     "Source": 10, "Material": 22,
     "Vendor": 18, "Vendor Number": 18,
     "Cost Per": 12, "HS/HTS Code": 14, "Shipping": 12, "Tax/Tariff": 12,
@@ -124,11 +124,6 @@ VAULT_FIELD_MAP: dict[str, str] = {
     # Revision
     "Revision": "Revision",
     "Rev": "Revision",
-    # State / lifecycle
-    "State": "State",
-    "LifecycleState": "State",
-    "Lifecycle State": "State",
-    "Status": "State",
     # Description
     "Description (Item,CO)": "Description (Item,CO)",
     "Description": "Description (Item,CO)",
