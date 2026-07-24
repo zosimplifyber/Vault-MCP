@@ -52,6 +52,19 @@ def _row_get(row, key):
     return val
 
 
+def _is_blank(value) -> bool:
+    """True for None, empty string, or a pandas/numpy NaN (NaN != NaN)."""
+    if value is None:
+        return True
+    try:
+        if value != value:          # NaN
+            return True
+    except Exception:
+        pass
+    s = str(value).strip()
+    return s == "" or s.lower() == "nan"
+
+
 def build_item_fields(row, number: str, d2i: dict[str, str]) -> dict:
     """Build the Graph `fields` body for a new list item from a BOM row."""
     fields: dict[str, object] = {"Title": number}
@@ -67,8 +80,10 @@ def build_item_fields(row, number: str, d2i: dict[str, str]) -> dict:
             value = _row_get(row, bom_col)
         except (KeyError, IndexError):
             value = None
-        if value is not None and str(value).strip() != "":
-            fields[internal] = value
+        if not _is_blank(value):
+            # List columns we populate here are all text -> stringify so numpy/
+            # pandas scalars stay JSON-serializable.
+            fields[internal] = str(value).strip()
     return fields
 
 
@@ -86,6 +101,7 @@ def add_missing_bom_rows(client, bom_df, *, dry_run: bool = True,
 
     rows_out: list[dict] = []
     missing: list[str] = []
+    errors: list[dict] = []
     by_source: dict[str, int] = {}
     seen: set[str] = set()
     created = 0
@@ -107,9 +123,13 @@ def add_missing_bom_rows(client, bom_df, *, dry_run: bool = True,
         fields = build_item_fields(row, number, d2i)
         status = "would_add"
         if not dry_run:
-            client.create_list_item(fields)
-            created += 1
-            status = "added"
+            try:
+                client.create_list_item(fields)
+                created += 1
+                status = "added"
+            except Exception as exc:                       # noqa: BLE001
+                status = "error"
+                errors.append({"number": number, "error": str(exc)})
         rows_out.append({
             "number": number,
             "description": fields.get(d2i.get("Description (Item,CO)", ""), None),
@@ -122,6 +142,7 @@ def add_missing_bom_rows(client, bom_df, *, dry_run: bool = True,
         "missing": missing,
         "existing_count": len(have),
         "created": created,
+        "errors": errors,
         "by_source": by_source,
         "rows": rows_out,
         "dry_run": dry_run,

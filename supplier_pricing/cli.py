@@ -84,11 +84,14 @@ def cmd_update(args) -> int:
 def _print_add_report(report: dict) -> None:
     mode = "APPLIED" if not report["dry_run"] else "DRY-RUN (nothing added)"
     print(f"\n=== BOM -> List add - {mode} ===")
+    errs = report.get("errors", [])
     print(f"already in list={report['existing_count']}  missing={len(report['missing'])}  "
-          f"added={report['created']}  by_source={report['by_source']}")
+          f"added={report['created']}  errors={len(errs)}  by_source={report['by_source']}")
     for r in report["rows"]:
         print(f"  + {r['number']:<14} [{r['source'] or '-':<6}] "
               f"{str(r['description'] or '')[:44]}  ({r['status']})")
+    for e in errs:
+        print(f"  ! {e['number']}: {e['error'][:120]}")
 
 
 def cmd_add_from_bom(args) -> int:

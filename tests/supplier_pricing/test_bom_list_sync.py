@@ -87,6 +87,21 @@ class TestApply:
         assert w["field_2"] == "widget bracket"     # description
         assert w["field_3"] == "aluminum"           # material
 
+    def test_nan_cells_are_skipped_and_output_is_json_safe(self):
+        import json
+        client = FakeClient()
+        df = pd.DataFrame({
+            "Number": ["SF-999003"],
+            "Description (Item,CO)": [float("nan")],   # empty cell -> pandas NaN
+            "Material": ["steel"],
+            "Source": ["Buy"],
+        })
+        bls.add_missing_bom_rows(client, df, dry_run=False)
+        fields = client.created[0]
+        assert "field_2" not in fields          # NaN description not written
+        assert fields["field_3"] == "steel"
+        json.dumps(fields)                       # must not raise on NaN
+
     def test_source_filter_limits_to_buy(self):
         client = FakeClient()
         report = bls.add_missing_bom_rows(client, bom(), dry_run=False,
@@ -94,3 +109,18 @@ class TestApply:
         titles = {c["Title"] for c in client.created}
         assert titles == {"SF-999001"}              # SF-999002 is a Make part
         assert report["created"] == 1
+
+    def test_one_failing_create_does_not_abort_the_batch(self):
+        class FlakyClient(FakeClient):
+            def create_list_item(self, fields):
+                if fields["Title"] == "SF-999001":
+                    raise RuntimeError("Graph POST item 403: access denied")
+                return super().create_list_item(fields)
+
+        client = FlakyClient()
+        report = bls.add_missing_bom_rows(client, bom(), dry_run=False)
+        assert report["created"] == 1              # SF-999002 still added
+        assert len(report["errors"]) == 1
+        assert report["errors"][0]["number"] == "SF-999001"
+        by_item = {r["number"]: r for r in report["rows"]}
+        assert by_item["SF-999001"]["status"] == "error"

@@ -77,8 +77,18 @@ def launch_bom_list_sync_gui(*, cfg=None, parent=None, **_ignored) -> None:
             f"missing part(s). Already in list: {report['existing_count']}. "
             f"By source: {report['by_source']}")
         for r in report["rows"]:
-            log(f"   + {r['number']:<14}[{r['source'] or '-'}] "
+            mark = "!" if r["status"] == "error" else "+"
+            log(f"   {mark} {r['number']:<14}[{r['source'] or '-'}] "
                 f"{str(r['description'] or '')[:50]}")
+        errs = report.get("errors", [])
+        if errs:
+            log(f"\n{len(errs)} row(s) failed to write:")
+            for e in errs:
+                log(f"   ! {e['number']}: {e['error'][:140]}")
+            if any("403" in e["error"] or "denied" in e["error"].lower() for e in errs):
+                log("\n403 / access denied usually means the app registration is "
+                    "missing the Sites.ReadWrite.All permission (admin consent), "
+                    "or you need to re-run `python -m supplier_pricing probe`.")
         if not applied and n > 0:
             add_btn.config(state="normal", text=f"Add {n} missing to List")
         else:
