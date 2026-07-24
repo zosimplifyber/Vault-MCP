@@ -13,6 +13,15 @@
         "readonly": false,
         "allowed_folders": []
     },
+    "purchasing_reference": {
+        "source": "auto",
+        "mslist": {
+            "site_hostname": "netorgft6579427.sharepoint.com",
+            "site_path": "/sites/Simplifyber",
+            "list_name": "Purchased Items"
+        },
+        "column_map": {}
+    },
     "server": {
         "host": "0.0.0.0",
         "port": 8765

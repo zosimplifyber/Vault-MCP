@@ -21,6 +21,8 @@ from openpyxl.drawing.image import Image as XLImage
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
+import purchasing_reference  # Microsoft-List reference source (with Excel fallback)
+
 
 # ---------------------------------------------------------------------------
 # Simplifyber design constants
@@ -789,19 +791,37 @@ def _enrich_with_reference(df: pd.DataFrame, reference_path: str = "") -> tuple[
     matched = total = 0
     unmatched: list[str] = []
 
-    ref_path = reference_path if (reference_path and os.path.isfile(reference_path)) \
-        else find_purchased_items_file()
-    if not ref_path:
+    ref_df = None
+    # 1) An explicit Excel file always wins.
+    if reference_path and os.path.isfile(reference_path):
+        ref_df = load_reference_file(reference_path)
+        if ref_df is None:
+            warnings.append(f"Found reference file at {reference_path} but could not read it.")
+    else:
+        cfg = purchasing_reference.resolve_reference_config()
+        # 2) Microsoft List, when configured (and someone has signed in).
+        if cfg.get("source") in ("auto", "mslist") and purchasing_reference.mslist_is_configured(cfg):
+            try:
+                ref_df = purchasing_reference.load_mslist_dataframe(
+                    cfg["mslist"], cfg.get("column_map"))
+            except Exception as exc:  # noqa: BLE001
+                warnings.append(
+                    f"Microsoft List reference unavailable ({exc}); using the Excel file.")
+                ref_df = None
+        # 3) Excel auto-discovery (unless the source is pinned to 'mslist').
+        if ref_df is None and cfg.get("source") != "mslist":
+            path = find_purchased_items_file()
+            if path:
+                ref_df = load_reference_file(path)
+                if ref_df is None:
+                    warnings.append(f"Found reference file at {path} but could not read it.")
+
+    if ref_df is None:
         warnings.append(
-            "Purchased items reference file not found. "
-            "Ensure OneDrive is syncing the Purchasing folder, or the columns "
+            "Purchased items reference not found. Ensure OneDrive is syncing the "
+            "Purchasing folder (or sign in to the Microsoft List), or the columns "
             "Material/Vendor/Cost Per will be left blank."
         )
-        return df, matched, total, unmatched, warnings
-
-    ref_df = load_reference_file(ref_path)
-    if ref_df is None:
-        warnings.append(f"Found reference file at {ref_path} but could not read it.")
         return df, matched, total, unmatched, warnings
 
     df, matched, total = lookup_purchased_data(df, ref_df)
