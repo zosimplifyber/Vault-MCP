@@ -136,11 +136,19 @@ class McMasterApiProvider(PriceProvider):
             return _err(part_number, str(exc), source)
 
 
-class McMasterBrowserProvider(PriceProvider):
-    """Playwright fallback: read the public list price with the owner's session.
+# McMaster renders the price into a CSS-module <div> whose class starts with
+# "_price_" (the hash suffix changes per deploy, so match the stable prefix).
+# Confirmed live 2026-07-24: /1078A331/ -> "$7.08 each", no login required.
+PRICE_SELECTOR = '[class*="_price_"]'
 
-    NOTE: the price selector is best-effort and needs one live confirmation; until
-    then get_price returns an error result rather than a fabricated price.
+
+class McMasterBrowserProvider(PriceProvider):
+    """Playwright fallback: read the public list price from the product page.
+
+    McMaster shows list prices without a login, so no sign-in is required. The
+    browser is launched once and reused across all get_price() calls (important
+    for a bulk run and to keep Akamai cookies warm); call close() when done, or
+    use it as a context manager.
     """
     vendor_key = "mcmaster"
 
@@ -149,28 +157,46 @@ class McMasterBrowserProvider(PriceProvider):
         self.user_data_dir = user_data_dir
         self.lead_time_days = lead_time_days
         self.headless = headless
+        self._pw = None
+        self._ctx = None
+        self._browser = None
+        self._page = None
+
+    def _ensure_page(self):
+        if self._page is not None:
+            return self._page
+        from playwright.sync_api import sync_playwright
+        self._pw = sync_playwright().start()
+        if self.user_data_dir:
+            self._ctx = self._pw.chromium.launch_persistent_context(
+                self.user_data_dir, headless=self.headless)
+            self._page = self._ctx.pages[0] if self._ctx.pages else self._ctx.new_page()
+        else:
+            self._browser = self._pw.chromium.launch(headless=self.headless)
+            self._ctx = self._browser.new_context()
+            self._page = self._ctx.new_page()
+        return self._page
 
     def get_price(self, part_number: str, qty: int = 1) -> PriceResult:
         source = "mcmaster:web"
         url = f"https://www.mcmaster.com/{part_number}/"
         try:
-            from playwright.sync_api import sync_playwright
+            page = self._ensure_page()
         except Exception as exc:
             return _err(part_number, f"playwright unavailable: {exc}", source)
         try:
-            with sync_playwright() as p:
-                ctx = p.chromium.launch_persistent_context(
-                    self.user_data_dir or ".mcmaster-profile",
-                    headless=self.headless,
-                )
-                page = ctx.new_page()
-                page.goto(url, wait_until="domcontentloaded", timeout=30000)
-                text = page.inner_text("body")
-                ctx.close()
-            price = parse_price_from_text(text)
+            page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            price = None
+            try:
+                page.wait_for_selector(PRICE_SELECTOR, timeout=15000)
+                loc = page.locator(PRICE_SELECTOR).first
+                price = parse_price_from_text(loc.inner_text())
+            except Exception:
+                pass
+            if price is None:                       # fallback: whole-page text
+                price = parse_price_from_text(page.inner_text("body"))
             if price is None:
-                return _err(part_number, "price not found on page (confirm selector)",
-                            source)
+                return _err(part_number, "price not found on page", source)
             return PriceResult(
                 part_number=part_number, vendor=VENDOR, unit_price=price,
                 currency="USD", lead_time_days=self.lead_time_days,
@@ -178,6 +204,23 @@ class McMasterBrowserProvider(PriceProvider):
             )
         except Exception as exc:
             return _err(part_number, str(exc), source)
+
+    def close(self) -> None:
+        for closer in (getattr(self._ctx, "close", None),
+                       getattr(self._browser, "close", None),
+                       getattr(self._pw, "stop", None)):
+            try:
+                if closer:
+                    closer()
+            except Exception:
+                pass
+        self._pw = self._ctx = self._browser = self._page = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
 
 
 def make_mcmaster_provider(config: dict | None = None) -> PriceProvider:

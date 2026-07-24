@@ -35,10 +35,15 @@ def _run_update(*, apply: bool, only_missing: bool, limit: int | None) -> dict:
     client = GraphListClient.connect(cfg=None, list_name=update_list_name(sp),
                                      interactive=False)
     provider = make_mcmaster_provider(sp)
-    return update_mcmaster_prices(
-        client, provider, dry_run=not apply, only_missing=only_missing,
-        limit=limit, field_overrides=write_field_overrides(sp),
-    )
+    try:
+        return update_mcmaster_prices(
+            client, provider, dry_run=not apply, only_missing=only_missing,
+            limit=limit, field_overrides=write_field_overrides(sp),
+        )
+    finally:
+        close = getattr(provider, "close", None)
+        if close:
+            close()
 
 
 def _print_report(report: dict) -> None:

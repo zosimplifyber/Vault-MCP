@@ -74,16 +74,19 @@ python -m supplier_pricing login-mcmaster            # browser-fallback sign-in
    "Engineering Purchased Parts" columns (display → internal) and the detected
    field roles. If `Cost Per` / `Lead Time` weren't detected correctly, set them
    in `write_field_map` (display → internal name from the probe output).
-3. **Enable McMaster pricing** — either:
-   - **Browser (default, easiest):** `python -m supplier_pricing login-mcmaster`,
-     sign in once; the session is reused. *Note:* mcmaster.com is Akamai-protected
-     and its price DOM selector needs one confirmation — run
-     `python -m supplier_pricing price 1078A331` and check the value; if it can't
-     read the price, tell me and I'll finalize the selector.
-   - **Official API:** obtain API access (email eprocurement@mcmaster.com — it's
-     approval-gated) and put the cert/creds in `config.json`. If the cert is a
-     `.pfx`, it may need converting to PEM for httpx, or uncomment
-     `requests-pkcs12` — ping me to finalize.
+3. **Enable McMaster pricing** — the **browser fallback works out of the box**:
+   McMaster shows list prices **without a login**, and the price selector is
+   confirmed live (`price 1078A331` -> $7.08). Just make sure Playwright + its
+   browser are installed:
+   ```bash
+   python -m pip install playwright && python -m playwright install chromium
+   ```
+   No `login-mcmaster` needed for list pricing (it only helps if you want
+   contract pricing tied to your account).
+   - **Official API (optional):** obtain API access (email
+     eprocurement@mcmaster.com — approval-gated) and put the cert/creds in
+     `config.json` for contract pricing. A `.pfx` cert may need PEM conversion —
+     ping me to finalize.
 4. **Dry-run, then apply:**
    ```bash
    python -m supplier_pricing update-list --only-missing --limit 5   # review
