@@ -51,3 +51,29 @@ def test_no_reference_path_falls_back_to_autofind(tmp_path, monkeypatch):
     result = bp.generate_from_file(str(bom), "ASM", str(tmp_path))  # no reference_path
     assert not result.get("error"), result
     assert hits.get("called")   # default path still auto-discovers
+
+
+def test_standalone_does_not_import_app_or_vault():
+    src = open(os.path.join(ROOT, "purchasing_standalone.py"), encoding="utf-8").read()
+    mods = set()
+    for n in ast.walk(ast.parse(src)):
+        if isinstance(n, ast.Import):
+            mods |= {a.name.split(".")[0] for a in n.names}
+        elif isinstance(n, ast.ImportFrom) and n.module:
+            mods.add(n.module.split(".")[0])
+    assert not (mods & {"app", "mcp_server", "vault_rest_api", "gui"}), mods
+    assert "bom_purchasing" in mods
+
+
+def test_standalone_gui_constructs(monkeypatch):
+    tk = pytest.importorskip("tkinter")
+    monkeypatch.setattr(bp, "find_purchased_items_file", lambda: None)
+    import purchasing_standalone as ps
+    try:
+        app = ps.App()
+    except tk.TclError:
+        pytest.skip("no display available")
+    app.withdraw()
+    app.update_idletasks()
+    assert "Simplifyber" in app.title()
+    app.destroy()
