@@ -40,6 +40,9 @@ Log/
 *.spec
 build_purchasing_log.txt
 
+# Playwright MCP scratch output
+.playwright-mcp/
+
 # OS junk
 .DS_Store
 Thumbs.db
