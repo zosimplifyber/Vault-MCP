@@ -65,3 +65,33 @@ def register(mcp) -> None:
         report = _run_update(apply=not dry_run, only_missing=only_missing,
                              limit=limit, allow_scrape=allow_scrape)
         return json.dumps(report, indent=2, default=str)
+
+    @mcp.tool()
+    def purchasing_add_bom_items_to_list(bom_file: str, dry_run: bool = True,
+                                         buy_only: bool = False) -> str:
+        """
+        Add parts from an exported BOM to the "Engineering Purchased Parts"
+        Microsoft List when they are not already present (matched by part number).
+
+        Reads the BOM (.xlsx/.xls/.csv/.txt, same header-mapping as the purchasing
+        sheet), compares each part number against the list, and creates a new list
+        item (Number + Description + Material) for each missing part. SAFE BY
+        DEFAULT: dry_run=True plans and writes NOTHING — review the returned rows,
+        then call with dry_run=False to create them. Requires the app registration
+        to have Sites.ReadWrite.All + a prior `probe` sign-in.
+
+        Args:
+            bom_file: Path to the exported BOM file.
+            dry_run: When True (default) only plan; when False, create the rows.
+            buy_only: Only add Buy/Other parts (skip Make/manufactured items).
+        """
+        import bom_list_sync
+        from .cli import _connect_client
+        df, err = bom_list_sync.bom_dataframe_from_file(bom_file)
+        if err:
+            return json.dumps({"error": err}, indent=2)
+        sources = {"Buy", "Other"} if buy_only else None
+        client = _connect_client()
+        report = bom_list_sync.add_missing_bom_rows(
+            client, df, dry_run=dry_run, sources=sources)
+        return json.dumps(report, indent=2, default=str)

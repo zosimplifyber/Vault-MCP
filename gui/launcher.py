@@ -596,6 +596,15 @@ class LauncherGUI:
         )
         self._tool_row(
             body,
+            "BOM → Purchased Parts List",
+            "Upload an exported BOM and add any parts that aren't yet in the "
+            "Engineering Purchased Parts SharePoint list (dry-run preview first).",
+            "Open BOM Sync",
+            self._on_open_bom_list_sync,
+            primary=False,
+        )
+        self._tool_row(
+            body,
             "MFG Order Package",
             "Build a manufacturing-order folder: MFG BOM, watermarked "
             "PDFs (RELEASED / FOR REVIEW), and STEP files — all in one "
@@ -965,6 +974,17 @@ class LauncherGUI:
             cfg=self.cfg, parent=self.root,
         )
         self.status_var.set("Launching Purchasing Sheet…")
+
+    def _on_open_bom_list_sync(self) -> None:
+        try:
+            from gui.purchasing_list_sync import launch_bom_list_sync_gui
+        except ImportError as exc:
+            messagebox.showerror(
+                "BOM Sync unavailable", str(exc), parent=self.root,
+            )
+            return
+        launch_bom_list_sync_gui(cfg=self.cfg, parent=self.root)
+        self.status_var.set("Launching BOM → Purchased Parts List…")
 
     def _on_open_mfg_package(self) -> None:
         if not (self.api and self.vault_id):

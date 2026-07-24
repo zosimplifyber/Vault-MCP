@@ -251,6 +251,18 @@ class GraphListClient:
                 f"Graph PATCH {resp.status_code} for item {item_id}: {resp.text[:200]}"
             )
 
+    def create_list_item(self, fields: dict) -> dict:
+        """POST a new list item. `fields` is keyed by internal field name."""
+        url = f"{GRAPH}/sites/{self.site_id}/lists/{self.list_id}/items"
+        headers = {"Authorization": f"Bearer {self.token}",
+                   "Content-Type": "application/json"}
+        with httpx.Client(timeout=30) as client:
+            resp = client.post(url, headers=headers, json={"fields": fields})
+        if resp.status_code >= 400:
+            raise RuntimeError(
+                f"Graph POST item {resp.status_code}: {resp.text[:200]}")
+        return resp.json()
+
 
 def probe(printer=print) -> int:
     """Device-code sign-in (write scope) + print the target list's columns."""

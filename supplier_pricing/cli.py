@@ -31,13 +31,19 @@ def cmd_price(args) -> int:
     return 0 if result.ok() else 1
 
 
+def _connect_client(sp: dict | None = None):
+    from purchasing_update import GraphListClient
+    sp = sp if sp is not None else supplier_pricing_block()
+    return GraphListClient.connect(cfg=None, list_name=update_list_name(sp),
+                                   interactive=False)
+
+
 def _run_update(*, apply: bool, only_missing: bool, limit: int | None,
                 allow_scrape: bool = False) -> dict:
-    from purchasing_update import GraphListClient, update_mcmaster_prices
+    from purchasing_update import update_mcmaster_prices
     cfg = load_config()
     sp = supplier_pricing_block(cfg)
-    client = GraphListClient.connect(cfg=None, list_name=update_list_name(sp),
-                                     interactive=False)
+    client = _connect_client(sp)
     provider = make_mcmaster_provider(sp, allow_scrape=allow_scrape)
     try:
         return update_mcmaster_prices(
@@ -72,6 +78,30 @@ def cmd_update(args) -> int:
     report = _run_update(apply=args.apply, only_missing=args.only_missing,
                          limit=args.limit, allow_scrape=args.allow_scrape)
     _print_report(report)
+    return 0
+
+
+def _print_add_report(report: dict) -> None:
+    mode = "APPLIED" if not report["dry_run"] else "DRY-RUN (nothing added)"
+    print(f"\n=== BOM -> List add - {mode} ===")
+    print(f"already in list={report['existing_count']}  missing={len(report['missing'])}  "
+          f"added={report['created']}  by_source={report['by_source']}")
+    for r in report["rows"]:
+        print(f"  + {r['number']:<14} [{r['source'] or '-':<6}] "
+              f"{str(r['description'] or '')[:44]}  ({r['status']})")
+
+
+def cmd_add_from_bom(args) -> int:
+    import bom_list_sync
+    df, err = bom_list_sync.bom_dataframe_from_file(args.bom_file)
+    if err:
+        print(f"BOM parse error: {err}")
+        return 2
+    sources = {"Buy", "Other"} if args.buy_only else None
+    client = _connect_client()
+    report = bom_list_sync.add_missing_bom_rows(
+        client, df, dry_run=not args.apply, sources=sources)
+    _print_add_report(report)
     return 0
 
 
@@ -122,6 +152,15 @@ def build_parser() -> argparse.ArgumentParser:
                     help="allow the browser fallback if no API cert is configured "
                          "(scraping may violate McMaster's terms — off by default)")
     su.set_defaults(func=cmd_update)
+
+    ab = sub.add_parser("add-from-bom",
+                        help="add BOM parts that aren't already in the list")
+    ab.add_argument("bom_file", help="exported BOM (.xlsx/.xls/.csv/.txt)")
+    ab.add_argument("--apply", action="store_true",
+                    help="actually create the rows (default is a dry run)")
+    ab.add_argument("--buy-only", action="store_true",
+                    help="only add Buy/Other parts (skip Make)")
+    ab.set_defaults(func=cmd_add_from_bom)
 
     pr = sub.add_parser("probe", help="sign in (write scope) and print list columns")
     pr.set_defaults(func=cmd_probe)
