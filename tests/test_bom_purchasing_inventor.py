@@ -361,3 +361,25 @@ def test_unmatched_note_dedupes_repeated_part_numbers(tmp_path):
     ws = openpyxl.load_workbook(str(out))["Purchasing"]
     text = "\n".join(str(c.value) for col in ws.iter_cols() for c in col if c.value)
     assert "Unmatched (1)" in text   # de-duped: SF-21 counted once, not twice
+
+
+def test_assembly_with_unpriced_descendant_is_marked(tmp_path):
+    import openpyxl
+    df = _hier_df()
+    df.loc[df["Number"] == "SF-21", "Cost Per"] = None   # child leaf unpriced
+    out = tmp_path / "s.xlsx"
+    bp.build_purchasing_sheet(df, str(out), "ASM")
+    ac = openpyxl.load_workbook(str(out))["Assembly Costs"]
+    text = "\n".join(str(c.value) for col in ac.iter_cols() for c in col if c.value)
+    assert "*" in text
+    assert "Includes unpriced parts" in text
+
+
+def test_assembly_costs_no_marker_when_all_priced(tmp_path):
+    import openpyxl
+    df = _hier_df()   # SF-1 ($1) and SF-21 ($0.25) both priced; SF-2 is the assembly
+    out = tmp_path / "s.xlsx"
+    bp.build_purchasing_sheet(df, str(out), "ASM")
+    ac = openpyxl.load_workbook(str(out))["Assembly Costs"]
+    text = "\n".join(str(c.value) for col in ac.iter_cols() for c in col if c.value)
+    assert "Includes unpriced parts" not in text

@@ -673,6 +673,14 @@ def _build_assembly_costs_tab(
     assemblies = [i for i in range(len(df)) if children_map.get(i)]
     top_level = [i for i in range(len(df)) if i not in all_children]
 
+    def _subtree_incomplete(i: int) -> bool:
+        kids = children_map.get(i, [])
+        if not kids:  # leaf
+            return pd.isna(df.iloc[i].get("Cost Per"))
+        return any(_subtree_incomplete(c) for c in kids)
+
+    has_incomplete = False
+
     cost_col = get_column_letter(ALL_COLUMNS.index("Cost Per") + 1)
     sub_col = get_column_letter(ALL_COLUMNS.index("Sub Total") + 1)
 
@@ -706,10 +714,17 @@ def _build_assembly_costs_tab(
         ri = HDR + 1 + n
         row = df.iloc[i]
         purch_row = first_data_row + i
+        incomplete = _subtree_incomplete(i)
+        if incomplete:
+            has_incomplete = True
+        desc = row.get("Description (Item,CO)")
+        desc = "" if pd.isna(desc) else str(desc)
+        if incomplete:
+            desc = (desc + " *").strip()
         vals = [
             None if pd.isna(row.get("Row Order")) else row.get("Row Order"),
             None if pd.isna(row.get("Number")) else row.get("Number"),
-            None if pd.isna(row.get("Description (Item,CO)")) else row.get("Description (Item,CO)"),
+            desc if desc else None,
             f"=Purchasing!{cost_col}{purch_row}",   # cost to make one
         ]
         for ci, val in enumerate(vals, 1):
@@ -723,7 +738,9 @@ def _build_assembly_costs_tab(
 
     total_row = HDR + 1 + len(assemblies)
     ws.merge_cells(start_row=total_row, start_column=1, end_row=total_row, end_column=3)
-    tc = ws.cell(row=total_row, column=1, value="GRAND TOTAL — whole build")
+    build_incomplete = any(_subtree_incomplete(i) for i in top_level)
+    tc = ws.cell(row=total_row, column=1,
+                 value="GRAND TOTAL — whole build" + (" *" if build_incomplete else ""))
     tc.font = Font(name="Arial", bold=True, color=DARK_BLUE, size=10)
     tc.alignment = Alignment(horizontal="right", vertical="center")
     grand = ws.cell(row=total_row, column=4)
@@ -734,6 +751,15 @@ def _build_assembly_costs_tab(
         grand.value = 0
     grand.number_format = DOLLAR_FMT
     grand.font = Font(name="Arial", bold=True, color=DARK_BLUE, size=10)
+
+    if has_incomplete or build_incomplete:
+        foot_row = total_row + 1
+        ws.merge_cells(start_row=foot_row, start_column=1,
+                       end_row=foot_row, end_column=len(cols))
+        fc = ws.cell(row=foot_row, column=1,
+                     value="* Includes unpriced parts — this total may be understated.")
+        fc.font = Font(name="Arial", size=9, italic=True, color=DARK_GRAY)
+        fc.alignment = Alignment(horizontal="left", vertical="center")
 
     for ci in range(1, len(cols) + 1):
         hc = ws.cell(row=HDR, column=ci)
