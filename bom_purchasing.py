@@ -780,7 +780,7 @@ def _build_assembly_costs_tab(
 # High-level orchestrators used by the MCP tools
 # ---------------------------------------------------------------------------
 
-def _enrich_with_reference(df: pd.DataFrame) -> tuple[pd.DataFrame, int, int, list[str], list[str]]:
+def _enrich_with_reference(df: pd.DataFrame, reference_path: str = "") -> tuple[pd.DataFrame, int, int, list[str], list[str]]:
     """Try to fill purchasing columns from the reference file.
 
     Returns (df, matched, total, unmatched_part_numbers, warnings).
@@ -789,7 +789,8 @@ def _enrich_with_reference(df: pd.DataFrame) -> tuple[pd.DataFrame, int, int, li
     matched = total = 0
     unmatched: list[str] = []
 
-    ref_path = find_purchased_items_file()
+    ref_path = reference_path if (reference_path and os.path.isfile(reference_path)) \
+        else find_purchased_items_file()
     if not ref_path:
         warnings.append(
             "Purchased items reference file not found. "
@@ -942,6 +943,7 @@ def generate_from_file(
     bom_file_path: str,
     assembly_number: str,
     output_dir: str = "",
+    reference_path: str = "",
 ) -> dict[str, Any]:
     """Build a purchasing sheet from an exported BOM file.
 
@@ -965,7 +967,7 @@ def generate_from_file(
     # Material precedence: the export's Material wins where non-blank; the
     # reference file only fills blanks.
     export_material = df["Material"].copy()
-    df, matched, total, unmatched, warnings = _enrich_with_reference(df)
+    df, matched, total, unmatched, warnings = _enrich_with_reference(df, reference_path=reference_path)
     keep = export_material.notna() & (export_material.astype(str).str.strip() != "")
     df.loc[keep, "Material"] = export_material[keep]
 
