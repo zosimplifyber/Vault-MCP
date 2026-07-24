@@ -22,7 +22,6 @@ def test_coerce_maps_inventor_headers_and_translates_source():
         "Description": ["adapter plate", "bladder tool", "hex screw"],
         "REV": ["", "1", "1"],
         "Material": ["Aluminum", "", "Stainless Steel"],
-        "Material Finish": ["", "", "Black Oxide"],
     })
     out, err = bp.coerce_bom_dataframe(df)
     assert err is None
@@ -31,8 +30,7 @@ def test_coerce_maps_inventor_headers_and_translates_source():
     assert list(out["Row Order"]) == ["1", "2", "2.1"]
     assert list(out["Source"]) == ["Make", "Make", "Buy"]      # translated
     assert list(out["Units"]) == ["Each", "Each", "Each"]
-    assert out["Material Finish"].tolist() == ["", "", "Black Oxide"]
-    for col in ("Category Name", "State", "Position Number", "Title (Item,CO)"):
+    for col in ("State", "Position Number"):
         assert col in out.columns
 
 
@@ -142,14 +140,11 @@ def _hier_df():
         "Position Number": [None, None, None],
         "Item Qty": [2, 1, 8],
         "Units": ["Each", "Each", "Each"],
-        "Category Name": [None, None, None],   # Inventor exports have none
         "Revision": [None, "1", "1"],
         "State": [None, None, None],
-        "Title (Item,CO)": [None, None, None],
         "Description (Item,CO)": ["leaf", "assy", "screw"],
         "Source": ["Buy", "Make", "Buy"],
         "Material": ["Al", None, "Steel"],
-        "Material Finish": [None, None, "Black Oxide"],
         "Vendor": ["Acme", None, "Bolts Inc"],
         "Cost Per": [1.0, None, 0.25],
         "Vendor Number": [None, None, None],
@@ -158,17 +153,6 @@ def _hier_df():
         "Tax/Tariff": [None, None, None],
         "Lead Time (Business Days)": [None, None, None],
     })
-
-
-def test_material_finish_is_a_column_and_populates(tmp_path):
-    import openpyxl
-    out = tmp_path / "s.xlsx"
-    bp.build_purchasing_sheet(_hier_df(), str(out), "ASM")
-    ws = openpyxl.load_workbook(str(out))["Purchasing"]
-    header = [c.value for c in ws[3]]
-    assert "Material Finish" in header
-    mf_col = header.index("Material Finish") + 1
-    assert ws.cell(6, mf_col).value == "Black Oxide"  # row 4+2 = the screw
 
 
 def test_assembly_detected_by_children_without_category(tmp_path):
@@ -213,14 +197,11 @@ def test_assembly_costs_formulas_reference_exact_cells(tmp_path):
         "Position Number":        [None, None, None, None],
         "Item Qty":               [1, 3, 2, 4],
         "Units":                  ["Each", "Each", "Each", "Each"],
-        "Category Name":          [None, None, None, None],
         "Revision":               [None, None, None, None],
         "State":                  [None, None, None, None],
-        "Title (Item,CO)":        [None, None, None, None],
         "Description (Item,CO)":  ["asmA", "childA", "asmB", "childB"],
         "Source":                 ["Make", "Buy", "Make", "Buy"],
         "Material":               [None, None, None, None],
-        "Material Finish":        [None, None, None, None],
         "Vendor":                 [None, "V", None, "V"],
         "Cost Per":               [None, 1.0, None, 2.0],
         "Vendor Number":          [None, None, None, None],

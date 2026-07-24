@@ -33,8 +33,7 @@ main app is required.
    3. Sort by Description (descending), then renumber the items.
    4. Include columns:
         Required:     Item, Part Number, QTY
-        Recommended:  Description, Unit QTY, BOM Structure, REV,
-                      Material, Material Finish
+        Recommended:  Description, Unit QTY, BOM Structure, REV, Material
    5. Export as .xlsx (preferred), tab-delimited .txt, or .csv.
 
    (A Vault BOM export with the standard columns also works -- the tool

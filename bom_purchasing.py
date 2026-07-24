@@ -55,12 +55,11 @@ PURCHASED_ITEMS_SHEET = "purchased parts"
 # ---------------------------------------------------------------------------
 BOM_COLUMNS = [
     "Number", "Row Order", "Position Number", "Item Qty", "Units",
-    "Category Name", "Revision", "State", "Title (Item,CO)",
-    "Description (Item,CO)", "Source",
+    "Revision", "State", "Description (Item,CO)", "Source",
 ]
 
 PURCHASE_COLUMNS = [
-    "Material", "Material Finish", "Vendor", "Vendor Number", "Cost Per",
+    "Material", "Vendor", "Vendor Number", "Cost Per",
     "HS/HTS Code", "Shipping", "Tax/Tariff", "Sub Total",
     "Lead Time (Business Days)",
 ]
@@ -74,9 +73,9 @@ ALL_COLUMNS = BOM_COLUMNS + PURCHASE_COLUMNS
 
 COLUMN_WIDTHS = {
     "Number": 14, "Row Order": 12, "Position Number": 16,
-    "Item Qty": 10, "Units": 8, "Category Name": 22, "Revision": 10,
-    "State": 14, "Title (Item,CO)": 22, "Description (Item,CO)": 44,
-    "Source": 10, "Material": 22, "Material Finish": 18,
+    "Item Qty": 10, "Units": 8, "Revision": 10,
+    "State": 14, "Description (Item,CO)": 44,
+    "Source": 10, "Material": 22,
     "Vendor": 18, "Vendor Number": 18,
     "Cost Per": 12, "HS/HTS Code": 14, "Shipping": 12, "Tax/Tariff": 12,
     "Sub Total": 14, "Lead Time (Business Days)": 24,
@@ -122,10 +121,6 @@ VAULT_FIELD_MAP: dict[str, str] = {
     "Units": "Units",
     "Unit": "Units",
     "UOM": "Units",
-    # Category
-    "Category Name": "Category Name",
-    "Category": "Category Name",
-    "ItemCategory": "Category Name",
     # Revision
     "Revision": "Revision",
     "Rev": "Revision",
@@ -134,10 +129,6 @@ VAULT_FIELD_MAP: dict[str, str] = {
     "LifecycleState": "State",
     "Lifecycle State": "State",
     "Status": "State",
-    # Title
-    "Title (Item,CO)": "Title (Item,CO)",
-    "Title": "Title (Item,CO)",
-    "Name": "Title (Item,CO)",
     # Description
     "Description (Item,CO)": "Description (Item,CO)",
     "Description": "Description (Item,CO)",
@@ -160,7 +151,6 @@ INVENTOR_FIELD_MAP: dict[str, str] = {
     "Description": "Description (Item,CO)",
     "REV": "Revision",
     "Material": "Material",
-    "Material Finish": "Material Finish",
 }
 
 # Inventor "BOM Structure" values → our canonical "Source" values.
@@ -494,10 +484,6 @@ def build_purchasing_sheet(
 
             if col_name in BOM_COLUMNS:
                 val = row.get(col_name)
-                c.value = None if pd.isna(val) else val
-
-            elif col_name == "Material Finish":
-                val = row.get("Material Finish")
                 c.value = None if pd.isna(val) else val
 
             elif col_name in LOOKUP_COLUMNS:
@@ -891,9 +877,9 @@ def coerce_bom_dataframe(
     """Normalize a raw BOM DataFrame (Vault-canonical OR Inventor export).
 
     Returns (normalized_df, error_message). error_message is None on success.
-    Guarantees the result carries every BOM_COLUMNS entry plus 'Material' and
-    'Material Finish' (missing ones filled with None), a positional index, and
-    translated Source values. Errors if the critical Number/Item Qty are absent.
+    Guarantees the result carries every BOM_COLUMNS entry plus 'Material'
+    (missing ones filled with None), a positional index, and translated Source
+    values. Errors if the critical Number/Item Qty are absent.
     """
     df = df.rename(columns={c: str(c).strip() for c in df.columns})
 
@@ -913,7 +899,7 @@ def coerce_bom_dataframe(
                 lambda v: SOURCE_VALUE_MAP.get(str(v).strip(), v)
             )
 
-    for col in BOM_COLUMNS + ["Material", "Material Finish"]:
+    for col in BOM_COLUMNS + ["Material"]:
         if col not in df.columns:
             df[col] = None
 

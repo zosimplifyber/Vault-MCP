@@ -26,8 +26,7 @@ REMINDER = (
     "2. Use a Structured / All-Levels BOM view (needed for per-assembly costs).\n"
     "3. Include columns —\n"
     "     Required:    Item, Part Number, QTY\n"
-    "     Recommended: Description, Unit QTY, BOM Structure, REV,\n"
-    "                  Material, Material Finish\n"
+    "     Recommended: Description, Unit QTY, BOM Structure, REV, Material\n"
     "4. Export as .xlsx (preferred), tab-delimited .txt, or .csv."
 )
 
