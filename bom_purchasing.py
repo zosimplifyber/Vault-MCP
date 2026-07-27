@@ -22,6 +22,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 import purchasing_reference  # Microsoft-List reference source (with Excel fallback)
+import vault_state           # Vault lifecycle state for the State column
 from supplier_pricing.normalize import normalize_part_number
 
 
@@ -56,7 +57,7 @@ PURCHASED_ITEMS_SHEET = "purchased parts"
 # ---------------------------------------------------------------------------
 BOM_COLUMNS = [
     "Number", "Row Order", "Position Number", "Item Qty", "Units",
-    "Revision", "Description (Item,CO)", "Source",
+    "Revision", "State", "Description (Item,CO)", "Source",
 ]
 
 PURCHASE_COLUMNS = [
@@ -82,7 +83,7 @@ HEADER_LABELS = {
 COLUMN_WIDTHS = {
     "Number": 14, "Row Order": 12, "Position Number": 16,
     "Item Qty": 10, "Units": 8, "Revision": 10,
-    "Description (Item,CO)": 44,
+    "State": 16, "Description (Item,CO)": 44,
     "Source": 10, "Material": 22,
     "Vendor": 18, "Vendor Number": 18,
     "Cost Per": 12, "HS/HTS Code": 14, "Shipping": 12, "Tax/Tariff": 12,
@@ -132,6 +133,12 @@ VAULT_FIELD_MAP: dict[str, str] = {
     # Revision
     "Revision": "Revision",
     "Rev": "Revision",
+    # State / lifecycle — a Vault-sourced BOM carries it; a file export does not,
+    # and _fill_state_from_vault looks it up instead.
+    "State": "State",
+    "LifecycleState": "State",
+    "Lifecycle State": "State",
+    "Status": "State",
     # Description
     "Description (Item,CO)": "Description (Item,CO)",
     "Description": "Description (Item,CO)",
@@ -553,6 +560,15 @@ def build_purchasing_sheet(
         nc.fill = PatternFill("solid", fgColor=UNMATCHED_FILL)
         nc.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
 
+    # Filter dropdowns on every column. The range stops at the last data row so
+    # the "Unmatched (n)" note underneath stays out of it. Filtering is safe;
+    # SORTING is not — the assembly roll-ups reference absolute row numbers, so a
+    # sort would reorder rows without rewriting the formulas.
+    if len(df):
+        ws.auto_filter.ref = (
+            f"A{HDR_ROW}:{get_column_letter(n_cols)}{HDR_ROW + len(df)}"
+        )
+
     # Column widths & freeze
     for ci, col_name in enumerate(ALL_COLUMNS, 1):
         ws.column_dimensions[get_column_letter(ci)].width = COLUMN_WIDTHS.get(col_name, 15)
@@ -601,8 +617,10 @@ def _build_vendor_tab(wb: Workbook, df: pd.DataFrame) -> None:
         c.border = bdr
     ws.row_dimensions[HDR].height = 36
 
-    # Aggregate Buy/Other parts by vendor
-    parts = df[df["Source"].apply(lambda s: str(s).strip() in {"Buy", "Other"})].copy()
+    # Aggregate by vendor. Anything with a vendor belongs on a buying sheet —
+    # including outsourced Make parts (machine shop, laser cutter). Make parts
+    # built in-house carry no vendor, so they drop out on their own.
+    parts = df.copy()
     for col in ("Vendor", "Vendor Number", "Material", "Cost Per"):
         if col not in parts.columns:
             parts[col] = None
@@ -844,6 +862,27 @@ def _enrich_with_reference(df: pd.DataFrame, reference_path: str = "") -> tuple[
     return df, matched, total, unmatched, warnings
 
 
+def _fill_state_from_vault(df: pd.DataFrame) -> list[str]:
+    """Fill blank State cells from Vault, in place. Returns warnings.
+
+    Only blanks are touched: a Vault-sourced BOM already carries the state it was
+    built from, and that value wins — the same precedence Material uses.
+    """
+    if "State" not in df.columns or "Number" not in df.columns:
+        return []
+    blank = df["State"].isna() | (df["State"].astype(str).str.strip() == "")
+    if not blank.any():
+        return []
+
+    numbers = [n for n in df.loc[blank, "Number"].tolist() if _match_key(n)]
+    states, warnings = vault_state.lookup_file_states(numbers)
+    if states:
+        keys = df.loc[blank, "Number"].map(_match_key)
+        found = keys.map(states)
+        df.loc[blank, "State"] = df.loc[blank, "State"].where(found.isna(), found)
+    return warnings
+
+
 def generate_from_vault_bom(
     vault_bom_response: Any,
     assembly_number: str,
@@ -877,6 +916,7 @@ def generate_from_vault_bom(
 
     df, matched, total, unmatched, ref_warnings = _enrich_with_reference(df)
     warnings.extend(ref_warnings)
+    warnings.extend(_fill_state_from_vault(df))
 
     if not output_dir:
         output_dir = os.path.join(os.path.expanduser("~"), "Downloads")
@@ -1004,6 +1044,7 @@ def generate_from_file(
     df, matched, total, unmatched, warnings = _enrich_with_reference(df, reference_path=reference_path)
     keep = export_material.notna() & (export_material.astype(str).str.strip() != "")
     df.loc[keep, "Material"] = export_material[keep]
+    warnings.extend(_fill_state_from_vault(df))
 
     if not output_dir:
         output_dir = os.path.dirname(bom_file_path)
