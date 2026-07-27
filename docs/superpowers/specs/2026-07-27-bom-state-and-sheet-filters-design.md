@@ -61,9 +61,42 @@ lookup_file_states(numbers: list[str]) -> tuple[dict[str, str], list[str]]
 - **Result filtering is the important part.** Vault's search is keyword-based and
   matches properties, not just names: searching `CD-001582` returns
   `CD-001582 BOM.xlsx`, `CD-001582.iam`, **and `SF-001915`** — an unrelated file.
-  A hit only counts when its **name stem equals the part number** after
-  normalization. Among the survivors, prefer `.iam`/`.ipt`, then `.idw`, then
-  anything else. No name match → no state (blank), never a guess.
+  A hit only counts when its name matches the key (see "Which file" below).
+  Among the survivors, prefer `.iam`/`.ipt`, then `.idw`, then anything else.
+  No match → no state (blank), never a guess.
+
+### Which key, and which file (revised 2026-07-27 after live testing)
+
+The first cut searched the BOM's Part Number and matched on an exact name stem.
+Live runs found three ways that goes wrong, all fixed:
+
+1. **The Part Number is the item number, not the file.** `SF-001922` matches the
+   *ItemVersion*, which is Work in Progress, while its CAD file `CD-001578.ipt`
+   is Released — so the sheet reported the wrong state for every Make row. The
+   export now carries a **`Filename`** column; that is searched first, then the
+   **`Title`** column (which holds the CD- number), then the part number.
+   Accepted headers: `File Name`, `Filename`, `File`, `Document Name`.
+2. **Items and folders must be excluded.** `search_files` returns ItemVersions
+   and folders; a folder named exactly `ISO 4762 - M6 x 16 - Stainless Steel`
+   outranked the real `.ipt`. Only entities that are files *and* carry a state
+   qualify.
+3. **File names are not part numbers.** `DIN 934 - M5` is stored as
+   `DIN 934 - M5 x 0.8.ipt`; `ISO 4762 - M6 x 50 - Stainless Steel` as
+   `ISO 4762 - M6 x 50 Stainless Steel.ipt` (no dash). Matching runs in three
+   passes, each tried only if the previous found nothing: **exact** name/stem,
+   **loose** (punctuation- and case-insensitive), then **separated prefix**,
+   restricted to CAD extensions so `CD-001582` cannot match
+   `CD-001582 BOM.xlsx`. The boundary requirement stops `M6 x 1` from matching
+   `M6 x 10`.
+
+When several equally-ranked files disagree about the state — the duplicated
+library fasteners, e.g. `ISO 4762 - M6 x 10 Stainless Steel.ipt` (WIP) beside
+`ISO 4762 - M6 x 10ISO Stainless Steel.ipt` (Released) — the lookup returns
+nothing. No rule can pick correctly there; only de-duplicating the library can.
+
+**Consequence:** a part whose only Vault entity is an item now shows a blank
+State rather than the item's state. That is deliberate — the column reports the
+file's state.
 - Keys on `normalize_part_number`, the same key the reference lookup uses.
 - **Never raises.** Offline, bad credentials, Vault down, timeout → empty map plus
   a warning that flows into the existing `warnings` list on the result.
@@ -124,6 +157,11 @@ Test-first for each change; no test touches the network.
 |---|---|
 | State lookup | name-stem match wins over a keyword-only hit (`SF-001915` for query `CD-001582`) |
 | State lookup | `.iam` preferred over `.xlsx` for the same number |
+| State lookup | an ItemVersion never lends its state to a file |
+| State lookup | a folder does not mask the real `.ipt` |
+| State lookup | `Filename` beats `Title` beats Part Number as the search key |
+| State lookup | interior punctuation ignored; a typo'd duplicate still excluded |
+| State lookup | `M6 x 1` does not match `M6 x 10`; equal-rank disagreement → blank |
 | State lookup | no `vault` config → empty map + warning, no import of `vault_rest_api` |
 | State lookup | a raised error inside the lookup degrades to a warning |
 | Sheet wiring | a BOM that already carries State keeps its own value |
@@ -134,7 +172,9 @@ Test-first for each change; no test touches the network.
 
 ## Verification
 
-Regenerate `CD-001582 BOM.xlsx` against live Vault and confirm the State column
-matches what the REST API reports (`SF-001658` → Released, `CD-001582.iam` →
-Work in Progress), then rebuild the standalone `.exe` and confirm it still runs
-with no `config.json` (blank State column, warning, no hang).
+Reference BOM: **`C:\Vault Workspace\DESIGNS\PRODUCTION EQUIPMENT\CD-001582 MFG BOM.xlsx`**
+— a Structured/All-Levels Inventor export carrying `Filename`, so it exercises
+the whole key chain. Regenerate it against live Vault and confirm each row's
+state matches the file the REST API reports it resolved to (`SF-001922` →
+`CD-001578.ipt` → Released), then rebuild the standalone `.exe` and confirm it
+still runs with no `config.json` (blank State column, warning, no hang).

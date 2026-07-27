@@ -47,6 +47,60 @@ class TestPickStateFile:
         assert vs.pick_state_file("CD-001582", [_f("CD-001582 BOM.xlsx", "Released")]) is None
 
 
+class TestEntityFiltering:
+    def test_an_item_never_lends_its_state_to_a_file(self):
+        # search_files also returns ItemVersions: SF-001922 the *item* is Work in
+        # Progress while its CAD file CD-001578.ipt is Released.
+        rows = [{"name": "SF-001922", "state": "Work in Progress",
+                 "entityType": "ItemVersion"}]
+        assert vs.pick_state_file("SF-001922", rows) is None
+
+    def test_a_folder_does_not_mask_the_real_file(self):
+        rows = [{"name": "ISO 4762 - M6 x 16 - Stainless Steel", "state": None,
+                 "subfolderCount": 0},
+                _f("ISO 4762 - M6 x 16 Stainless Steel.ipt", "Work in Progress")]
+        hit = vs.pick_state_file("ISO 4762 - M6 x 16 - Stainless Steel", rows)
+        assert hit["name"] == "ISO 4762 - M6 x 16 Stainless Steel.ipt"
+
+
+class TestFileNameLookup:
+    ROWS = [_f("CD-001578.ipt", "Released"),
+            _f("CD-001578.SLDPRT", "Released"),
+            _f("CD-001578_perf.stl", "Work in Progress")]
+
+    def test_an_exact_file_name_picks_that_file(self):
+        assert vs.pick_state_file("CD-001578.ipt", self.ROWS)["name"] == "CD-001578.ipt"
+
+    def test_the_number_alone_still_prefers_the_model(self):
+        assert vs.pick_state_file("CD-001578", self.ROWS)["name"] == "CD-001578.ipt"
+
+
+class TestLooseAndPrefixMatching:
+    def test_interior_punctuation_is_ignored(self):
+        # BOM says "M6 x 50 - Stainless Steel"; the file has no dash.
+        rows = [_f("ISO 4762 - M6 x 50 Stainless Steel.ipt", "Work in Progress")]
+        hit = vs.pick_state_file("ISO 4762 - M6 x 50 - Stainless Steel", rows)
+        assert hit["name"] == "ISO 4762 - M6 x 50 Stainless Steel.ipt"
+
+    def test_a_typod_duplicate_is_not_matched(self):
+        rows = [_f("ISO 4762 - M6 x 50ISO Stainless Steel.ipt", "Released")]
+        assert vs.pick_state_file("ISO 4762 - M6 x 50 - Stainless Steel", rows) is None
+
+    def test_a_trailing_detail_in_the_file_name_still_matches(self):
+        rows = [_f("DIN 934 - M5 x 0.8.ipt", "Work in Progress")]
+        assert vs.pick_state_file("DIN 934 - M5", rows)["name"] == "DIN 934 - M5 x 0.8.ipt"
+
+    def test_a_shorter_size_does_not_grab_a_longer_one(self):
+        # "M6 x 1" must never pick up "M6 x 10".
+        rows = [_f("ISO 4762 - M6 x 10 Stainless Steel.ipt", "Released")]
+        assert vs.pick_state_file("ISO 4762 - M6 x 1", rows) is None
+
+    def test_candidates_that_disagree_about_the_state_stay_blank(self):
+        rows = [_f("ISO 4762 - M6 x 20 A.ipt", "Released"),
+                _f("ISO 4762 - M6 x 20 B.ipt", "Work in Progress")]
+        assert vs.pick_state_file("ISO 4762 - M6 x 20", rows) is None
+
+
 class TestStateOf:
     def test_reads_the_lifecycle_state_name(self):
         assert vs.state_of(_f("SF-1.ipt", "Released")) == "Released"
@@ -90,6 +144,18 @@ class TestSheetWiring:
         assert df.loc[0, "State"] == "Released"
         assert warnings == []
 
+    def test_the_aliases_are_handed_to_the_lookup(self, monkeypatch):
+        seen = {}
+
+        def spy(numbers, **kwargs):
+            seen.update(kwargs)
+            return {}, []
+        monkeypatch.setattr(bp.vault_state, "lookup_file_states", spy)
+        df = pd.DataFrame({"Number": ["SF-001922"], "State": [None],
+                           "File Name": ["CD-001578.ipt"]})
+        bp._fill_state_from_vault(df)
+        assert seen["aliases"] == {"SF-001922": ["CD-001578.ipt"]}
+
     def test_a_state_the_bom_already_carries_is_not_overwritten(self, monkeypatch):
         monkeypatch.setattr(bp.vault_state, "lookup_file_states",
                             lambda nums, **k: ({"SF-000067": "Released"}, []))
@@ -108,6 +174,26 @@ class TestSheetWiring:
     def test_state_is_a_column_on_the_sheet_again(self):
         assert "State" in bp.BOM_COLUMNS
         assert "State" in bp.COLUMN_WIDTHS
+
+
+class TestLookupKeys:
+    def test_the_file_name_column_is_searched_first(self):
+        df = pd.DataFrame({"Number": ["SF-001922"], "File Name": ["CD-001578.ipt"],
+                           "Title": ["CD-001578"]})
+        assert bp._state_lookup_aliases(df)["SF-001922"] == ["CD-001578.ipt", "CD-001578"]
+
+    def test_the_title_is_used_when_there_is_no_file_name(self):
+        # The BOM's Part Number is the item number; Title carries the CD- number.
+        df = pd.DataFrame({"Number": ["SF-001920"], "Title": ["CD-001574"]})
+        assert bp._state_lookup_aliases(df)["SF-001920"] == ["CD-001574"]
+
+    def test_rows_without_either_have_no_alias(self):
+        df = pd.DataFrame({"Number": ["ISO 7089 - 5"], "Title": [float("nan")]})
+        assert bp._state_lookup_aliases(df) == {}
+
+    def test_alternate_file_name_headers_are_recognised(self):
+        df = pd.DataFrame({"Number": ["SF-001922"], "Filename": ["CD-001578.ipt"]})
+        assert bp._state_lookup_aliases(df)["SF-001922"] == ["CD-001578.ipt"]
 
 
 class TestGeneratorWiring:

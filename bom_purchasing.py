@@ -862,6 +862,40 @@ def _enrich_with_reference(df: pd.DataFrame, reference_path: str = "") -> tuple[
     return df, matched, total, unmatched, warnings
 
 
+# BOM headers that carry the CAD file name, in the spellings an Inventor export
+# might use. The file name is the best possible lookup key — it names the file
+# whose state we want, with no guessing.
+FILE_NAME_HEADERS = ("file name", "filename", "file", "document name", "documentname")
+TITLE_HEADERS = ("title", "title (item,co)")
+
+
+def _state_lookup_aliases(df: pd.DataFrame) -> dict[str, list[str]]:
+    """Per part number, better Vault search keys than the part number itself.
+
+    A BOM row's Part Number is the *item* number (SF-001922) while the CAD file
+    is CD-001578.ipt — and the item's lifecycle state is not the file's. The
+    export's File Name column names the file outright; its Title column carries
+    the CD- number. Both beat searching the SF- number, which finds the item.
+    """
+    def _column(names: tuple[str, ...]) -> str | None:
+        return next((c for c in df.columns if str(c).strip().lower() in names), None)
+
+    columns = [c for c in (_column(FILE_NAME_HEADERS), _column(TITLE_HEADERS)) if c]
+    if not columns:
+        return {}
+
+    aliases: dict[str, list[str]] = {}
+    for _idx, row in df.iterrows():
+        key = _match_key(row.get("Number"))
+        if not key or key in aliases:
+            continue
+        candidates = [str(row.get(c)).strip() for c in columns
+                      if not pd.isna(row.get(c)) and str(row.get(c)).strip()]
+        if candidates:
+            aliases[key] = candidates
+    return aliases
+
+
 def _fill_state_from_vault(df: pd.DataFrame) -> list[str]:
     """Fill blank State cells from Vault, in place. Returns warnings.
 
@@ -875,7 +909,8 @@ def _fill_state_from_vault(df: pd.DataFrame) -> list[str]:
         return []
 
     numbers = [n for n in df.loc[blank, "Number"].tolist() if _match_key(n)]
-    states, warnings = vault_state.lookup_file_states(numbers)
+    states, warnings = vault_state.lookup_file_states(
+        numbers, aliases=_state_lookup_aliases(df.loc[blank]))
     if states:
         keys = df.loc[blank, "Number"].map(_match_key)
         found = keys.map(states)
