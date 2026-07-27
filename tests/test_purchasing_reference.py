@@ -41,8 +41,8 @@ def test_load_mslist_dataframe_maps_fields(monkeypatch):
                 {"fields": {"f1": "SF-2", "f2": "Globex", "f3": 1.25, "f4": "Al"}},
             ]}
         if url.endswith("/sites/SITE/lists"):
-            return {"value": [{"id": "LIST", "displayName": "Purchased Items",
-                               "name": "PurchasedItems"}]}
+            return {"value": [{"id": "LIST", "displayName": "Engineering Purchased Parts",
+                               "name": "Engineering Purchased Parts"}]}
         if ":/sites/" in url:
             return {"id": "SITE"}
         raise AssertionError("unexpected url: " + url)
@@ -73,7 +73,7 @@ def test_load_mslist_dataframe_follows_paging(monkeypatch):
         if "/lists/LIST/items" in url:
             return pages["p1"]
         if url.endswith("/sites/SITE/lists"):
-            return {"value": [{"id": "LIST", "displayName": "Purchased Items"}]}
+            return {"value": [{"id": "LIST", "displayName": "Engineering Purchased Parts"}]}
         if ":/sites/" in url:
             return {"id": "SITE"}
         raise AssertionError("unexpected url: " + url)

@@ -40,14 +40,14 @@ SCOPES = ["Sites.Read.All"]
 # Non-secret defaults. The client/tenant IDs come from an Entra app registration
 # (public client) and are safe to bundle (a public-client id is not a secret).
 DEFAULT_CONFIG: dict[str, Any] = {
-    "source": "mslist",                      # "mslist" (default) | "auto" | "excel"
+    "source": "auto",                        # "auto" (default) | "mslist" | "excel"
     "mslist": {
         # Non-secret Entra app-registration IDs (public client). Safe to bundle.
         "tenant_id": "66328e6d-6557-413a-9061-8797e292ea89",   # Directory (tenant) ID
         "client_id": "df058d52-922d-4d5a-b6d1-27f4aeeb9e1b",   # Application (client) ID
         "site_hostname": "netorgft6579427.sharepoint.com",
         "site_path": "/sites/Simplifyber",
-        "list_name": "Purchased Items",      # or set "list_id"
+        "list_name": "Engineering Purchased Parts",  # or set "list_id"
         "list_id": "",
     },
     "column_map": {},                        # display-name -> canonical override
