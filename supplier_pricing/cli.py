@@ -85,9 +85,14 @@ def _print_add_report(report: dict) -> None:
     mode = "APPLIED" if not report["dry_run"] else "DRY-RUN (nothing added)"
     print(f"\n=== BOM -> List add - {mode} ===")
     errs = report.get("errors", [])
-    print(f"already in list={report['existing_count']}  missing={len(report['missing'])}  "
+    # BOM-side counts first; existing_count is the size of the list, not a
+    # count of this BOM's parts, so it is labelled separately.
+    print(f"checked={report.get('checked', 0)}  "
+          f"already in list={report.get('already_present', 0)}  "
+          f"missing={len(report['missing'])}  "
           f"added={report['created']}  updated={report.get('updated', 0)}  "
-          f"errors={len(errs)}  by_source={report['by_source']}")
+          f"errors={len(errs)}  by_source={report['by_source']}  "
+          f"list size={report['existing_count']}")
     for r in report["rows"]:
         desc = str(r.get("description") or "").strip()
         print(f"  + {r['number']}  [{r['source'] or '-'}]  {r['status']}"

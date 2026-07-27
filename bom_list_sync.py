@@ -118,6 +118,7 @@ def add_missing_bom_rows(client, bom_df, *, dry_run: bool = True,
     seen: set[str] = set()
     created = 0
     updated = 0
+    already_present = 0
 
     has_source = "Source" in getattr(bom_df, "columns", [])
     for _idx, row in bom_df.iterrows():
@@ -128,6 +129,8 @@ def add_missing_bom_rows(client, bom_df, *, dry_run: bool = True,
         if source_set is not None and source not in source_set:
             continue
         seen.add(number)
+        if number in index:
+            already_present += 1
 
         fields = build_item_fields(row, number, d2i)
         description = fields.get(d2i.get("Description (Item,CO)", ""), None)
@@ -167,6 +170,10 @@ def add_missing_bom_rows(client, bom_df, *, dry_run: bool = True,
 
     return {
         "missing": missing,
+        # BOM-side counts (how many parts this BOM contributed) vs the list-side
+        # existing_count (how big the list is) — callers report them separately.
+        "checked": len(seen),
+        "already_present": already_present,
         "existing_count": len(index),
         "created": created,
         "updated": updated,

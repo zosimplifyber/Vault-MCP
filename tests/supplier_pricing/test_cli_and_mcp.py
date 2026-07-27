@@ -59,6 +59,20 @@ class TestProviderFactory:
         assert isinstance(prov, _DisabledProvider)
 
 
+class TestAddReportOutput:
+    def test_reports_bom_parts_checked_separately_from_list_size(self, capsys):
+        # "already in list=273" alone read as 273 BOM parts; it is the list size.
+        cli._print_add_report({
+            "dry_run": True, "missing": ["SF-1"], "checked": 18,
+            "already_present": 17, "existing_count": 273, "created": 0,
+            "updated": 0, "errors": [], "by_source": {"Buy": 1}, "rows": [],
+        })
+        out = capsys.readouterr().out
+        assert "checked=18" in out
+        assert "already in list=17" in out
+        assert "list size=273" in out
+
+
 class FakeMcp:
     def __init__(self):
         self.registered = []

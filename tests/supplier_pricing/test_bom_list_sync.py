@@ -78,6 +78,22 @@ class TestPlanMissing:
         report = bls.add_missing_bom_rows(client, bom(), dry_run=True)
         assert "SF-000067" not in report["missing"]
 
+    def test_report_counts_bom_parts_checked_and_already_present(self):
+        # existing_count is the SIZE OF THE LIST; the BOM-side counts are separate
+        # so the GUI can say "x of y BOM parts" instead of quoting the list size.
+        client = FakeClient()
+        report = bls.add_missing_bom_rows(client, bom(), dry_run=True)
+        assert report["checked"] == 3            # 4 rows, SF-999002 twice
+        assert report["already_present"] == 1    # SF-000067
+        assert report["existing_count"] == 2     # the list holds 2 items
+
+    def test_checked_count_respects_the_source_filter(self):
+        client = FakeClient()
+        report = bls.add_missing_bom_rows(client, bom(), dry_run=True,
+                                          sources={"Buy"})
+        assert report["checked"] == 2            # SF-000067 + SF-999001
+        assert report["already_present"] == 1
+
 
 class TestApply:
     def test_apply_creates_items_with_mapped_fields(self):

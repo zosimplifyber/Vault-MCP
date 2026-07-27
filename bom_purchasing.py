@@ -22,6 +22,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 import purchasing_reference  # Microsoft-List reference source (with Excel fallback)
+from supplier_pricing.normalize import normalize_part_number
 
 
 # ---------------------------------------------------------------------------
@@ -278,6 +279,19 @@ def load_reference_file(filepath: str) -> pd.DataFrame | None:
         return None
 
 
+def _match_key(value: Any) -> str:
+    """Part-number key for reference matching: case- and whitespace-insensitive.
+
+    Uses the same normalization bom_list_sync applies when it writes a part into
+    the Microsoft List, so both sides agree. Blank / NaN values key to "" and are
+    never matched (a NaN would otherwise stringify to "nan" and match another).
+    """
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return ""
+    key = normalize_part_number(value)
+    return "" if key.upper() == "NAN" else key
+
+
 def lookup_purchased_data(
     bom_df: pd.DataFrame, ref_df: pd.DataFrame
 ) -> tuple[pd.DataFrame, int, int]:
@@ -297,20 +311,27 @@ def lookup_purchased_data(
 
     available = [c for c in LOOKUP_COLUMNS if c in ref_df.columns]
 
-    # Reference workbooks frequently have a part number listed on multiple rows
-    # (e.g. one per vendor quote). The previous code did `ref_df.set_index(ref_key)`
-    # without deduping, which made `ref_idx.at[num, c]` return a *Series* for any
-    # duplicated number — and the surrounding `pd.notna(...)` then raised
-    # "truth value of a Series is ambiguous". Drop duplicates keeping the first
-    # occurrence (matches the historical "lookup first match" intent), then
-    # build a {number: value} dict per column and use pandas' vectorized map.
-    ref_unique = ref_df.drop_duplicates(subset=[ref_key], keep="first")
+    # Match on the NORMALIZED part number, not the raw string. The Microsoft
+    # List stores what bom_list_sync wrote — normalize_part_number's upper-cased,
+    # single-spaced form ("ISO 4762 - M6 X 10 - STAINLESS STEEL") — while the BOM
+    # carries the number as authored ("ISO 4762 - M6 x 10 - Stainless Steel").
+    # Raw-string equality missed every such part and left it "not in the
+    # reference file" with a blank Vendor / Cost even though the list had it.
+    bom_keys = result["Number"].map(_match_key)
+    ref_keys = ref_df[ref_key].map(_match_key)
+
+    # Reference workbooks frequently list a part number on multiple rows (one per
+    # vendor quote); keep the first occurrence, matching the historical
+    # "lookup first match" intent. Blank keys are dropped so a BOM row with no
+    # number can never collide with a reference row that has none either.
+    keep = (ref_keys != "") & ~ref_keys.duplicated(keep="first")
+    ref_unique, ref_unique_keys = ref_df[keep], ref_keys[keep]
     for col in available:
-        col_map = dict(zip(ref_unique[ref_key], ref_unique[col]))
+        col_map = dict(zip(ref_unique_keys, ref_unique[col]))
         # `Series.map(dict)` returns NaN for missing keys and for cells whose
         # source value is NaN — same semantics as the prior None branch from
         # downstream `.isna()` / `.notna()` checks' perspective.
-        result[col] = result["Number"].map(col_map)
+        result[col] = bom_keys.map(col_map)
 
     buy_mask = result["Source"].isin(["Buy", "Other"])
     matched = int(result[buy_mask]["Vendor"].notna().sum())

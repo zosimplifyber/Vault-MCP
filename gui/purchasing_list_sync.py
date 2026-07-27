@@ -22,6 +22,25 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 
+def summary_line(report: dict, *, applied: bool, update_existing: bool = False) -> str:
+    """One-line result summary for a scan / add run.
+
+    Keeps the BOM-side counts (how many of THIS BOM's parts were checked and
+    already present) distinct from the size of the list itself — quoting only
+    existing_count read as though that many BOM parts had been found.
+    """
+    n = report.get("created", 0) if applied else len(report.get("missing", []))
+    parts = [f"{'ADDED' if applied else 'Found'} {n} missing part(s) "
+             f"of {report.get('checked', 0)} BOM part(s) checked"]
+    if update_existing:
+        parts.append(f", {report.get('updated', 0)} existing updated")
+    parts.append(f"; {report.get('already_present', 0)} already in the list "
+                 f"(which holds {report.get('existing_count', 0)} part numbers).")
+    if report.get("by_source"):
+        parts.append(f" By source: {report['by_source']}")
+    return "".join(parts)
+
+
 def launch_bom_list_sync_gui(*, cfg=None, parent=None, **_ignored) -> None:
     win = tk.Toplevel(parent) if parent is not None else tk.Tk()
     win.title("BOM → Purchased Parts List")
@@ -77,12 +96,8 @@ def launch_bom_list_sync_gui(*, cfg=None, parent=None, **_ignored) -> None:
     def show_report(report: dict, applied: bool) -> None:
         state["report"] = report
         n = len(report["missing"])
-        upd = report.get("updated", 0)
-        log(f"\n{'ADDED' if applied else 'Found'} {report['created'] if applied else n} "
-            f"missing part(s)"
-            + (f", {'UPDATED ' if applied else ''}{upd} existing" if update_var.get() else "")
-            + f". Already in list: {report['existing_count']}. "
-            f"By source: {report['by_source']}")
+        log("\n" + summary_line(report, applied=applied,
+                                update_existing=update_var.get()))
         for r in report["rows"]:
             mark = "!" if r["status"] == "error" else "+"
             desc = str(r.get("description") or "").strip()
