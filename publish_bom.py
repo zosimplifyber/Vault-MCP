@@ -181,3 +181,22 @@ def load_publish_rows(
         ))
 
     return rows, None
+
+
+# A CAD or item number: two-or-more letters, a hyphen, four-or-more digits.
+# Matches CD-001608 and SF-001922 but not "M6" or "4762".
+_TOP_STEM_RE = re.compile(r"[A-Za-z]{2,}-\d{4,}")
+
+
+def top_assembly_stem(bom_file_path: str) -> str:
+    """Pull the top-level part number out of a BOM file name.
+
+    ``"CD-001608 BOM.xlsx"`` -> ``"CD-001608"``. Returns "" when the name
+    carries no recognizable number, in which case the GUI leaves the top
+    assembly field blank and no top-level jobs are queued.
+    """
+    if not bom_file_path:
+        return ""
+    base = os.path.splitext(os.path.basename(bom_file_path))[0]
+    match = _TOP_STEM_RE.search(base)
+    return match.group(0) if match else ""

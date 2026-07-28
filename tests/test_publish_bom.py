@@ -145,3 +145,23 @@ def test_an_unsupported_extension_returns_an_error_not_an_exception(tmp_path):
     rows, error = publish_bom.load_publish_rows(str(path))
     assert rows == []
     assert error is not None
+
+
+# --------------------------------------------------------------------------- top assembly
+
+@pytest.mark.parametrize("filename,expected", [
+    ("CD-001608 BOM.xlsx", "CD-001608"),
+    ("CD-001608 MFG BOM.xlsx", "CD-001608"),
+    ("CD-001608.xlsx", "CD-001608"),
+    ("cd-001608 bom.xlsx", "cd-001608"),
+    ("SF-001922 BOM.csv", "SF-001922"),
+    ("bom export.xlsx", ""),
+    ("", ""),
+])
+def test_top_assembly_stem_is_parsed_from_the_file_name(filename, expected):
+    assert publish_bom.top_assembly_stem(filename) == expected
+
+
+def test_top_assembly_stem_ignores_the_directory():
+    path = r"C:\Vault Workspace\DESIGNS\PRODUCTION EQUIPMENT\CD-001608 BOM.xlsx"
+    assert publish_bom.top_assembly_stem(path) == "CD-001608"
