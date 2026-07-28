@@ -43,6 +43,10 @@ build_purchasing_log.txt
 # Playwright MCP scratch output
 .playwright-mcp/
 
+# Git worktrees for isolated feature work — these are checkouts of this same
+# repo, so they must never be tracked by it.
+.worktrees/
+
 # OS junk
 .DS_Store
 Thumbs.db
