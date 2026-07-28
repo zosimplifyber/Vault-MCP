@@ -57,15 +57,14 @@ class TestAutoFilter:
         assert int(ws.auto_filter.ref.split(":")[1].lstrip("ABCDEFGHIJKLMNOPQRSTUVWXYZ")) < note_row
 
 
-class TestNameColumn:
-    def test_the_sheet_shows_number_and_name_side_by_side(self, tmp_path):
-        df = _df([dict(BUY, Name="ISO 4762 - M6 x 50 - Steel.ipt")])
+class TestTitleColumn:
+    def test_the_sheet_shows_number_and_title_side_by_side(self, tmp_path):
+        df = _df([dict(BUY, Title="CD-001578")])
         ws = _book(tmp_path, df)["Purchasing"]
         header = [c.value for c in ws[HDR_ROW]]
-        assert header.index("Name") == header.index("Number") + 1
+        assert header.index("Title") == header.index("Number") + 1
         assert ws.cell(row=4, column=header.index("Number") + 1).value == "SF-000067"
-        assert ws.cell(row=4, column=header.index("Name") + 1).value == \
-            "ISO 4762 - M6 x 50 - Steel.ipt"
+        assert ws.cell(row=4, column=header.index("Title") + 1).value == "CD-001578"
 
 
 class TestVendorTabSources:

@@ -34,40 +34,41 @@ def test_coerce_maps_inventor_headers_and_translates_source():
         assert col in out.columns
 
 
-def test_coerce_maps_the_inventor_filename_column_to_name():
-    # The export's file name identifies the CAD file behind the row; the Part
-    # Number is the item number (SF-001922 vs CD-001578.ipt).
+def test_coerce_keeps_the_inventor_title_column():
+    # CD-001582 MFG BOM.xlsx: Part Number is the item number, Title the CAD number.
     df = pd.DataFrame({
         "Item": ["1"], "Part Number": ["SF-001922"], "QTY": [1],
-        "BOM Structure": ["Normal"], "Filename": ["CD-001578.ipt"],
+        "BOM Structure": ["Normal"], "Title": ["CD-001578"],
     })
     out, err = bp.coerce_bom_dataframe(df)
     assert err is None
-    assert out.loc[0, "Name"] == "CD-001578.ipt"
+    assert out.loc[0, "Title"] == "CD-001578"
 
 
-def test_vault_bom_rows_fill_the_name_column_too():
-    rows = [{"Number": "SF-001922", "File Name": "CD-001578.ipt", "Item Qty": 1}]
+def test_vault_bom_rows_fill_the_title_column_too():
+    rows = [{"Number": "SF-001922", "Title (Item,CO)": "CD-001578", "Item Qty": 1}]
     out = bp.vault_bom_to_dataframe(rows)
-    assert out.loc[0, "Name"] == "CD-001578.ipt"
+    assert out.loc[0, "Title"] == "CD-001578"
 
 
-def test_coerce_accepts_the_spaced_file_name_header():
+def test_coerce_keeps_the_filename_column_for_the_state_lookup():
+    # Filename is not shown on the sheet, but the Vault lookup keys on it.
     df = pd.DataFrame({
         "Item": ["1"], "Part Number": ["SF-001922"], "QTY": [1],
-        "File Name": ["CD-001578.ipt"],
+        "Filename": ["CD-001578.ipt"],
     })
     out, err = bp.coerce_bom_dataframe(df)
     assert err is None
-    assert out.loc[0, "Name"] == "CD-001578.ipt"
+    assert out.loc[0, "Filename"] == "CD-001578.ipt"
+    assert bp._state_lookup_aliases(out)["SF-001922"] == ["CD-001578.ipt"]
 
 
-def test_coerce_leaves_name_blank_when_the_export_has_no_file_column():
+def test_coerce_leaves_title_blank_when_the_export_has_none():
     df = pd.DataFrame({"Item": ["1"], "Part Number": ["SF-1"], "QTY": [1]})
     out, err = bp.coerce_bom_dataframe(df)
     assert err is None
-    assert "Name" in out.columns
-    assert pd.isna(out.loc[0, "Name"])
+    assert "Title" in out.columns
+    assert pd.isna(out.loc[0, "Title"])
 
 
 def test_coerce_accepts_canonical_vault_headers_unchanged():

@@ -56,7 +56,7 @@ PURCHASED_ITEMS_SHEET = "purchased parts"
 # Column definitions
 # ---------------------------------------------------------------------------
 BOM_COLUMNS = [
-    "Number", "Name", "Row Order", "Position Number", "Item Qty", "Units",
+    "Number", "Title", "Row Order", "Position Number", "Item Qty", "Units",
     "Revision", "State", "Description (Item,CO)", "Source",
 ]
 
@@ -81,7 +81,7 @@ HEADER_LABELS = {
 }
 
 COLUMN_WIDTHS = {
-    "Number": 14, "Name": 38, "Row Order": 12, "Position Number": 16,
+    "Number": 14, "Title": 20, "Row Order": 12, "Position Number": 16,
     "Item Qty": 10, "Units": 8, "Revision": 10,
     "State": 16, "Description (Item,CO)": 44,
     "Source": 10, "Material": 22,
@@ -111,11 +111,9 @@ VAULT_FIELD_MAP: dict[str, str] = {
     "Item Number": "Number",
     "Part Number": "Number",
     "PartNumber": "Number",
-    # File name — the CAD file behind the row, distinct from the part number
-    "Name": "Name",
-    "File Name": "Name",
-    "FileName": "Name",
-    "Filename": "Name",
+    # Title — the CAD number / item title, distinct from the part number
+    "Title": "Title",
+    "Title (Item,CO)": "Title",
     # Row order / BOM structure
     "Row Order": "Row Order",
     "RowOrder": "Row Order",
@@ -160,13 +158,11 @@ VAULT_FIELD_MAP: dict[str, str] = {
 INVENTOR_FIELD_MAP: dict[str, str] = {
     "Item": "Row Order",
     "Part Number": "Number",
-    # The CAD file behind the row. Its Part Number is the *item* number
-    # (SF-001922) while the file is CD-001578.ipt, so the file name is both worth
-    # showing and the best key for the Vault state lookup.
-    "Filename": "Name",
-    "File Name": "Name",
-    "File": "Name",
-    "Document Name": "Name",
+    # "Title" needs no rename — the Inventor export already uses that header, and
+    # it carries the CAD number (SF-001922 -> CD-001578) where the Part Number is
+    # the item number. The export's Filename column is left under its own name:
+    # it is not shown on the sheet, only used to key the Vault state lookup.
+    "Title (Item,CO)": "Title",
     "QTY": "Item Qty",
     "Unit QTY": "Units",
     "BOM Structure": "Source",
@@ -877,7 +873,7 @@ def _enrich_with_reference(df: pd.DataFrame, reference_path: str = "") -> tuple[
 # BOM headers that carry the CAD file name, in the spellings an Inventor export
 # might use. The file name is the best possible lookup key — it names the file
 # whose state we want, with no guessing.
-FILE_NAME_HEADERS = ("name", "file name", "filename", "file",
+FILE_NAME_HEADERS = ("filename", "file name", "file",
                      "document name", "documentname")
 TITLE_HEADERS = ("title", "title (item,co)")
 
