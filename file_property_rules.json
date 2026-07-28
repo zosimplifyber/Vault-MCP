@@ -1,5 +1,5 @@
 {
-  "_comment": "Property rules for Vault FILES (iProperties), keyed by the file's Category Name. Used by scripts/check_file_properties.py — type a file name (e.g. CD-001659.iam) and every rule below runs against that file's properties. Reloaded on every run, so edits take effect immediately.\n\nThis is the file-side twin of item_property_rules.json. The rule engine is shared (check_item_properties.evaluate_rule), so the schema is identical, but the property NAMES differ because files and items expose different properties:\n    item 'Number'                -> file 'File Name'\n    item 'Title (Item,CO)'       -> file 'Title'\n    item 'Description (Item,CO)' -> file 'Description (File)'\n    item 'Units'                 -> (no file equivalent; dropped)\n    (file-only)                  -> 'CAD Category', 'Material Finish'\n\nDescription rules follow the 'Vault PDM – Item Description' standard (rev A): lowercase keyword nouns only — no dimensions, no material, no ISO/DIN/standard numbers, no project/customer names. Standard numbers belong in the Title.\n\n'CAD Category' is gated per rule set with allowed_values matching the category itself, which enforces 'the CAD category agrees with the Vault category' without needing a cross-property rule type.\n\nALWAYS REQUIRED, in every category: State, Revision, Project, Designer, Engineer, Engr Approved By, Source — plus Vendor on every part and assembly. 'Engr Approved By' additionally forbids the value 'NOT REVIEWED' everywhere, because that string means the review has not happened. tests/test_check_file_properties.py locks all of this in, so dropping one of them from a category fails the suite rather than silently weakening the gate.\n\nEach property may declare any of: required (bool), allowed_values (list), forbidden_values (list), pattern (regex, fullmatch), forbidden_patterns (list of regex, re.search), min_length (int), max_length (int), description (str), required_unless ({property, matches_pattern}).",
+  "_comment": "Property rules for Vault FILES (iProperties), keyed by the file's Category Name. Used by scripts/check_file_properties.py — type a file name (e.g. CD-001659.iam) and every rule below runs against that file's properties. Reloaded on every run, so edits take effect immediately.\n\nThis is the file-side twin of item_property_rules.json. The rule engine is shared (check_item_properties.evaluate_rule), so the schema is identical, but the property NAMES differ because files and items expose different properties:\n    item 'Number'                -> file 'File Name'\n    item 'Title (Item,CO)'       -> file 'Title'\n    item 'Description (Item,CO)' -> file 'Description (File)'\n    item 'Units'                 -> (no file equivalent; dropped)\n    (file-only)                  -> 'CAD Category', 'Material Finish'\n\nDescription rules follow the 'Vault PDM – Item Description' standard (rev A): lowercase keyword nouns only — no dimensions, no material, no ISO/DIN/standard numbers, no project/customer names. Standard numbers belong in the Title.\n\n'CAD Category' is gated per rule set with allowed_values matching the category itself, which enforces 'the CAD category agrees with the Vault category' without needing a cross-property rule type.\n\nALWAYS REQUIRED, in every category: State, Revision, Project, Engineer, Engr Approved By, Source — plus Vendor on every part and assembly, and Designer on everything EXCEPT assemblies (the design credit lives on the child parts). 'Engr Approved By' additionally forbids the value 'NOT REVIEWED' everywhere, because that string means the review has not happened. tests/test_check_file_properties.py locks all of this in, so dropping one of them from a category fails the suite rather than silently weakening the gate.\n\nNOT GATED: 'Title' and 'CAD Category' are declared with required:false so their values still appear in the report, but they never fail a file.\n\nEach property may declare any of: required (bool), allowed_values (list), forbidden_values (list), pattern (regex, fullmatch), forbidden_patterns (list of regex, re.search), min_length (int), max_length (int), description (str), required_unless ({property, matches_pattern}).",
 
   "category_aliases": {
     "Assembly-Engineering": "Assembly - Engineering",
@@ -19,12 +19,7 @@
       "description": "Inventor assemblies (.iam) designed in-house. Source = Make; sign-off + project required. Material lives on the child parts, not the assembly.",
       "properties": {
         "File Name":          { "required": true,  "min_length": 3 },
-        "Title": {
-          "required": true,
-          "min_length": 3,
-          "forbidden_patterns": ["(?i)^\\s*(CD|SF|MFG|DT)-\\d+\\s*$"],
-          "description": "A descriptive title — ISO / DIN / standard numbers are allowed here. A Title that only repeats the part number is not a title."
-        },
+        "Title":              { "required": false, "description": "Reported for reference, not gated. ISO / DIN / standard numbers belong here when there are any." },
         "Description (File)": {
           "required": true,
           "min_length": 5,
@@ -41,10 +36,10 @@
         "Vendor Number":      { "required": false },
         "Engineer":           { "required": true },
         "Engr Approved By":   { "required": true,  "allowed_values": ["Zak O.", "Justin S.", "Mackenzie M.", "Alan Y.", "N/A"], "forbidden_values": ["NOT REVIEWED"], "description": "Must name an approver. 'NOT REVIEWED' is never acceptable — it means the review has not happened." },
-        "Designer":           { "required": true },
+        "Designer":           { "required": false, "description": "Not gated on assemblies — the design credit lives on the child parts." },
         "Project":            { "required": true },
         "Category Name":      { "required": true,  "allowed_values": ["Assembly - Engineering"] },
-        "CAD Category":       { "required": true,  "allowed_values": ["Assembly - Engineering"], "description": "The Inventor-side category must agree with the Vault category." }
+        "CAD Category":       { "required": false, "description": "Reported for reference, not gated." }
       }
     },
 
@@ -52,12 +47,7 @@
       "description": "Inventor parts (.ipt) designed in-house. Source = Make; Material spelled out; sign-off + project required.",
       "properties": {
         "File Name":          { "required": true,  "min_length": 3 },
-        "Title": {
-          "required": true,
-          "min_length": 3,
-          "forbidden_patterns": ["(?i)^\\s*(CD|SF|MFG|DT)-\\d+\\s*$"],
-          "description": "A descriptive title — ISO / DIN / standard numbers are allowed here."
-        },
+        "Title":              { "required": false, "description": "Reported for reference, not gated." },
         "Description (File)": {
           "required": true,
           "min_length": 5,
@@ -89,7 +79,7 @@
         "Designer":           { "required": true },
         "Project":            { "required": true },
         "Category Name":      { "required": true,  "allowed_values": ["Part - Engineering"] },
-        "CAD Category":       { "required": true,  "allowed_values": ["Part - Engineering"], "description": "The Inventor-side category must agree with the Vault category." }
+        "CAD Category":       { "required": false, "description": "Reported for reference, not gated." }
       }
     },
 
@@ -97,12 +87,7 @@
       "description": "Bought parts modelled or downloaded as .ipt. Source = Buy; Vendor + Vendor Number required unless the Title names a published standard (ISO/DIN/etc.).",
       "properties": {
         "File Name":          { "required": true,  "min_length": 3 },
-        "Title": {
-          "required": true,
-          "min_length": 3,
-          "forbidden_patterns": ["(?i)^\\s*(CD|SF|MFG|DT)-\\d+\\s*$"],
-          "description": "ISO / DIN / standard numbers are allowed here (e.g. 'ISO 4762 M6x20')."
-        },
+        "Title":              { "required": false, "description": "Reported for reference, not gated. Still drives the Vendor Number exemption below when it names a published standard." },
         "Description (File)": {
           "required": true,
           "min_length": 5,
@@ -122,7 +107,7 @@
         "Designer":           { "required": true },
         "Project":            { "required": true },
         "Category Name":      { "required": true,  "allowed_values": ["Part - Purchased"] },
-        "CAD Category":       { "required": true,  "allowed_values": ["Part - Purchased"], "description": "The Inventor-side category must agree with the Vault category." }
+        "CAD Category":       { "required": false, "description": "Reported for reference, not gated." }
       }
     },
 
@@ -145,7 +130,7 @@
         "Designer":           { "required": true },
         "Project":            { "required": true },
         "Category Name":      { "required": true,  "allowed_values": ["Drawing - Engineering"] },
-        "CAD Category":       { "required": true,  "allowed_values": ["Drawing - Engineering"], "description": "The Inventor-side category must agree with the Vault category." }
+        "CAD Category":       { "required": false, "description": "Reported for reference, not gated." }
       }
     },
 

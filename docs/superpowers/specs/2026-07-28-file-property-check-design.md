@@ -155,12 +155,19 @@ thing worth surfacing. The rules are JSON and reloaded every run, so they are
 tunable without a code change.
 
 **Always required, every category:** `State`, `Revision`, `Project`,
-`Designer`, `Engineer`, `Engr Approved By`, `Source` — the Vault grid columns
-that must never be blank. `Engr Approved By` additionally forbids the literal
+`Engineer`, `Engr Approved By`, `Source` — the Vault grid columns that must
+never be blank. `Engr Approved By` additionally forbids the literal
 `NOT REVIEWED` in every category, since that string means the review has not
 happened. `Vendor` is required on every part and assembly with no exemption;
 `Vendor Number` keeps its published-standard exemption, because a generic ISO
-screw has a supplier but no single supplier SKU.
+screw has a supplier but no single supplier SKU. `Designer` is required
+everywhere **except** assemblies, where the design credit lives on the child
+parts.
+
+**Declared but never gated:** `Title` and `CAD Category` carry
+`required: false` and no other checks, so their values still appear in the
+report but can never fail a file. `Title` stays in the `Part - Purchased` rule
+set because the `Vendor Number` exemption reads it.
 
 The test suite parametrises over every category and asserts each of these,
 so dropping one from a rule set fails the build rather than silently weakening
@@ -174,19 +181,35 @@ delete if unwanted.
 ### Actual output for `CD-001659.iam`
 
 ```
-Assembly - Engineering                            13/16 properties passed
+Assembly - Engineering                            15/16 properties passed
 
-[FAIL]  Title              CD-001659
-        > contains forbidden pattern /(?i)^\s*(CD|SF|MFG|DT)-\d+\s*$/
 [FAIL]  Description (File) bmw kft90 hot a adapter plate assembly
         > does not match pattern /^[a-z][a-z \-]*[a-z]$/
-[FAIL]  CAD Category       (empty)
-        > missing (required)
 ```
 
 With `--recursive`, all three CAD BOM children fail too — two are categorised
 `Part - Engineering` but carry `Source = Buy`, and `CD-001624.ipt` has a blank
 `Vendor` and `Engr Approved By = NOT REVIEWED`.
+
+### Excel export
+
+`export_to_excel(result, path)` writes a two-sheet workbook using the same
+palette as `bom_purchasing.py`, so it sits alongside the purchasing sheets:
+
+- **Summary** — one row per file: status, passed/total, and which properties
+  failed. This is the sheet you hand to someone.
+- **Detail** — one row per property checked, with its current value and the
+  reason it failed.
+
+Both sheets get an autofilter and frozen headers so a long BOM walk stays
+navigable, and rows are colour-coded PASS / FAIL / SKIP. A file with no rule
+set contributes exactly one SKIP row — it must never read as compliant.
+
+Reached by `--excel [PATH]` on the CLI (bare flag → timestamped file in `Log/`)
+and the **Export to Excel** button in the GUI, which unlocks only after a
+successful check and re-uses the in-memory result rather than re-querying
+Vault. Writing over a workbook that's open in Excel raises a `RuntimeError`
+that says so.
 
 ### Surface
 
@@ -230,11 +253,18 @@ probe of `CD-001659.iam` (`tests/fixtures/`) — no network in the test suite:
   rather than inventing a key for them.
 - File-name resolution: exact match wins over a prefix match, ignores case,
   sets `note` on ambiguity, raises on no match.
-- Rules applied to the recorded fixture produce exactly the three expected
-  failures (`Title`, `Description (File)`, `CAD Category`).
-- Parametrised over every category: each of the seven always-required columns
-  is required and is actually reported when blank; `Engr Approved By` rejects
-  `NOT REVIEWED`; every part category requires `Vendor` with no exemption.
+- Rules applied to the recorded fixture produce exactly one failure
+  (`Description (File)`).
+- Parametrised over every category: each always-required column is required and
+  is actually reported when blank; `Engr Approved By` rejects `NOT REVIEWED`;
+  every part category requires `Vendor` with no exemption; `Designer` is
+  required everywhere but assemblies; `Title` and `CAD Category` appear in the
+  report but pass on every value including blank.
+- Excel export: two sheets with filters and frozen headers; one summary row per
+  file and one detail row per property; a no-rule-set file exports as SKIP, not
+  PASS; a locked target raises a message naming Excel; missing directories are
+  created. The GUI's Export button unlocks only after a successful check and
+  re-locks after a failed one.
 - Every category in `file_property_rules.json` parses, its regexes compile, and
   each `required_unless` names a property the same rule set checks.
 - No rule set uses item-only property names (guards against copy-paste drift).

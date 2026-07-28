@@ -18,7 +18,7 @@ import sys
 import threading
 import tkinter as tk
 from pathlib import Path
-from tkinter import messagebox
+from tkinter import filedialog, messagebox
 from typing import Any
 
 # Make the project root and scripts/ importable when launched as a Toplevel child.
@@ -37,7 +37,8 @@ from gui.release_workflow import (  # noqa: E402
 
 from check_file_properties import (  # noqa: E402
     CONFIG_PATH, DEFAULT_RULES_PATH,
-    check_file_name, child_status, load_json,
+    check_file_name, child_status, default_export_path, export_to_excel,
+    load_json,
 )
 
 PASS_GREEN = "#1F6B2E"   # legible on white, unlike the pale spreadsheet olive
@@ -103,7 +104,9 @@ def run_gui(
     recursive_var = tk.BooleanVar(value=False)
     show_kids_var = tk.BooleanVar(value=False)
     status_var = tk.StringVar(value="Ready.")
-    state: dict = {"busy": False, "logo": None, "icon": None}
+    # ``result`` holds the last successful check so Export can write it without
+    # hitting Vault again.
+    state: dict = {"busy": False, "logo": None, "icon": None, "result": None}
 
     # ----- window icon -----------------------------------------------------
     if _pil_available:
@@ -251,6 +254,13 @@ def run_gui(
                           activeforeground=WHITE, disabledforeground="#DDDDDD",
                           borderwidth=0, highlightthickness=0)
     check_btn.pack(side="left")
+    export_btn = tk.Button(bar, text="Export to Excel", state="disabled",
+                           bg=MID_BLUE, fg=WHITE, font=("Arial", 9, "bold"),
+                           relief="flat", padx=12, pady=6, cursor="hand2",
+                           activebackground=DARK_BLUE, activeforeground=WHITE,
+                           disabledforeground="#DDDDDD",
+                           borderwidth=0, highlightthickness=0)
+    export_btn.pack(side="left", padx=8)
     tk.Button(bar, text="Close", command=win.destroy, bg=MID_BLUE, fg=WHITE,
               font=("Arial", 9, "bold"), relief="flat", padx=12, pady=4,
               cursor="hand2", activebackground=DARK_BLUE, activeforeground=WHITE,
@@ -364,16 +374,52 @@ def run_gui(
                 write(kids, "summary_ok" if clean else "summary_fail")
                 status_var.set(f"{status_var.get()} | {kids}")
 
+    def do_export() -> None:
+        result = state.get("result")
+        if not result:
+            return
+        suggested = default_export_path(result["file_name"])
+        target = filedialog.asksaveasfilename(
+            parent=win,
+            title="Export compliance report",
+            defaultextension=".xlsx",
+            filetypes=[("Excel workbook", "*.xlsx"), ("All files", "*.*")],
+            initialfile=suggested.name,
+            initialdir=str(suggested.parent),
+        )
+        if not target:
+            return
+        try:
+            written = export_to_excel(result, target)
+        except RuntimeError as exc:
+            messagebox.showerror("Export failed", str(exc), parent=win)
+            status_var.set("Export failed.")
+            return
+        status_var.set(f"Exported to {written}")
+        write()
+        write(f"Exported to {written}", "summary_ok")
+        if messagebox.askyesno("Export complete",
+                               f"Wrote:\n{written}\n\nOpen it now?", parent=win):
+            try:
+                os.startfile(written)               # type: ignore[attr-defined]
+            except Exception as exc:                # noqa: BLE001
+                messagebox.showerror("Could not open the file", str(exc),
+                                     parent=win)
+
     def finish(result: dict | None, error: str | None) -> None:
         state["busy"] = False
         check_btn.configure(state="normal")
         name_entry.configure(state="normal")
         if error:
+            state["result"] = None
+            export_btn.configure(state="disabled")
             clear()
             write("Could not check that file.", "head")
             write(error, "err")
             status_var.set("Error.")
             return
+        state["result"] = result
+        export_btn.configure(state="normal")
         render(result)
 
     def do_check(*_args) -> None:
@@ -395,7 +441,9 @@ def run_gui(
             write("Walking the CAD BOM and checking children…", "dim")
         status_var.set("Checking…")
         state["busy"] = True
+        state["result"] = None
         check_btn.configure(state="disabled")
+        export_btn.configure(state="disabled")
         name_entry.configure(state="disabled")
 
         def worker() -> None:
@@ -416,13 +464,17 @@ def run_gui(
         threading.Thread(target=worker, daemon=True).start()
 
     check_btn.configure(command=do_check)
+    export_btn.configure(command=do_export)
     name_entry.bind("<Return>", do_check)
     name_entry.focus_set()
 
     # Exposed so tests can drive the render path without a Vault round-trip.
     win.render_for_test = render
+    win.finish_for_test = finish
+    win.export_button_for_test = export_btn
 
-    write("Enter a file name above and press Check (or hit Enter).", "dim")
+    write("Enter a file name above and press Check (or hit Enter). "
+          "Export to Excel unlocks once a check succeeds.", "dim")
 
     if parent is None:
         win.mainloop()

@@ -139,12 +139,16 @@ Type a Vault file name and get back every property that is out of compliance. Op
 python scripts/check_file_properties.py CD-001659.iam              # one file
 python scripts/check_file_properties.py CD-001659.iam --recursive  # + every child in the CAD BOM
 python scripts/check_file_properties.py CD-001659.iam --markdown   # Markdown report
+python scripts/check_file_properties.py CD-001659.iam --excel      # also write an .xlsx to Log/
+python scripts/check_file_properties.py CD-001659.iam -r -x out.xlsx   # BOM walk → named workbook
 python scripts/check_file_properties.py                            # no argument → GUI
 ```
 
 Exit codes: `0` everything passed, `1` at least one failure, `2` no rule set matched the file's category.
 
-Rules live in [`file_property_rules.json`](file_property_rules.json), keyed by the file's Category Name, and are re-read on every run — edit and re-check, no restart. Every category requires **State, Revision, Project, Designer, Engineer, Engr Approved By, Source**, plus **Vendor** on every part and assembly; `Engr Approved By` rejects `NOT REVIEWED` everywhere. A category with no rule set reports SKIP rather than a misleading pass.
+**Excel export.** `--excel` (bare) drops a timestamped workbook in `Log/`; give it a path to choose the name. In the GUI, **Export to Excel** unlocks once a check succeeds. The workbook has two sheets — **Summary** (one row per file: status, score, which properties failed) and **Detail** (one row per property checked) — both filterable with frozen headers and colour-coded PASS / FAIL / SKIP rows.
+
+Rules live in [`file_property_rules.json`](file_property_rules.json), keyed by the file's Category Name, and are re-read on every run — edit and re-check, no restart. Every category requires **State, Revision, Project, Engineer, Engr Approved By, Source**, plus **Vendor** on every part and assembly and **Designer** on everything except assemblies; `Engr Approved By` rejects `NOT REVIEWED` everywhere. `Title` and `CAD Category` are reported but never gated. A category with no rule set reports SKIP rather than a misleading pass.
 
 Note this checks **files** (iProperties). The item-side equivalent, `scripts/check_item_properties.py`, still backs the Release Workflow's readiness report and uses `item_property_rules.json`.
 

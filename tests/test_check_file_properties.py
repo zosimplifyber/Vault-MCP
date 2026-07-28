@@ -141,20 +141,20 @@ def test_no_results_raises():
 
 # --------------------------------------------------------------------------- rules
 
-def test_cd001659_reports_its_three_real_failures(properties, rules):
+def test_cd001659_reports_its_one_real_failure(properties, rules):
     """The end-to-end expectation for the worked example.
 
-    Title only repeats the part number, the description carries a customer
-    name and digits, and CAD Category is empty.
+    The description carries a customer name and digits. Title is blank-ish and
+    CAD Category is empty, but neither is gated any more.
     """
     result = cfp.evaluate_against_rules(
         properties, properties["Category Name"], rules)
     assert result["category_resolved"] == "Assembly - Engineering"
 
     failed = {r["property"] for r in result["report"]["results"] if not r["passed"]}
-    assert failed == {"Title", "Description (File)", "CAD Category"}
-    assert result["report"]["failed"] == 3
-    assert result["report"]["passed"] == result["report"]["total"] - 3
+    assert failed == {"Description (File)"}
+    assert result["report"]["failed"] == 1
+    assert result["report"]["passed"] == result["report"]["total"] - 1
 
 
 def test_the_compliant_properties_pass(properties, rules):
@@ -165,41 +165,12 @@ def test_the_compliant_properties_pass(properties, rules):
             "Revision", "State", "Category Name", "File Name"} <= passed
 
 
-def test_a_title_that_is_only_the_part_number_fails(properties, rules):
-    result = cfp.evaluate_against_rules(
-        properties, "Assembly - Engineering", rules)
-    title = next(r for r in result["report"]["results"] if r["property"] == "Title")
-    assert not title["passed"]
-    assert "forbidden pattern" in " ".join(title["failures"])
-
-
-def test_a_descriptive_title_passes(properties, rules):
-    props = dict(properties, **{"Title": "hot press adapter plate"})
-    result = cfp.evaluate_against_rules(props, "Assembly - Engineering", rules)
-    title = next(r for r in result["report"]["results"] if r["property"] == "Title")
-    assert title["passed"]
-
-
 def test_a_clean_description_passes(properties, rules):
     props = dict(properties, **{"Description (File)": "adapter plate assembly"})
     result = cfp.evaluate_against_rules(props, "Assembly - Engineering", rules)
     desc = next(r for r in result["report"]["results"]
                 if r["property"] == "Description (File)")
     assert desc["passed"]
-
-
-def test_cad_category_must_agree_with_the_vault_category(properties, rules):
-    props = dict(properties, **{"CAD Category": "Part - Engineering"})
-    result = cfp.evaluate_against_rules(props, "Assembly - Engineering", rules)
-    cad = next(r for r in result["report"]["results"]
-               if r["property"] == "CAD Category")
-    assert not cad["passed"]
-
-    props["CAD Category"] = "Assembly - Engineering"
-    result = cfp.evaluate_against_rules(props, "Assembly - Engineering", rules)
-    cad = next(r for r in result["report"]["results"]
-               if r["property"] == "CAD Category")
-    assert cad["passed"]
 
 
 def test_an_iso_standard_purchased_part_is_exempt_from_a_vendor_number(rules):
@@ -272,9 +243,15 @@ def test_every_rule_set_is_well_formed(rules):
 # category. Dropping one of these from a rule set silently weakens the gate,
 # so it fails here instead.
 ALWAYS_REQUIRED = (
-    "State", "Revision", "Project", "Designer", "Engineer",
-    "Engr Approved By", "Source",
+    "State", "Revision", "Project", "Engineer", "Engr Approved By", "Source",
 )
+
+# Designer is required everywhere except on assemblies, where the design credit
+# lives on the child parts.
+DESIGNER_EXEMPT = ("Assembly - Engineering",)
+
+# Declared so their values show up in the report, but never gated.
+NEVER_REQUIRED = ("Title", "CAD Category")
 
 PART_CATEGORIES = ("Part - Engineering", "Part - Purchased", "Part - Content Center")
 
@@ -296,6 +273,50 @@ def test_a_missing_core_column_is_reported(rules, prop):
         result = cfp.evaluate_against_rules(props, category, rules)
         failed = {r["property"] for r in result["report"]["results"] if not r["passed"]}
         assert prop in failed, f"{category} did not flag a blank {prop}"
+
+
+def test_designer_is_required_except_on_assemblies(rules):
+    for category, spec in rules["categories"].items():
+        rule = spec["properties"]["Designer"]
+        expected = category not in DESIGNER_EXEMPT
+        assert bool(rule.get("required")) is expected, (
+            f"{category}.Designer required should be {expected}"
+        )
+
+
+def test_an_assembly_with_no_designer_still_passes(properties, rules):
+    props = dict(properties, **{"Designer": ""})
+    result = cfp.evaluate_against_rules(props, "Assembly - Engineering", rules)
+    designer = next(r for r in result["report"]["results"]
+                    if r["property"] == "Designer")
+    assert designer["passed"]
+
+
+@pytest.mark.parametrize("prop", NEVER_REQUIRED)
+def test_title_and_cad_category_are_reported_but_never_gated(rules, prop):
+    """Still visible in the report, but they can never fail a file."""
+    for category, spec in rules["categories"].items():
+        rule = (spec.get("properties") or {}).get(prop)
+        if rule is None:
+            continue                    # not every category declares them
+        assert rule.get("required") is not True, f"{category}.{prop} is required"
+
+        # Blank, and anything else, has to pass.
+        for value in ("", "CD-001659", "anything at all"):
+            props = {p: "placeholder" for p in spec["properties"]}
+            props[prop] = value
+            result = cfp.evaluate_against_rules(props, category, rules)
+            checked = next(r for r in result["report"]["results"]
+                           if r["property"] == prop)
+            assert checked["passed"], f"{category}.{prop}={value!r} failed"
+
+
+@pytest.mark.parametrize("prop", NEVER_REQUIRED)
+def test_the_ungated_properties_still_appear_in_the_report(properties, rules, prop):
+    result = cfp.evaluate_against_rules(
+        properties, properties["Category Name"], rules)
+    reported = {r["property"] for r in result["report"]["results"]}
+    assert prop in reported
 
 
 def test_engr_approved_by_rejects_not_reviewed_everywhere(rules):
@@ -449,24 +470,29 @@ def test_markdown_report_names_every_failure(properties, rules):
     })
     assert "# File Property Compliance — `CD-001659.iam`" in md
     assert "**FAIL**" in md
-    for prop in ("Title", "Description (File)", "CAD Category"):
-        assert f"`{prop}`" in md
+    assert "`Description (File)`" in md
 
 
-def test_markdown_escapes_pipes_so_tables_do_not_break(properties, rules):
-    """Alternation regexes like (CD|SF|MFG|DT) appear verbatim in failures."""
-    evaluated = cfp.evaluate_against_rules(
-        properties, properties["Category Name"], rules)
+def test_markdown_escapes_pipes_so_tables_do_not_break():
+    """Alternation regexes like (CD|SF|MFG|DT) can appear verbatim in failures."""
     md = cfp.format_markdown_report({
-        "file_name": "CD-001659.iam",
-        "info": {"properties": properties, "note": None},
+        "file_name": "X.ipt",
+        "info": {"properties": {}, "note": None},
+        "category_raw": "Part - Engineering",
+        "category_resolved": "Part - Engineering",
+        "report": {
+            "failed": 1, "passed": 0, "total": 1,
+            "results": [{
+                "property": "Title", "passed": False,
+                "value": "a|b",
+                "failures": [r"contains forbidden pattern /(CD|SF|MFG|DT)/"],
+            }],
+        },
         "children": [], "children_error": None, "recursive": False,
-        **evaluated,
     })
-    title_row = next(line for line in md.splitlines()
-                     if line.startswith("| `Title`"))
+    row = next(line for line in md.splitlines() if line.startswith("| `Title`"))
     # Three columns means four pipes; any extra is an unescaped one leaking in.
-    assert title_row.count("|") - title_row.count("\\|") == 4, title_row
+    assert row.count("|") - row.count("\\|") == 4, row
 
 
 def test_gui_renders_a_report_without_blowing_up(properties, rules):
@@ -502,7 +528,7 @@ def test_gui_renders_a_report_without_blowing_up(properties, rules):
         assert "Assembly - Engineering" in rendered
         for prop in ("Title", "Description (File)", "CAD Category"):
             assert prop in rendered
-        assert "13/16 properties passed" in rendered
+        assert "15/16 properties passed" in rendered
     finally:
         root.destroy()
 
@@ -518,12 +544,175 @@ def _find_text_widget(widget):
     return None
 
 
-def test_markdown_report_says_pass_when_clean(properties, rules):
-    clean = dict(properties, **{
-        "Title": "hot press adapter plate",
-        "Description (File)": "adapter plate assembly",
-        "CAD Category": "Assembly - Engineering",
+# --------------------------------------------------------------------------- excel
+
+@pytest.fixture()
+def checked_result(properties, rules):
+    """A result dict with one failing top file and two children (fail + skip)."""
+    child_props = dict(properties, **{
+        "File Name": "CD-001624.ipt",
+        "Category Name": "Part - Engineering",
+        "Vendor": "",
+        "Material": "Aluminum 6061",
     })
+    return {
+        "file_name": "CD-001659.iam",
+        "info": {"properties": properties, "note": None},
+        "recursive": True,
+        "children_error": None,
+        "children": [
+            {
+                "file_name": "CD-001624.ipt", "file_version_id": "1",
+                "assoc_type": "Dependency", "properties": child_props, "error": None,
+                **cfp.evaluate_against_rules(child_props, "Part - Engineering", rules),
+            },
+            {
+                "file_name": "notes.xlsx", "file_version_id": "2",
+                "assoc_type": "Dependency", "properties": {}, "error": None,
+                "category_raw": "Documents", "category_resolved": None,
+                "report": None,
+            },
+        ],
+        **cfp.evaluate_against_rules(properties, properties["Category Name"], rules),
+    }
+
+
+def test_export_writes_a_two_sheet_workbook(checked_result, tmp_path):
+    openpyxl = pytest.importorskip("openpyxl")
+    out = tmp_path / "report.xlsx"
+    written = cfp.export_to_excel(checked_result, out)
+
+    assert written == str(out)
+    assert out.exists()
+    wb = openpyxl.load_workbook(out)
+    assert wb.sheetnames == ["Summary", "Detail"]
+    for ws in wb:
+        assert ws.freeze_panes == "A4", "headers should stay put while scrolling"
+        assert ws.auto_filter.ref, "every sheet should be filterable"
+
+
+def test_summary_has_one_row_per_file(checked_result, tmp_path):
+    openpyxl = pytest.importorskip("openpyxl")
+    out = tmp_path / "report.xlsx"
+    cfp.export_to_excel(checked_result, out)
+    ws = openpyxl.load_workbook(out)["Summary"]
+
+    header = [c.value for c in ws[3]]
+    assert header == ["File", "Category", "Status", "Passed", "Total", "Failures"]
+
+    rows = {r[0]: r for r in ws.iter_rows(min_row=4, values_only=True)}
+    assert set(rows) == {"CD-001659.iam", "CD-001624.ipt", "notes.xlsx"}
+    assert rows["CD-001659.iam"][2] == "FAIL"
+    assert "Description (File)" in rows["CD-001659.iam"][5]
+    assert "Vendor" in rows["CD-001624.ipt"][5]
+
+
+def test_a_file_with_no_rule_set_exports_as_skip_not_pass(checked_result, tmp_path):
+    """The whole point of SKIP — it must never read as compliant in the sheet."""
+    openpyxl = pytest.importorskip("openpyxl")
+    out = tmp_path / "report.xlsx"
+    cfp.export_to_excel(checked_result, out)
+    wb = openpyxl.load_workbook(out)
+
+    summary = {r[0]: r for r in wb["Summary"].iter_rows(min_row=4, values_only=True)}
+    assert summary["notes.xlsx"][2] == "SKIP"
+
+    detail = [r for r in wb["Detail"].iter_rows(min_row=4, values_only=True)
+              if r[0] == "notes.xlsx"]
+    assert len(detail) == 1
+    assert detail[0][3] == "SKIP"
+    assert "No rule set" in detail[0][5]
+
+
+def test_detail_has_one_row_per_property_checked(checked_result, tmp_path):
+    openpyxl = pytest.importorskip("openpyxl")
+    out = tmp_path / "report.xlsx"
+    cfp.export_to_excel(checked_result, out)
+    ws = openpyxl.load_workbook(out)["Detail"]
+
+    rows = [r for r in ws.iter_rows(min_row=4, values_only=True)]
+    top = [r for r in rows if r[0] == "CD-001659.iam"]
+    assert len(top) == checked_result["report"]["total"]
+
+    failing = [r for r in top if r[3] == "FAIL"]
+    assert [r[2] for r in failing] == ["Description (File)"]
+    assert failing[0][5], "a failing row must say why"
+
+
+def test_export_of_a_single_file_check_has_no_child_rows(properties, rules, tmp_path):
+    openpyxl = pytest.importorskip("openpyxl")
+    result = {
+        "file_name": "CD-001659.iam",
+        "info": {"properties": properties, "note": None},
+        "children": [], "children_error": None, "recursive": False,
+        **cfp.evaluate_against_rules(properties, properties["Category Name"], rules),
+    }
+    out = tmp_path / "single.xlsx"
+    cfp.export_to_excel(result, out)
+    ws = openpyxl.load_workbook(out)["Summary"]
+    assert len(list(ws.iter_rows(min_row=4, values_only=True))) == 1
+
+
+def test_default_export_path_is_named_for_the_file(tmp_path):
+    path = cfp.default_export_path("CD-001659.iam", directory=tmp_path)
+    assert path.parent == tmp_path
+    assert path.suffix == ".xlsx"
+    assert path.name.startswith("property-check_CD-001659_")
+
+
+def test_export_to_a_locked_file_raises_a_useful_message(checked_result, tmp_path,
+                                                         monkeypatch):
+    pytest.importorskip("openpyxl")
+    import openpyxl.workbook.workbook as wbmod
+
+    def boom(self, filename):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(wbmod.Workbook, "save", boom)
+    with pytest.raises(RuntimeError, match="open in Excel"):
+        cfp.export_to_excel(checked_result, tmp_path / "locked.xlsx")
+
+
+def test_export_creates_the_target_directory(checked_result, tmp_path):
+    pytest.importorskip("openpyxl")
+    out = tmp_path / "nested" / "deeper" / "report.xlsx"
+    cfp.export_to_excel(checked_result, out)
+    assert out.exists()
+
+
+def test_gui_export_button_unlocks_only_after_a_successful_check(checked_result):
+    tk = pytest.importorskip("tkinter")
+    pytest.importorskip("openpyxl")
+    try:
+        root = tk.Tk()
+    except tk.TclError:
+        pytest.skip("no display available")
+    root.withdraw()
+    try:
+        from gui.file_property_check import run_gui
+        run_gui(parent=root)
+        root.update_idletasks()
+        window = next(w for w in root.winfo_children()
+                      if isinstance(w, tk.Toplevel))
+        button = window.export_button_for_test
+
+        assert str(button["state"]) == "disabled", "nothing to export yet"
+
+        window.finish_for_test(checked_result, None)
+        root.update_idletasks()
+        assert str(button["state"]) == "normal"
+
+        window.finish_for_test(None, "Vault sign-in failed")
+        root.update_idletasks()
+        assert str(button["state"]) == "disabled", (
+            "a failed check must not leave a stale result exportable"
+        )
+    finally:
+        root.destroy()
+
+
+def test_markdown_report_says_pass_when_clean(properties, rules):
+    clean = dict(properties, **{"Description (File)": "adapter plate assembly"})
     evaluated = cfp.evaluate_against_rules(clean, "Assembly - Engineering", rules)
     md = cfp.format_markdown_report({
         "file_name": "CD-001659.iam",

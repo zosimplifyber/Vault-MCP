@@ -30,7 +30,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -669,6 +671,247 @@ def format_markdown_report(result: dict[str, Any]) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Excel export
+# ---------------------------------------------------------------------------
+# Palette matches bom_purchasing.py so the compliance workbook sits alongside
+# the purchasing sheets without looking like it came from somewhere else.
+
+XL_DARK_BLUE = "1F3864"
+XL_MID_BLUE = "2E75B6"
+XL_PALE_BLUE = "EAF3FB"
+XL_LIGHT_GRAY = "F2F2F2"
+XL_GRAY_BDR = "CCCCCC"
+XL_DARK_GRAY = "888888"
+XL_WHITE = "FFFFFF"
+XL_PASS_FILL = "D8E4BC"      # olive — matches the purchasing sheet's OK state
+XL_FAIL_FILL = "F8CBAD"      # rust-tinted, legible behind black text
+XL_SKIP_FILL = "FCE4D6"
+
+# Sheet 1 lists one row per property checked; sheet 2 rolls up the children.
+_DETAIL_COLUMNS = [
+    ("File", 26), ("Category", 24), ("Property", 22), ("Status", 9),
+    ("Current Value", 46), ("Problem", 62),
+]
+_SUMMARY_COLUMNS = [
+    ("File", 26), ("Category", 24), ("Status", 9), ("Passed", 9),
+    ("Total", 9), ("Failures", 62),
+]
+
+
+def default_export_path(file_name: str, *, directory: Path | None = None) -> Path:
+    """Where an export lands when the caller doesn't name a file."""
+    stem = Path(file_name).stem or "property-check"
+    stamp = datetime.now().strftime("%Y-%m-%d_%H%M")
+    folder = directory or (PROJECT_ROOT / "Log")
+    return Path(folder) / f"property-check_{stem}_{stamp}.xlsx"
+
+
+def _export_rows(result: dict[str, Any]) -> list[dict[str, Any]]:
+    """Flatten a result into one row per property checked, file by file.
+
+    The top-level file first, then each child. Files with no rule set
+    contribute a single SKIP row so they can't be mistaken for compliant.
+    """
+    rows: list[dict[str, Any]] = []
+
+    def add(file_name: str, category: str, entry: dict[str, Any] | None,
+            report: dict[str, Any] | None, error: str | None) -> None:
+        if error:
+            rows.append({
+                "File": file_name, "Category": category, "Property": "—",
+                "Status": "ERROR", "Current Value": "", "Problem": error,
+            })
+            return
+        if report is None:
+            rows.append({
+                "File": file_name, "Category": category or "(unknown)",
+                "Property": "—", "Status": "SKIP", "Current Value": "",
+                "Problem": "No rule set for this category — nothing was checked.",
+            })
+            return
+        for r in report.get("results") or []:
+            rows.append({
+                "File": file_name,
+                "Category": category,
+                "Property": r["property"],
+                "Status": "PASS" if r["passed"] else "FAIL",
+                "Current Value": "" if _is_blank(r["value"]) else str(r["value"]),
+                "Problem": "; ".join(r.get("failures") or []),
+            })
+
+    info = result.get("info") or {}
+    props = info.get("properties") or {}
+    add(
+        str(props.get("File Name") or result.get("file_name") or ""),
+        result.get("category_resolved") or result.get("category_raw") or "",
+        info, result.get("report"), None,
+    )
+    for child in result.get("children") or []:
+        add(
+            child.get("file_name", ""),
+            child.get("category_resolved") or child.get("category_raw") or "",
+            child, child.get("report"), child.get("error"),
+        )
+    return rows
+
+
+def _summary_rows(result: dict[str, Any]) -> list[dict[str, Any]]:
+    """One roll-up row per file: status, score, and the properties that failed."""
+    rows: list[dict[str, Any]] = []
+
+    def add(file_name: str, category: str, status: str,
+            report: dict[str, Any] | None, problem: str = "") -> None:
+        failures = problem
+        if not failures and report:
+            failures = ", ".join(
+                r["property"] for r in report.get("results") or []
+                if not r["passed"]
+            )
+        rows.append({
+            "File": file_name,
+            "Category": category or "(unknown)",
+            "Status": status,
+            "Passed": (report or {}).get("passed", "") if report else "",
+            "Total": (report or {}).get("total", "") if report else "",
+            "Failures": failures,
+        })
+
+    info = result.get("info") or {}
+    props = info.get("properties") or {}
+    report = result.get("report")
+    if not result.get("category_resolved"):
+        top_status = "SKIP"
+    else:
+        top_status = "PASS" if (report or {}).get("failed", 0) == 0 else "FAIL"
+    add(
+        str(props.get("File Name") or result.get("file_name") or ""),
+        result.get("category_resolved") or result.get("category_raw") or "",
+        top_status, report,
+        "" if result.get("category_resolved") else "No rule set for this category.",
+    )
+
+    for child in result.get("children") or []:
+        status = child_status(child)
+        add(
+            child.get("file_name", ""),
+            child.get("category_resolved") or child.get("category_raw") or "",
+            status, child.get("report"),
+            child.get("error") or (
+                "No rule set for this category." if status == "SKIP" else ""
+            ),
+        )
+    return rows
+
+
+def export_to_excel(result: dict[str, Any], output_path: str | Path) -> str:
+    """Write the compliance report to a formatted .xlsx and return its path.
+
+    Two sheets: **Summary** (one row per file) and **Detail** (one row per
+    property checked). Both carry an autofilter and frozen headers so a long
+    BOM walk stays navigable, and FAIL / SKIP rows are colour-coded.
+
+    Raises ``RuntimeError`` if openpyxl is unavailable or the file cannot be
+    written (most often: it's already open in Excel).
+    """
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+        from openpyxl.utils import get_column_letter
+    except ImportError as exc:                      # pragma: no cover
+        raise RuntimeError(
+            f"Excel export needs openpyxl — pip install openpyxl ({exc})"
+        ) from exc
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    thin = Side(style="thin", color=XL_GRAY_BDR)
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    status_fills = {
+        "PASS": PatternFill("solid", fgColor=XL_PASS_FILL),
+        "FAIL": PatternFill("solid", fgColor=XL_FAIL_FILL),
+        "SKIP": PatternFill("solid", fgColor=XL_SKIP_FILL),
+        "ERROR": PatternFill("solid", fgColor=XL_FAIL_FILL),
+    }
+
+    def write_sheet(ws, columns, rows, title) -> None:
+        n_cols = len(columns)
+        last_col = get_column_letter(n_cols)
+
+        ws.merge_cells(f"A1:{last_col}1")
+        cell = ws["A1"]
+        cell.value = title
+        cell.font = Font(name="Arial", bold=True, color=XL_WHITE, size=11)
+        cell.fill = PatternFill("solid", fgColor=XL_DARK_BLUE)
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[1].height = 22
+
+        ws.merge_cells(f"A2:{last_col}2")
+        cell = ws["A2"]
+        cell.value = f"Generated: {datetime.now().strftime('%B %d, %Y %H:%M')}"
+        cell.font = Font(name="Arial", size=9, color=XL_DARK_GRAY, italic=True)
+        cell.fill = PatternFill("solid", fgColor=XL_LIGHT_GRAY)
+        cell.alignment = Alignment(horizontal="right", vertical="center")
+
+        hdr_row = 3
+        for ci, (name, width) in enumerate(columns, start=1):
+            cell = ws.cell(row=hdr_row, column=ci, value=name)
+            cell.font = Font(name="Arial", bold=True, color=XL_WHITE, size=10)
+            cell.fill = PatternFill("solid", fgColor=XL_DARK_BLUE)
+            cell.alignment = Alignment(
+                horizontal="center", vertical="center", wrap_text=True)
+            cell.border = border
+            ws.column_dimensions[get_column_letter(ci)].width = width
+
+        for ri, row in enumerate(rows, start=hdr_row + 1):
+            fill = status_fills.get(row.get("Status", ""))
+            for ci, (name, _w) in enumerate(columns, start=1):
+                cell = ws.cell(row=ri, column=ci, value=row.get(name, ""))
+                cell.font = Font(name="Arial", size=10)
+                cell.alignment = Alignment(
+                    horizontal="center" if name == "Status" else "left",
+                    vertical="center",
+                    wrap_text=name in ("Problem", "Failures"),
+                )
+                cell.border = border
+                # Colour the whole row so a failure is visible without
+                # reading across to the Status column.
+                if fill is not None:
+                    cell.fill = fill
+                elif ri % 2 == 0:
+                    cell.fill = PatternFill("solid", fgColor=XL_PALE_BLUE)
+
+        last_row = hdr_row + len(rows)
+        if rows:
+            ws.auto_filter.ref = f"A{hdr_row}:{last_col}{last_row}"
+        ws.freeze_panes = f"A{hdr_row + 1}"
+
+    wb = Workbook()
+    summary = wb.active
+    summary.title = "Summary"
+    write_sheet(
+        summary, _SUMMARY_COLUMNS, _summary_rows(result),
+        f"Property Compliance — {result.get('file_name', '')}",
+    )
+    write_sheet(
+        wb.create_sheet("Detail"), _DETAIL_COLUMNS, _export_rows(result),
+        f"Property Compliance Detail — {result.get('file_name', '')}",
+    )
+
+    try:
+        wb.save(str(output_path))
+    except PermissionError as exc:
+        raise RuntimeError(
+            f"Could not write {output_path} — it's probably open in Excel. "
+            f"Close it and try again. ({exc})"
+        ) from exc
+    except OSError as exc:
+        raise RuntimeError(f"Could not write {output_path}: {exc}") from exc
+
+    return str(output_path)
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -718,6 +961,19 @@ async def run_cli(args: argparse.Namespace) -> int:
             else:
                 print_children_report(result["children"], args.show_all_props)
 
+    if args.excel is not None:
+        # --excel with no value means "pick a name for me".
+        target = Path(args.excel) if args.excel else default_export_path(
+            args.file_name)
+        try:
+            written = export_to_excel(result, target)
+        except RuntimeError as exc:
+            print()
+            print(_c("31", f"Excel export failed: {exc}"))
+            return 1
+        print()
+        print(_c("1;32", f"Excel report written to {written}"))
+
     return result_exit_code(result)
 
 
@@ -741,6 +997,10 @@ def parse_args() -> argparse.Namespace:
                    help="Emit a machine-readable JSON report.")
     p.add_argument("--markdown", "-m", action="store_true",
                    help="Emit a Markdown report.")
+    p.add_argument("--excel", "-x", nargs="?", const="", default=None,
+                   metavar="PATH",
+                   help="Also write the report to an .xlsx. Give a path, or "
+                        "pass the flag bare to drop a timestamped file in Log/.")
     p.add_argument("--show-all-props", action="store_true",
                    help="Also dump every property Vault returned.")
     p.add_argument("--recursive", "-r", action="store_true",
