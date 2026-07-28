@@ -174,3 +174,32 @@ def test_update_clause_only_appears_when_updating_existing():
     assert "3 existing updated" in summary_line(r, applied=True,
                                                 update_existing=True)
     assert "existing updated" not in summary_line(r, applied=True)
+
+
+class TestBrowseStartsInTheWorkspace:
+    def test_browse_opens_in_the_vault_folder(self, root, monkeypatch):
+        import bom_list_sync
+        from tkinter import filedialog
+        seen = {}
+
+        def fake_ask(**kwargs):
+            seen.update(kwargs)
+            return ""
+        monkeypatch.setattr(filedialog, "askopenfilename", fake_ask)
+
+        launch_bom_list_sync_gui(parent=root)
+        win = [w for w in root.winfo_children() if isinstance(w, tk.Toplevel)][-1]
+        try:
+            buttons = []
+
+            def walk(w):
+                for c in w.winfo_children():
+                    if isinstance(c, tk.Button):
+                        buttons.append(c)
+                    walk(c)
+            walk(win)
+            browse = next(b for b in buttons if "Browse" in str(b.cget("text")))
+            browse.invoke()
+            assert seen["initialdir"] == bom_list_sync.default_bom_dir()
+        finally:
+            win.destroy()

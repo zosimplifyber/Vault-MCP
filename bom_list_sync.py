@@ -278,6 +278,15 @@ def check_bom_columns(headers: Iterable[str]) -> dict:
     }
 
 
+def default_bom_dir() -> str:
+    """Where BOM exports live — the Vault working folder the purchasing sheet
+    also writes into, or the fallback when that folder is not on this machine.
+    One source of truth for the path, shared with bom_purchasing.
+    """
+    import bom_purchasing
+    return bom_purchasing.default_output_dir()
+
+
 def bom_file_columns(path: str) -> list[str]:
     """The header row of a BOM export, without reading its data rows."""
     import pandas as pd

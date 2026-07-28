@@ -149,9 +149,15 @@ def launch_bom_list_sync_gui(*, cfg=None, parent=None, **_ignored) -> None:
              highlightcolor=MID_BLUE).pack(side="left", fill="x", expand=True, padx=(4, 8))
 
     def browse():
+        # Start in the Vault working folder BOMs are exported to; once a file
+        # has been picked, reopen wherever that came from.
+        current = path_var.get().strip()
+        initial = (os.path.dirname(current) if current and os.path.isdir(
+            os.path.dirname(current)) else bom_list_sync.default_bom_dir())
         p = filedialog.askopenfilename(
             title="Select an exported BOM",
             filetypes=[("BOM files", "*.xlsx *.xls *.csv *.txt"), ("All files", "*.*")],
+            initialdir=initial,
             parent=win)
         if p:
             path_var.set(p)

@@ -350,3 +350,15 @@ class TestApply:
         assert report["errors"][0]["name"] == "CD-999001"
         by_key = {r["name"]: r for r in report["rows"]}
         assert by_key["CD-999001"]["status"] == "error"
+
+
+class TestDefaultBomDir:
+    def test_prefers_the_vault_production_equipment_folder(self, monkeypatch):
+        import bom_purchasing as bp
+        monkeypatch.setattr(bp.os.path, "isdir", lambda p: p == bp.DEFAULT_OUTPUT_DIR)
+        assert bls.default_bom_dir() == bp.DEFAULT_OUTPUT_DIR
+
+    def test_falls_back_when_the_workspace_is_not_there(self, monkeypatch):
+        import bom_purchasing as bp
+        monkeypatch.setattr(bp.os.path, "isdir", lambda p: False)
+        assert bls.default_bom_dir().endswith("Downloads")
