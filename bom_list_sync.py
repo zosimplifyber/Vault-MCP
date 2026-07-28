@@ -225,26 +225,28 @@ _FILE_NAME_COLUMNS = ("Filename", "File Name", "File", "Document Name")
 # What the sync reads out of a BOM export, and the headers that satisfy each
 # field. Required fields are the ones without which the export cannot be read
 # at all; the rest only decide how much of a new list row gets filled in.
+# In the export template's column order. Filename leads the intent: its stem IS
+# the lookup key, and with no part-number fallback a BOM without it cannot match
+# anything. The rest are required because every one of them populates a column
+# of the list row being created. "Required" means the COLUMN must exist — an
+# individual cell may still be empty (REV and Vendor usually are on fasteners).
 REQUIRED_BOM_FIELDS: dict[str, tuple[str, ...]] = {
-    # Filename is required because its stem IS the lookup key — without it a row
-    # cannot be matched against the list's "Title (Name)" at all, and there is
-    # no part-number fallback.
-    "Filename": ("filename", "file name", "file", "document name"),
     "Part Number": ("part number", "partnumber", "number", "item number"),
+    "Filename": ("filename", "file name", "file", "document name"),
+    "BOM Structure": ("bom structure", "bomstructure", "source", "itemsource"),
     "QTY": ("qty", "quantity", "item qty"),
+    "Description": ("description", "desc", "description (item,co)"),
+    "REV": ("rev", "revision"),
+    "Vendor": ("vendor", "supplier"),
+    "Material": ("material",),
 }
 
 # Listed in the export template's own column order so the GUI reads like the
 # spreadsheet. Title is deliberately absent — the template dropped it, and the
 # code still reads one when an older export happens to carry it.
 OPTIONAL_BOM_FIELDS: dict[str, tuple[str, ...]] = {
-    "BOM Structure": ("bom structure", "bomstructure", "source", "itemsource"),
     "Unit QTY": ("unit qty", "units", "unit", "uom"),
-    "Description": ("description", "desc", "description (item,co)"),
-    "REV": ("rev", "revision"),
-    "Vendor": ("vendor", "supplier"),
     "Web Link": ("web link", "weblink", "vendor number", "vendor #"),
-    "Material": ("material",),
 }
 
 # In the export, read by nothing — never reported as missing.

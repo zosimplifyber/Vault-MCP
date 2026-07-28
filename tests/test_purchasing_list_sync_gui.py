@@ -96,9 +96,11 @@ class TestColumnFeedback:
 
     def test_optional_gaps_are_listed_without_blocking(self, root, tmp_path):
         thin = tmp_path / "thin.csv"
-        thin.write_text("Part Number,QTY,Filename\nSF-1,2,CD-1.ipt\n", encoding="utf-8")
+        thin.write_text(
+            "Part Number,QTY,Filename,BOM Structure,Description,REV,Vendor,Material\n"
+            "SF-1,2,CD-1.ipt,Purchased,thing,1,Acme,Steel\n", encoding="utf-8")
         texts = _load(root, thin)
-        assert any("All required columns found" in t and "Vendor" in t
+        assert any("All required columns found" in t and "Unit QTY" in t
                    for t in texts)
 
     def test_a_missing_filename_column_blocks_the_scan(self, root, tmp_path):
@@ -126,8 +128,9 @@ class TestWindowBuilds:
             assert "Ready." in texts       # status bar wired to its variable
             # the required / optional field lists are spelled out on the card
             assert "Required:" in texts and "Optional:" in texts
-            assert any("Part Number, QTY" in t for t in texts)
-            assert any("Filename" in t for t in texts)
+            assert any("Part Number, Filename" in t and "Material" in t
+                       for t in texts)                    # the required list
+            assert any("Unit QTY, Web Link" in t for t in texts)   # the optional one
         finally:
             win.destroy()
 
