@@ -63,16 +63,32 @@ def bom():
 class TestColumnCheck:
     """What the GUI shows when a BOM is picked: which fields are there."""
 
-    # The real CD-001582 MFG BOM.xlsx export.
-    MFG = ["Item", "Part Number", "Title", "Thumbnail", "BOM Structure",
-           "Unit QTY", "QTY", "Description", "REV", "Material", "Vendor",
-           "Web Link", "Filename"]
+    # The export template, in its own column order.
+    EXPORT = ["Part Number", "Filename", "Thumbnail", "BOM Structure",
+              "Unit QTY", "QTY", "Description", "REV", "Vendor", "Web Link",
+              "Material"]
 
-    def test_a_complete_export_reports_nothing_missing(self):
-        result = bls.check_bom_columns(self.MFG)
+    def test_the_export_template_reports_nothing_missing(self):
+        result = bls.check_bom_columns(self.EXPORT)
         assert result["ok"] is True
         assert result["missing_required"] == []
         assert result["missing_optional"] == []
+
+    def test_thumbnail_is_never_reported_as_missing(self):
+        # It is in the export but nothing reads it.
+        result = bls.check_bom_columns([c for c in self.EXPORT if c != "Thumbnail"])
+        assert "Thumbnail" not in result["missing_optional"]
+
+    def test_a_title_column_is_not_expected(self):
+        # The export dropped Title; its absence must not be flagged.
+        result = bls.check_bom_columns(self.EXPORT)
+        assert "Title" not in result["missing_optional"]
+
+    def test_an_older_export_with_item_and_title_still_passes(self):
+        older = ["Item", "Part Number", "Title", "Thumbnail", "BOM Structure",
+                 "Unit QTY", "QTY", "Description", "REV", "Material", "Vendor",
+                 "Web Link", "Filename"]
+        assert bls.check_bom_columns(older)["ok"] is True
 
     def test_a_missing_required_field_is_named(self):
         result = bls.check_bom_columns(["Item", "Description"])

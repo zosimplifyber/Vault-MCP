@@ -205,15 +205,22 @@ REQUIRED_BOM_FIELDS: dict[str, tuple[str, ...]] = {
     "QTY": ("qty", "quantity", "item qty"),
 }
 
+# Listed in the export template's own column order so the GUI reads like the
+# spreadsheet. Title is deliberately absent — the template dropped it, and the
+# code still reads one when an older export happens to carry it.
 OPTIONAL_BOM_FIELDS: dict[str, tuple[str, ...]] = {
+    "Filename": ("filename", "file name", "file", "document name"),
     "BOM Structure": ("bom structure", "bomstructure", "source", "itemsource"),
-    "Title": ("title", "title (item,co)"),
+    "Unit QTY": ("unit qty", "units", "unit", "uom"),
     "Description": ("description", "desc", "description (item,co)"),
-    "Material": ("material",),
+    "REV": ("rev", "revision"),
     "Vendor": ("vendor", "supplier"),
     "Web Link": ("web link", "weblink", "vendor number", "vendor #"),
-    "Filename": ("filename", "file name", "file", "document name"),
+    "Material": ("material",),
 }
+
+# In the export, read by nothing — never reported as missing.
+IGNORED_BOM_FIELDS: tuple[str, ...] = ("Thumbnail", "Item")
 
 
 def check_bom_columns(headers: Iterable[str]) -> dict:

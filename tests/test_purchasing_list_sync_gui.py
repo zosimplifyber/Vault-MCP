@@ -86,10 +86,10 @@ class TestColumnFeedback:
 
     def test_a_complete_export_is_confirmed(self, root, tmp_path):
         good = tmp_path / "good.csv"
-        good.write_text(
-            "Item,Part Number,QTY,BOM Structure,Title,Description,Material,"
-            "Vendor,Web Link,Filename\n"
-            "1,SF-1,2,Purchased,CD-1,thing,Steel,Acme,123,CD-1.ipt\n",
+        good.write_text(          # the export template's own columns
+            "Part Number,Filename,Thumbnail,BOM Structure,Unit QTY,QTY,"
+            "Description,REV,Vendor,Web Link,Material\n"
+            "SF-1,CD-1.ipt,,Purchased,Each,2,thing,1,Acme,123,Steel\n",
             encoding="utf-8")
         texts = _load(root, good)
         assert any("All required and optional columns found" in t for t in texts)
