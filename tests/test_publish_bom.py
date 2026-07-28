@@ -23,7 +23,7 @@ REAL_BOM = os.path.join(FIXTURES, "CD-001608-bom.xlsx")
 
 
 def test_scanrow_counts_one_job_per_resolved_file():
-    row = publish_bom.ScanRow(stem="CD-001578", part_number="CD-001578")
+    row = publish_bom.ScanRow(stem="CD-001578")
     assert row.job_count == 0
 
     row.model_version_id = "124814"

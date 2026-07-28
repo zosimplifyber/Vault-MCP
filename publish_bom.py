@@ -62,9 +62,13 @@ MISSING_FILENAME_ERROR = (
 
 @dataclass
 class PublishRow:
-    """One unique CAD file stem to publish deliverables for."""
+    """One unique CAD file stem to publish deliverables for.
+
+    ``stem`` is the identity — it names the CAD file. The BOM's part number is
+    deliberately not carried: these exports derive Number from the filename
+    stem, so it would be the same string twice.
+    """
     stem: str
-    part_number: str = ""
     description: str = ""
     is_top: bool = False
 
@@ -73,7 +77,7 @@ class PublishRow:
 class ScanRow:
     """A PublishRow after Vault lookup, carrying whatever files were found."""
     stem: str
-    part_number: str = ""
+    description: str = ""
     is_top: bool = False
     model_name: str = ""
     model_version_id: str = ""
