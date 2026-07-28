@@ -73,6 +73,13 @@ LOOKUP_COLUMNS = [
 
 ALL_COLUMNS = BOM_COLUMNS + PURCHASE_COLUMNS
 
+# Columns the DataFrame carries but the Purchasing tab does not show. "Number"
+# is still the key everything matches on — the reference lookup, the Vault state
+# lookup and the By Vendor roll-up all read it — it is simply not a column on the
+# sheet, which identifies a row by its Title.
+HIDDEN_SHEET_COLUMNS = ("Number",)
+SHEET_COLUMNS = [c for c in ALL_COLUMNS if c not in HIDDEN_SHEET_COLUMNS]
+
 # Header display labels — the sheet's header cell shows these instead of the
 # internal canonical column name (which the vendor/costing logic keys on).
 HEADER_LABELS = {
@@ -431,7 +438,7 @@ def build_purchasing_sheet(
     wb = Workbook()
     ws = wb.active
     ws.title = "Purchasing"
-    n_cols = len(ALL_COLUMNS)
+    n_cols = len(SHEET_COLUMNS)
 
     # Title bar
     ws.merge_cells(f"A1:{get_column_letter(n_cols)}1")
@@ -458,7 +465,7 @@ def build_purchasing_sheet(
     hdr_fill = PatternFill("solid", fgColor=DARK_BLUE)
     hdr_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
     bdr = _border()
-    for ci, name in enumerate(ALL_COLUMNS, 1):
+    for ci, name in enumerate(SHEET_COLUMNS, 1):
         c = ws.cell(row=HDR_ROW, column=ci, value=HEADER_LABELS.get(name, name))
         c.font = hdr_font
         c.fill = hdr_fill
@@ -473,11 +480,11 @@ def build_purchasing_sheet(
     olive_fill = PatternFill("solid", fgColor=OLIVE_GREEN)
     body_align = Alignment(horizontal="left", vertical="center", wrap_text=False)
 
-    qty_col = get_column_letter(ALL_COLUMNS.index("Item Qty") + 1)
-    cost_col = get_column_letter(ALL_COLUMNS.index("Cost Per") + 1)
-    ship_col = get_column_letter(ALL_COLUMNS.index("Shipping") + 1)
-    tax_col = get_column_letter(ALL_COLUMNS.index("Tax/Tariff") + 1)
-    sub_col = get_column_letter(ALL_COLUMNS.index("Sub Total") + 1)
+    qty_col = get_column_letter(SHEET_COLUMNS.index("Item Qty") + 1)
+    cost_col = get_column_letter(SHEET_COLUMNS.index("Cost Per") + 1)
+    ship_col = get_column_letter(SHEET_COLUMNS.index("Shipping") + 1)
+    tax_col = get_column_letter(SHEET_COLUMNS.index("Tax/Tariff") + 1)
+    sub_col = get_column_letter(SHEET_COLUMNS.index("Sub Total") + 1)
 
     children_map = build_children_map(df)
     FIRST_DATA_ROW = HDR_ROW + 1
@@ -512,7 +519,7 @@ def build_purchasing_sheet(
                 if num_str not in unmatched_nums:
                     unmatched_nums.append(num_str)
 
-        for ci, col_name in enumerate(ALL_COLUMNS, 1):
+        for ci, col_name in enumerate(SHEET_COLUMNS, 1):
             c = ws.cell(row=ri, column=ci)
 
             if col_name in BOM_COLUMNS:
@@ -573,7 +580,7 @@ def build_purchasing_sheet(
         )
 
     # Column widths & freeze
-    for ci, col_name in enumerate(ALL_COLUMNS, 1):
+    for ci, col_name in enumerate(SHEET_COLUMNS, 1):
         ws.column_dimensions[get_column_letter(ci)].width = COLUMN_WIDTHS.get(col_name, 15)
     ws.freeze_panes = f"A{HDR_ROW + 1}"
 
@@ -713,8 +720,8 @@ def _build_assembly_costs_tab(
 
     has_incomplete = False
 
-    cost_col = get_column_letter(ALL_COLUMNS.index("Cost Per") + 1)
-    sub_col = get_column_letter(ALL_COLUMNS.index("Sub Total") + 1)
+    cost_col = get_column_letter(SHEET_COLUMNS.index("Cost Per") + 1)
+    sub_col = get_column_letter(SHEET_COLUMNS.index("Sub Total") + 1)
 
     ws = wb.create_sheet("Assembly Costs")
     bdr = _border()

@@ -165,11 +165,11 @@ def test_generate_from_file_inventor_export_populates(tmp_path, monkeypatch):
     ws = wb["Purchasing"]
     header = [c.value for c in ws[3]]
     mat_col = header.index("Material") + 1
-    num_col = header.index("Number") + 1
-    mats = {ws.cell(r, num_col).value: ws.cell(r, mat_col).value
+    desc_col = header.index("Description") + 1   # Number is no longer shown
+    mats = {ws.cell(r, desc_col).value: ws.cell(r, mat_col).value
             for r in range(4, 4 + 3)}
-    assert mats["SF-001580"] == "Aluminum"       # from export
-    assert mats["SF-001803"] == "REF-MATERIAL"   # blank in export → ref
+    assert mats["adapter plate"] == "Aluminum"     # from export
+    assert mats["bladder tool"] == "REF-MATERIAL"  # blank in export → ref
 
 
 def _hier_df():
@@ -275,9 +275,9 @@ def test_unmatched_parts_are_highlighted_and_listed(tmp_path):
     bp.build_purchasing_sheet(df, str(out), "ASM")
     ws = openpyxl.load_workbook(str(out))["Purchasing"]
     header = [c.value for c in ws[3]]
-    num_col = header.index("Number") + 1
-    # the screw row (4+2=6) Number cell is filled with the unmatched color
-    fill = ws.cell(6, num_col).fill
+    id_col = header.index("Description") + 1   # Number is no longer shown
+    # the screw row (4+2=6) is filled with the unmatched color
+    fill = ws.cell(6, id_col).fill
     assert fill.fgColor.rgb and fill.fgColor.rgb.endswith(bp.UNMATCHED_FILL)
     # an "Unmatched" note listing SF-21 appears somewhere below the table
     text = "\n".join(str(c.value) for col in ws.iter_cols() for c in col if c.value)
@@ -295,13 +295,13 @@ def test_assembly_buy_row_is_not_flagged_unmatched(tmp_path):
     bp.build_purchasing_sheet(df, str(out), "ASM")
     ws = openpyxl.load_workbook(str(out))["Purchasing"]
     header = [c.value for c in ws[3]]
-    num_col = header.index("Number") + 1
+    id_col = header.index("Description") + 1   # Number is no longer shown
     # SF-1 (Vendor Acme) and SF-21 (Vendor Bolts Inc) are matched; SF-2 is an
     # assembly → no row is unmatched, so no note is written.
     text = "\n".join(str(c.value) for col in ws.iter_cols() for c in col if c.value)
     assert "Unmatched" not in text
     # and SF-2's row (row 5) is not amber-highlighted
-    assert not (ws.cell(5, num_col).fill.fgColor.rgb or "").endswith(bp.UNMATCHED_FILL)
+    assert not (ws.cell(5, id_col).fill.fgColor.rgb or "").endswith(bp.UNMATCHED_FILL)
 
 
 def test_cd001608_end_to_end(tmp_path, monkeypatch):
@@ -321,15 +321,17 @@ def test_cd001608_end_to_end(tmp_path, monkeypatch):
     n_rows = len(bp.read_bom_file(fixture))     # 46 BOM lines
     ws = wb["Purchasing"]
     header = [c.value for c in ws[3]]
-    num_col = header.index("Number") + 1
+    assert "Number" not in header                # identity is the Title column
     qty_col = header.index("Item Qty") + 1
-    numbers = [ws.cell(r, num_col).value for r in range(4, 4 + n_rows)]
     qtys = [ws.cell(r, qty_col).value for r in range(4, 4 + n_rows)]
-
-    assert "SF-001580" in numbers                # real part number populated
     assert 120 in qtys                           # a real quantity from QTY
-    # a library part with no SF number still appears (will be unmatched)
-    assert any(isinstance(n, str) and n.startswith("ISO 4762") for n in numbers)
+
+    # Consequence of hiding Number: this export carries no Title column, so the
+    # sheet's identity column is empty on every row. The part numbers are still
+    # in the data (they drive matching) and still appear on the By Vendor tab
+    # for anything with a vendor.
+    title_col = header.index("Title") + 1
+    assert all(ws.cell(r, title_col).value is None for r in range(4, 4 + n_rows))
 
     acost = "\n".join(
         str(c.value) for col in wb["Assembly Costs"].iter_cols()

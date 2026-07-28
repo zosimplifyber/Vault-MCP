@@ -36,9 +36,10 @@ def test_reference_path_override_is_used(tmp_path, monkeypatch):
     assert not result.get("error"), result
     ws = openpyxl.load_workbook(result["output_path"])["Purchasing"]
     header = [c.value for c in ws[3]]
-    num, ven = header.index("Number") + 1, header.index("Vendor") + 1
-    vendors = {ws.cell(r, num).value: ws.cell(r, ven).value for r in range(4, 5)}
-    assert vendors.get("SF-1") == "Acme"   # from the override, not OneDrive
+    # Number is not a sheet column any more — key the row by its Description.
+    desc, ven = header.index("Description") + 1, header.index("Vendor") + 1
+    vendors = {ws.cell(r, desc).value: ws.cell(r, ven).value for r in range(4, 5)}
+    assert vendors.get("part") == "Acme"   # from the override, not OneDrive
 
 
 def test_default_source_is_mslist_only_no_excel_autofind(tmp_path, monkeypatch):

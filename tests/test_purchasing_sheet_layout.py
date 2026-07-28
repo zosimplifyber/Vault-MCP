@@ -43,7 +43,7 @@ class TestAutoFilter:
     def test_purchasing_tab_filters_the_full_header_row(self, tmp_path):
         df = _df([BUY, MAKE_OUTSOURCED])
         ws = _book(tmp_path, df)["Purchasing"]
-        last_col = get_column_letter(len(bp.ALL_COLUMNS))
+        last_col = get_column_letter(len(bp.SHEET_COLUMNS))
         assert ws.auto_filter.ref == f"A{HDR_ROW}:{last_col}{HDR_ROW + len(df)}"
 
     def test_filter_range_stops_above_the_unmatched_note(self, tmp_path):
@@ -58,13 +58,24 @@ class TestAutoFilter:
 
 
 class TestTitleColumn:
-    def test_the_sheet_shows_number_and_title_side_by_side(self, tmp_path):
+    def test_title_leads_the_sheet_and_number_is_not_shown(self, tmp_path):
         df = _df([dict(BUY, Title="CD-001578")])
         ws = _book(tmp_path, df)["Purchasing"]
         header = [c.value for c in ws[HDR_ROW]]
-        assert header.index("Title") == header.index("Number") + 1
-        assert ws.cell(row=4, column=header.index("Number") + 1).value == "SF-000067"
-        assert ws.cell(row=4, column=header.index("Title") + 1).value == "CD-001578"
+        assert header[0] == "Title"
+        assert "Number" not in header
+        assert ws.cell(row=4, column=1).value == "CD-001578"
+
+    def test_the_part_number_still_drives_matching(self, tmp_path, monkeypatch):
+        # Number is hidden from the sheet, not dropped from the data: the
+        # reference lookup and the Vault state lookup both key on it.
+        ref = pd.DataFrame({"Number": ["SF-000067"], "Vendor": ["Acme"],
+                            "Cost Per": [1.5]})
+        df, matched, total = bp.lookup_purchased_data(_df([BUY]), ref)
+        assert (matched, total) == (1, 1)
+        ws = _book(tmp_path, df)["Purchasing"]
+        header = [c.value for c in ws[HDR_ROW]]
+        assert ws.cell(row=4, column=header.index("Vendor") + 1).value == "Acme"
 
 
 class TestVendorTabSources:
