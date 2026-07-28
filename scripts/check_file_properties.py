@@ -698,10 +698,15 @@ _SUMMARY_COLUMNS = [
 
 
 def default_export_path(file_name: str, *, directory: Path | None = None) -> Path:
-    """Where an export lands when the caller doesn't name a file."""
+    """Where an export lands when the caller doesn't name a file.
+
+    Defaults to the user's Downloads folder, matching the MFG package builder
+    and the purchasing sheet. ``export_to_excel`` creates the folder if it
+    isn't there.
+    """
     stem = Path(file_name).stem or "property-check"
     stamp = datetime.now().strftime("%Y-%m-%d_%H%M")
-    folder = directory or (PROJECT_ROOT / "Log")
+    folder = directory or (Path.home() / "Downloads")
     return Path(folder) / f"property-check_{stem}_{stamp}.xlsx"
 
 
@@ -997,7 +1002,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--excel", "-x", nargs="?", const="", default=None,
                    metavar="PATH",
                    help="Also write the report to an .xlsx. Give a path, or "
-                        "pass the flag bare to drop a timestamped file in Log/.")
+                        "pass the flag bare to drop a timestamped file in "
+                        "your Downloads folder.")
     p.add_argument("--show-all-props", action="store_true",
                    help="Also dump every property Vault returned.")
     p.add_argument("--recursive", "-r", action="store_true",

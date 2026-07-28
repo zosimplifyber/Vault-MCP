@@ -146,19 +146,22 @@ python scripts/check_file_properties.py                            # no argument
 
 Exit codes: `0` everything passed, `1` at least one failure, `2` no rule set matched the file's category.
 
-**Excel export.** `--excel` (bare) drops a timestamped workbook in `Log/`; give it a path to choose the name. In the GUI, **Export to Excel** unlocks once a check succeeds. The workbook has two sheets — **Summary** (one row per file: status and which properties failed) and **Detail** (one row per property checked) — both filterable with frozen headers and colour-coded PASS / FAIL / SKIP rows.
+**Excel export.** `--excel` (bare) drops a timestamped workbook in your **Downloads** folder (same place the MFG package builder and purchasing sheet land); give it a path to choose the name. In the GUI, **Export to Excel** unlocks once a check succeeds. The workbook has two sheets — **Summary** (one row per file: status and which properties failed) and **Detail** (one row per property checked) — both filterable with frozen headers and colour-coded PASS / FAIL / SKIP rows.
 
 Rules live in [`file_property_rules.json`](file_property_rules.json), keyed by the file's Category Name, and are re-read on every run — edit and re-check, no restart. What's gated:
 
+Categories split into **in-house work** (`Assembly - Engineering`, `Part - Engineering`, `Drawing - Engineering`) and **bought parts** (`Part - Purchased`, `Part - Content Center`) — catalogue hardware and Inventor library files nobody in-house designs, engineers, approves, or bills to a project.
+
 | Property | Required in |
 |---|---|
-| State, Revision, Source | every category |
-| Engineer, Engr Approved By, Project | every category except `Part - Content Center` |
-| Designer | every category except `Assembly - Engineering` and `Part - Content Center` |
+| State, Source | every category |
+| Revision | every category except `Part - Purchased` |
+| Engineer, Engr Approved By, Project | in-house categories only |
+| Designer | in-house categories except `Assembly - Engineering` |
 | Vendor | every part and assembly |
 | Title, CAD Category, Description (File) | **nowhere** — reported for reference only |
 
-`Engr Approved By` rejects `NOT REVIEWED` in every category, including the ones where it isn't required. `Part - Content Center` is deliberately lighter: those are Inventor library fasteners nobody in-house designs or bills to a project, so only identity and supplier are gated. A category with no rule set at all reports SKIP rather than a misleading pass.
+`Engr Approved By` rejects `NOT REVIEWED` on in-house work, where it means the review hasn't happened; bought parts allow it. A category with no rule set at all reports SKIP rather than a misleading pass.
 
 `Description (File)` was gated on the *Vault PDM – Item Description* standard (lowercase keyword nouns; no dimensions, materials, ISO/DIN numbers, or project/customer names) and is currently switched off. Its rule in the JSON carries the exact snippet needed to turn it back on.
 

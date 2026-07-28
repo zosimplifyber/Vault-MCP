@@ -251,22 +251,28 @@ def test_every_rule_set_is_well_formed(rules):
 
 
 CONTENT_CENTER = "Part - Content Center"
+PURCHASED = "Part - Purchased"
 
-# Which categories are exempt from each gated column. Content Center files are
-# Inventor library parts — nobody in-house designs, engineers, or bills them to
-# a project — and assemblies carry no design credit of their own.
-#
-# Every column below is required in every category EXCEPT the ones listed.
-# Dropping one from a category that isn't exempt silently weakens the gate, so
-# it fails here instead.
+# Bought parts — catalogue hardware and Inventor library files. Nobody in-house
+# designs, engineers, approves, or bills these to a project, so they are exempt
+# from the sign-off columns.
+BOUGHT = (PURCHASED, CONTENT_CENTER)
+
+# In-house work, where engineering ownership is expected and gated.
+IN_HOUSE = ("Assembly - Engineering", "Part - Engineering", "Drawing - Engineering")
+
+# Which categories are exempt from each gated column. Every column below is
+# required in every category EXCEPT the ones listed. Dropping one from a
+# category that isn't exempt silently weakens the gate, so it fails here.
 GATED_COLUMNS = {
     "State": (),
-    "Revision": (),
     "Source": (),
-    "Engineer": (CONTENT_CENTER,),
-    "Engr Approved By": (CONTENT_CENTER,),
-    "Project": (CONTENT_CENTER,),
-    "Designer": ("Assembly - Engineering", CONTENT_CENTER),
+    "Revision": (PURCHASED,),
+    "Engineer": BOUGHT,
+    "Engr Approved By": BOUGHT,
+    "Project": BOUGHT,
+    # Assemblies too: the design credit lives on the child parts.
+    "Designer": ("Assembly - Engineering",) + BOUGHT,
 }
 
 # Declared so their values show up in the report, but never gated anywhere.
@@ -315,14 +321,18 @@ def test_content_center_parts_skip_the_sign_off_fields(rules):
     ]
 
 
-def test_content_center_still_rejects_not_reviewed(rules):
-    """Not required doesn't mean anything goes."""
-    props = {p: "placeholder" for p in rules["categories"][CONTENT_CENTER]["properties"]}
+@pytest.mark.parametrize("category", BOUGHT)
+def test_bought_parts_accept_not_reviewed(rules, category):
+    """You don't engineering-review a catalogue part, so the string is fine."""
+    rule = rules["categories"][category]["properties"]["Engr Approved By"]
+    assert "NOT REVIEWED" not in (rule.get("forbidden_values") or []), category
+
+    props = {p: "placeholder" for p in rules["categories"][category]["properties"]}
     props["Engr Approved By"] = "NOT REVIEWED"
-    result = cfp.evaluate_against_rules(props, CONTENT_CENTER, rules)
+    result = cfp.evaluate_against_rules(props, category, rules)
     approved = next(r for r in result["report"]["results"]
                     if r["property"] == "Engr Approved By")
-    assert not approved["passed"]
+    assert approved["passed"], f"{category} should tolerate NOT REVIEWED"
 
 
 def test_an_assembly_with_no_designer_still_passes(properties, rules):
@@ -360,18 +370,25 @@ def test_the_ungated_properties_still_appear_in_the_report(properties, rules, pr
     assert prop in reported
 
 
-def test_engr_approved_by_rejects_not_reviewed_everywhere(rules):
-    for category, spec in rules["categories"].items():
-        rule = spec["properties"]["Engr Approved By"]
-        assert "NOT REVIEWED" in (rule.get("forbidden_values") or []), category
-        assert "NOT REVIEWED" not in (rule.get("allowed_values") or []), category
+@pytest.mark.parametrize("category", IN_HOUSE)
+def test_engr_approved_by_rejects_not_reviewed_on_in_house_work(rules, category):
+    """Where a review is expected, 'NOT REVIEWED' means it hasn't happened."""
+    spec = rules["categories"][category]
+    rule = spec["properties"]["Engr Approved By"]
+    assert "NOT REVIEWED" in (rule.get("forbidden_values") or []), category
+    assert "NOT REVIEWED" not in (rule.get("allowed_values") or []), category
 
-        props = {p: "placeholder" for p in spec["properties"]}
-        props["Engr Approved By"] = "NOT REVIEWED"
-        result = cfp.evaluate_against_rules(props, category, rules)
-        approved = next(r for r in result["report"]["results"]
-                        if r["property"] == "Engr Approved By")
-        assert not approved["passed"], f"{category} accepted NOT REVIEWED"
+    props = {p: "placeholder" for p in spec["properties"]}
+    props["Engr Approved By"] = "NOT REVIEWED"
+    result = cfp.evaluate_against_rules(props, category, rules)
+    approved = next(r for r in result["report"]["results"]
+                    if r["property"] == "Engr Approved By")
+    assert not approved["passed"], f"{category} accepted NOT REVIEWED"
+
+
+def test_the_two_category_groups_cover_every_rule_set(rules):
+    """If a category is added, it has to be classified in one group or the other."""
+    assert set(IN_HOUSE) | set(BOUGHT) == set(rules["categories"])
 
 
 @pytest.mark.parametrize("category", PART_CATEGORIES)
@@ -705,6 +722,28 @@ def test_default_export_path_is_named_for_the_file(tmp_path):
     assert path.parent == tmp_path
     assert path.suffix == ".xlsx"
     assert path.name.startswith("property-check_CD-001659_")
+
+
+def test_exports_default_to_the_downloads_folder():
+    """Matches where the MFG package builder and purchasing sheet land."""
+    from pathlib import Path as _Path
+    path = cfp.default_export_path("CD-001659.iam")
+    assert path.parent == _Path.home() / "Downloads"
+
+
+def test_export_creates_downloads_if_it_is_missing(checked_result, tmp_path,
+                                                   monkeypatch):
+    """A machine with no Downloads folder still gets its report."""
+    pytest.importorskip("openpyxl")
+    from pathlib import Path as _Path
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    monkeypatch.setattr(_Path, "home", classmethod(lambda cls: fake_home))
+
+    target = cfp.default_export_path("CD-001659.iam")
+    assert not target.parent.exists()
+    cfp.export_to_excel(checked_result, target)
+    assert target.exists()
 
 
 def test_export_to_a_locked_file_raises_a_useful_message(checked_result, tmp_path,

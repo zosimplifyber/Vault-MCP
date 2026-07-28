@@ -406,3 +406,39 @@ def test_assembly_costs_no_marker_when_all_priced(tmp_path):
     ac = openpyxl.load_workbook(str(out))["Assembly Costs"]
     text = "\n".join(str(c.value) for col in ac.iter_cols() for c in col if c.value)
     assert "Includes unpriced parts" not in text
+
+
+class TestFileNameIsEnough:
+    """The Purchasing Sheet needs a file name and nothing else — the newer
+    exports carry no Part Number column at all."""
+
+    def test_the_number_is_derived_from_the_file_name(self):
+        df = pd.DataFrame({"Item": ["1"], "QTY": [2],
+                           "Filename": ["CD-001578.ipt"]})
+        out, err = bp.coerce_bom_dataframe(df)
+        assert err is None
+        assert out.loc[0, "Number"] == "CD-001578"
+
+    def test_quantities_are_no_longer_required_alongside_a_file_name(self):
+        df = pd.DataFrame({"Item": ["1"], "Filename": ["CD-001578.ipt"],
+                           "Description": ["a part"]})
+        out, err = bp.coerce_bom_dataframe(df)
+        assert err is None
+
+    def test_an_existing_part_number_still_wins(self):
+        df = pd.DataFrame({"Part Number": ["SF-001922"], "QTY": [1],
+                           "Filename": ["CD-001578.ipt"]})
+        out, err = bp.coerce_bom_dataframe(df)
+        assert err is None
+        assert out.loc[0, "Number"] == "SF-001922"
+
+    def test_neither_a_number_nor_a_file_name_is_still_an_error(self):
+        df = pd.DataFrame({"QTY": [1, 2], "Description": ["a", "b"]})
+        out, err = bp.coerce_bom_dataframe(df)
+        assert err is not None
+        assert "file name" in err.lower() and "part number" in err.lower()
+
+    def test_quantities_are_still_required_without_a_file_name(self):
+        df = pd.DataFrame({"Part Number": ["SF-1"], "QTY": [""]})
+        out, err = bp.coerce_bom_dataframe(df)
+        assert err is not None and "quantit" in err.lower()

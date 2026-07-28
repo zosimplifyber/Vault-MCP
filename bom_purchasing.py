@@ -1054,14 +1054,31 @@ def coerce_bom_dataframe(
         return str(v)
     df["Row Order"] = df["Row Order"].map(_clean_row_order)
 
+    # The file name is the identity now — everything downstream matches on it —
+    # so a BOM that carries one needs nothing else. Newer exports have dropped
+    # the Part Number column entirely; its stem stands in.
+    file_col = next((c for c in df.columns
+                     if str(c).strip().lower() in FILE_NAME_HEADERS), None)
     blank_number = df["Number"].isna() | (df["Number"].astype(str).str.strip() == "")
+    if blank_number.all() and file_col is not None:
+        stems = df[file_col].map(file_stem)
+        df.loc[blank_number, "Number"] = stems[blank_number].replace("", None)
+        blank_number = (df["Number"].isna()
+                        | (df["Number"].astype(str).str.strip() == ""))
+
     if blank_number.all():
-        return df, ("No part numbers found — the BOM needs a 'Part Number' "
-                    "(Inventor) or 'Number' (Vault) column.")
-    blank_qty = df["Item Qty"].isna() | (df["Item Qty"].astype(str).str.strip() == "")
-    if blank_qty.all():
-        return df, ("No quantities found — the BOM needs a 'QTY' (Inventor) "
-                    "or 'Item Qty' (Vault) column.")
+        return df, ("No part numbers or file names found — the BOM needs a "
+                    "'Filename' column, or a 'Part Number' (Inventor) / "
+                    "'Number' (Vault) column.")
+
+    # Quantities only matter for costing, and only when there is no file name to
+    # identify rows by; a filename-only export is still a valid BOM.
+    if file_col is None:
+        blank_qty = (df["Item Qty"].isna()
+                     | (df["Item Qty"].astype(str).str.strip() == ""))
+        if blank_qty.all():
+            return df, ("No quantities found — the BOM needs a 'QTY' (Inventor) "
+                        "or 'Item Qty' (Vault) column.")
     return df, None
 
 

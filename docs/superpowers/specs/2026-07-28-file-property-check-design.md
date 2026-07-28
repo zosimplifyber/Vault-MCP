@@ -156,22 +156,30 @@ tunable without a code change.
 
 **What is gated:**
 
+Categories split into two groups: **in-house work** (`Assembly - Engineering`,
+`Part - Engineering`, `Drawing - Engineering`), where engineering ownership is
+expected and gated, and **bought parts** (`Part - Purchased`,
+`Part - Content Center`) — catalogue hardware and Inventor library files that
+nobody in-house designs, engineers, approves, or bills to a project.
+
 | Property | Required in |
 |---|---|
-| `State`, `Revision`, `Source` | every category |
-| `Engineer`, `Engr Approved By`, `Project` | every category except `Part - Content Center` |
-| `Designer` | every category except `Assembly - Engineering` and `Part - Content Center` |
+| `State`, `Source` | every category |
+| `Revision` | every category except `Part - Purchased` |
+| `Engineer`, `Engr Approved By`, `Project` | in-house categories only |
+| `Designer` | in-house categories except `Assembly - Engineering` |
 | `Vendor` | every part and assembly, no exemption |
 | `Vendor Number` | parts, with a published-standard exemption |
 
-`Engr Approved By` forbids the literal `NOT REVIEWED` in **every** category —
-including the ones where it isn't required — since that string means the review
-has not happened. `Vendor Number` keeps its published-standard exemption
-because a generic ISO screw has a supplier but no single supplier SKU.
-`Designer` is exempt on assemblies because the design credit lives on the child
-parts, and on Content Center because nobody in-house designs a library
-fastener — the same reasoning drops `Engineer`, `Engr Approved By` and
-`Project` there too.
+`Engr Approved By` forbids the literal `NOT REVIEWED` on in-house work, since
+there it means the review has not happened; bought parts allow it, because a
+catalogue fastener is never engineering-reviewed. `Vendor Number` keeps its
+published-standard exemption because a generic ISO screw has a supplier but no
+single supplier SKU. `Designer` is exempt on assemblies because the design
+credit lives on the child parts.
+
+A test asserts the two groups together cover every rule set, so adding a
+category forces a decision about which group it belongs to.
 
 **Declared but never gated:** `Title`, `CAD Category` and `Description (File)`
 carry `required: false` and no other checks, so their values still appear in
@@ -221,11 +229,13 @@ Both sheets get an autofilter and frozen headers so a long BOM walk stays
 navigable, and rows are colour-coded PASS / FAIL / SKIP. A file with no rule
 set contributes exactly one SKIP row — it must never read as compliant.
 
-Reached by `--excel [PATH]` on the CLI (bare flag → timestamped file in `Log/`)
+Reached by `--excel [PATH]` on the CLI (bare flag → timestamped file in the
+user's **Downloads** folder, matching `mfg_package.py` and `bom_purchasing.py`)
 and the **Export to Excel** button in the GUI, which unlocks only after a
 successful check and re-uses the in-memory result rather than re-querying
-Vault. Writing over a workbook that's open in Excel raises a `RuntimeError`
-that says so.
+Vault. The save dialog opens on Downloads, falling back to home if it doesn't
+exist; the export creates the folder either way. Writing over a workbook that's
+open in Excel raises a `RuntimeError` that says so.
 
 ### Surface
 

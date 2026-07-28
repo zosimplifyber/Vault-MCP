@@ -379,13 +379,16 @@ def run_gui(
         if not result:
             return
         suggested = default_export_path(result["file_name"])
+        # Downloads normally exists; fall back to home rather than hand the
+        # dialog a path that isn't there.
+        initial_dir = suggested.parent if suggested.parent.is_dir() else Path.home()
         target = filedialog.asksaveasfilename(
             parent=win,
             title="Export compliance report",
             defaultextension=".xlsx",
             filetypes=[("Excel workbook", "*.xlsx"), ("All files", "*.*")],
             initialfile=suggested.name,
-            initialdir=str(suggested.parent),
+            initialdir=str(initial_dir),
         )
         if not target:
             return
