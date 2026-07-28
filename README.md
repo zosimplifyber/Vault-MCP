@@ -146,6 +146,8 @@ python scripts/check_file_properties.py                            # no argument
 
 Exit codes: `0` everything passed, `1` at least one failure, `2` no rule set matched the file's category.
 
+`--recursive` grades each child at its **latest** version, not the version the parent assembly pins. A parent often references an older revision of a child, so grading the pinned version would keep reporting failures you have already fixed. If a child's latest version can't be read it reports ERROR rather than being graded on stale data.
+
 **Excel export.** `--excel` (bare) drops a timestamped workbook in your **Downloads** folder (same place the MFG package builder and purchasing sheet land); give it a path to choose the name. In the GUI, **Export to Excel** unlocks once a check succeeds. The workbook has two sheets — **Summary** (one row per file: status and which properties failed) and **Detail** (one row per property checked) — both filterable with frozen headers and colour-coded PASS / FAIL / SKIP rows.
 
 Rules live in [`file_property_rules.json`](file_property_rules.json), keyed by the file's Category Name, and are re-read on every run — edit and re-check, no restart. What's gated:

@@ -110,8 +110,29 @@ Each unit is independently testable; only `fetch_*` touch the network.
 | `get_property_definition_index(api, vault_id)` | One `/property-definitions` call → `{id: {displayName, systemName, isSystem}}`. Cached per vault for the process lifetime. |
 | `flatten_file_properties(record, defs)` | `{propertyDefinitionId, value}` list + record system fields → `{display name: value}`. Populated values win over empty ones. |
 | `fetch_file(api, vault_id, file_name)` | Resolve a file name to one file version. Exact case-insensitive name match preferred; notes ambiguity when several match. Raises `RuntimeError` when nothing matches. |
-| `fetch_cad_children(api, vault_id, file_version_id)` | Child file versions with properties, hydrating per child if `/uses` does not enrich. |
+| `fetch_cad_children(api, vault_id, file_version_id)` | Child files, re-fetched at their newest version — see below. |
+| `_upgrade_child_to_latest(api, vault_id, child)` | Swaps one child's pinned properties for its latest version, in place. |
 | `_fill_in_historical_state(record, flat)` | Recovers `State` on a pinned (non-latest) version — see below. |
+
+**Children are graded at their latest version, not the pinned one.** `/uses`
+returns whatever version the parent assembly pins, which is often not the
+newest. Grading those answers "is this assembly, as pinned, compliant?" — but
+it means a file you just fixed keeps reporting its old failures, because the
+parent still references the pre-fix version. This was observed live:
+`CD-001608.iam` pins version 11 (rev 1) of `CD-001613.iam`, from before Source
+and Vendor were filled in; the BOM walk reported those as missing while the
+same file checked alone passed them. Verified as real history, not an API
+artifact — fetching version 11 directly returns the same blanks.
+
+So each distinct child is re-fetched with `search_file_versions(latest_only=True)`,
+matched back by File-master id so two files sharing a name can't cross over.
+One extra request per distinct child, issued concurrently. If the newest
+version can't be resolved the child reports ERROR rather than being graded on
+stale data — silently checking the wrong version is the failure mode being
+fixed. `use_latest=False` restores the as-pinned audit.
+
+Dedupe keys on the File master rather than the version id, so one file pinned
+at two versions collapses to a single row.
 
 **Pinned versions blank their State.** A CAD BOM child is whatever version its
 parent assembly pins, which is often not the latest. Vault returns those with

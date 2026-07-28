@@ -543,6 +543,16 @@ def test_cad_bom_children_come_back_enriched(uses_payload, monkeypatch):
         assert props["Description (File)"]
 
 
+class _UsesOnlyAPI:
+    """Serves a /uses payload; has no latest-version lookup."""
+
+    def __init__(self, payload):
+        self.payload = payload
+
+    async def get_file_uses(self, **_kwargs):
+        return {"error": False, "status_code": 200, "data": self.payload}
+
+
 def test_children_are_deduplicated_by_file_version(uses_payload):
     """A part used twice in an assembly is checked once."""
     import asyncio
@@ -550,13 +560,89 @@ def test_children_are_deduplicated_by_file_version(uses_payload):
     doubled = dict(uses_payload)
     doubled["results"] = list(uses_payload["results"]) + [uses_payload["results"][0]]
 
-    class FakeAPI:
-        async def get_file_uses(self, **_kwargs):
-            return {"error": False, "status_code": 200, "data": doubled}
-
-    children = asyncio.run(cfp.fetch_cad_children(FakeAPI(), "1", "124814"))
+    children = asyncio.run(cfp.fetch_cad_children(
+        _UsesOnlyAPI(doubled), "1", "124814", use_latest=False))
     assert len(children) == 3
     assert len({c["file_version_id"] for c in children}) == 3
+
+
+def test_the_same_file_pinned_at_two_versions_collapses_to_one_row(uses_payload):
+    """Dedupe keys on the File master, not the version, so two pinned
+    versions of one file don't become two rows."""
+    import asyncio
+    import copy
+
+    payload = copy.deepcopy(uses_payload)
+    other_version = copy.deepcopy(payload["results"][0])
+    other_version["childFile"]["id"] = "999999"        # different version...
+    # ...same File master, which is what identifies the file
+    payload["results"].append(other_version)
+
+    children = asyncio.run(cfp.fetch_cad_children(
+        _UsesOnlyAPI(payload), "1", "124814", use_latest=False))
+    assert len(children) == 3
+
+
+def test_children_are_checked_at_their_latest_version(uses_payload):
+    """The pinned version is what /uses returns; we grade the newest one.
+
+    Otherwise a file you just fixed keeps reporting its old failures because
+    the parent still references the pre-fix version.
+    """
+    import asyncio
+
+    latest = {
+        "results": [{
+            "name": "CD-001624.ipt", "id": "999001", "revision": "9",
+            "state": "Released", "category": "Part - Engineering",
+            "file": {"id": "111"},
+            "properties": [{"propertyDefinitionId": "1", "value": "Make"}],
+        }],
+        "included": {"propertyDefinition": {
+            "1": {"displayName": "Source", "systemName": "Source"}}},
+    }
+
+    class FakeAPI(_UsesOnlyAPI):
+        async def search_file_versions(self, **kwargs):
+            assert kwargs.get("latest_only") is True
+            return {"error": False, "status_code": 200, "data": latest}
+
+    children = asyncio.run(cfp.fetch_cad_children(
+        FakeAPI(uses_payload), "1", "124814"))
+
+    upgraded = next(c for c in children if c["file_name"] == "CD-001624.ipt")
+    assert upgraded["properties"]["Source"] == "Make"
+    assert upgraded["properties"]["Revision"] == "9"
+    assert upgraded["file_version_id"] == "999001"
+    # The version the parent pins is still recorded for context.
+    assert upgraded["pinned_revision"] == "3"
+
+
+def test_a_child_whose_latest_version_cannot_be_read_is_an_error(uses_payload):
+    """Never grade stale data as though it were current — say so instead."""
+    import asyncio
+
+    class FakeAPI(_UsesOnlyAPI):
+        async def search_file_versions(self, **_kwargs):
+            return {"error": True, "status_code": 503,
+                    "data": {"message": "service unavailable"}}
+
+    children = asyncio.run(cfp.fetch_cad_children(
+        FakeAPI(uses_payload), "1", "124814"))
+    assert all(c["error"] for c in children)
+    assert "latest version" in children[0]["error"]
+
+
+def test_a_child_that_no_longer_resolves_is_an_error(uses_payload):
+    import asyncio
+
+    class FakeAPI(_UsesOnlyAPI):
+        async def search_file_versions(self, **_kwargs):
+            return {"error": False, "status_code": 200, "data": {"results": []}}
+
+    children = asyncio.run(cfp.fetch_cad_children(
+        FakeAPI(uses_payload), "1", "124814"))
+    assert all(c["error"] for c in children)
 
 
 def test_a_failed_bom_walk_raises_with_the_vault_message():

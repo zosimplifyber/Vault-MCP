@@ -283,14 +283,25 @@ async def fetch_cad_children(
     file_version_id: str,
     *,
     limit: int = 500,
+    use_latest: bool = True,
 ) -> list[dict[str, Any]]:
     """Return one entry per child file in the CAD BOM.
 
     ``/uses`` enriches every child with its properties in the same call when
-    ``prop_def_ids`` is passed, so this is a single request no matter how many
-    children there are.
+    ``prop_def_ids`` is passed, so discovering the children is a single request
+    no matter how many there are.
 
-    Each entry: ``{"file_name", "file_version_id", "properties"}``.
+    The versions ``/uses`` returns are the ones the parent assembly **pins**,
+    which are often not the newest. Checking those answers "is this assembly,
+    as pinned, compliant?" — but it means a file you just fixed keeps reporting
+    its old failures, because the parent still references the version from
+    before the fix. With ``use_latest`` (the default) each child is re-fetched
+    at its newest version, so the report answers "which files still need
+    fixing?" instead. Pass ``use_latest=False`` to audit exactly what the
+    assembly consumes.
+
+    Each entry: ``{"file_name", "file_version_id", "file_id", "assoc_type",
+    "properties", "pinned_revision", "error"}``.
     """
     resp = await api.get_file_uses(
         vault_id=vault_id,
@@ -313,22 +324,79 @@ async def fetch_cad_children(
         child = row.get("childFile")
         if not isinstance(child, dict):
             continue
-        cid = str(child.get("id") or "")
-        # A child used more than once in the assembly comes back per
-        # occurrence; check it once.
-        if cid and cid in seen:
+        version_id = str(child.get("id") or "")
+        master_id = str((child.get("file") or {}).get("id") or "")
+        # A child used more than once in the assembly comes back once per
+        # occurrence; check it once. Key on the File master where we have it,
+        # so the same file pinned at two versions still collapses to one row.
+        key = master_id or version_id
+        if key and key in seen:
             continue
-        if cid:
-            seen.add(cid)
+        if key:
+            seen.add(key)
+        properties = flatten_file_properties(child, defs)
         children.append({
             "file_name": str(child.get("name") or "(unknown)"),
-            "file_version_id": cid,
+            "file_version_id": version_id,
+            "file_id": master_id,
             "assoc_type": str(row.get("fileAssocType") or ""),
-            "properties": flatten_file_properties(child, defs),
+            "properties": properties,
+            "pinned_revision": str(properties.get("Revision") or ""),
+            "error": None,
         })
+
+    if use_latest and children:
+        await asyncio.gather(
+            *[_upgrade_child_to_latest(api, vault_id, c) for c in children]
+        )
 
     children.sort(key=lambda c: c["file_name"].lower())
     return children
+
+
+async def _upgrade_child_to_latest(
+    api: VaultRestAPI, vault_id: str, child: dict[str, Any]
+) -> None:
+    """Replace a child's pinned properties with its newest version, in place.
+
+    Sets ``child["error"]`` if the newest version can't be resolved. Failing
+    loudly beats silently reporting the pinned version as though it were
+    current — that mismatch is the whole reason this exists.
+    """
+    name = child["file_name"]
+    resp = await api.search_file_versions(
+        vault_id=vault_id, query=name, prop_def_ids="all",
+        latest_only=True, limit=25,
+    )
+    if resp["error"]:
+        child["error"] = f"Could not load the latest version of {name}: {resp['data']}"
+        return
+
+    payload = resp.get("data") or {}
+    records = _results(payload)
+    # Prefer the record belonging to the same File master. Two files in
+    # different folders can share a name; the master id can't collide.
+    master_id = child.get("file_id") or ""
+    if master_id:
+        same_file = [
+            r for r in records
+            if str((r.get("file") or {}).get("id") or "") == master_id
+        ]
+        if same_file:
+            records = same_file
+
+    try:
+        record, _note = select_file_record(records, name)
+    except RuntimeError as exc:
+        child["error"] = f"Could not resolve the latest version of {name}: {exc}"
+        return
+
+    defs = extract_definition_index(payload)
+    if not defs and (record.get("properties") or []):
+        defs = await fetch_definition_index(api, vault_id)
+
+    child["properties"] = flatten_file_properties(record, defs)
+    child["file_version_id"] = str(record.get("id") or child["file_version_id"])
 
 
 # ---------------------------------------------------------------------------
@@ -417,12 +485,29 @@ async def check_file_name(
                 rows = []
 
             for row in rows:
-                child_cat = row["properties"].get("Category Name") or ""
-                children.append({
+                base = {
                     "file_name": row["file_name"],
                     "file_version_id": row["file_version_id"],
+                    "file_id": row.get("file_id", ""),
                     "assoc_type": row["assoc_type"],
+                    "pinned_revision": row.get("pinned_revision", ""),
                     "properties": row["properties"],
+                }
+                if row.get("error"):
+                    # Couldn't resolve this child — report it rather than
+                    # grading whatever stale data we happen to hold.
+                    children.append({
+                        **base,
+                        "category_raw": row["properties"].get("Category Name") or "",
+                        "category_resolved": None,
+                        "report": None,
+                        "error": row["error"],
+                    })
+                    continue
+
+                child_cat = row["properties"].get("Category Name") or ""
+                children.append({
+                    **base,
                     **evaluate_against_rules(row["properties"], child_cat, rules),
                     "error": None,
                 })
