@@ -196,6 +196,60 @@ _RAW_EXTRA = {
 _FILE_NAME_COLUMNS = ("Filename", "File Name", "File", "Document Name")
 
 
+# --------------------------------------------------------------------------- columns
+# What the sync reads out of a BOM export, and the headers that satisfy each
+# field. Required fields are the ones without which the export cannot be read
+# at all; the rest only decide how much of a new list row gets filled in.
+REQUIRED_BOM_FIELDS: dict[str, tuple[str, ...]] = {
+    "Part Number": ("part number", "partnumber", "number", "item number"),
+    "QTY": ("qty", "quantity", "item qty"),
+}
+
+OPTIONAL_BOM_FIELDS: dict[str, tuple[str, ...]] = {
+    "BOM Structure": ("bom structure", "bomstructure", "source", "itemsource"),
+    "Title": ("title", "title (item,co)"),
+    "Description": ("description", "desc", "description (item,co)"),
+    "Material": ("material",),
+    "Vendor": ("vendor", "supplier"),
+    "Web Link": ("web link", "weblink", "vendor number", "vendor #"),
+    "Filename": ("filename", "file name", "file", "document name"),
+}
+
+
+def check_bom_columns(headers: Iterable[str]) -> dict:
+    """Which of the fields the sync uses are present in these headers.
+
+    Returns ``{"ok", "missing_required", "missing_optional"}``. ``ok`` is False
+    only when a *required* field is absent — optional gaps just mean the new
+    list rows carry less detail.
+    """
+    have = {str(h).strip().lower() for h in headers if str(h).strip()}
+
+    def missing(spec: dict[str, tuple[str, ...]]) -> list[str]:
+        return [field for field, aliases in spec.items()
+                if not have.intersection(aliases)]
+
+    missing_required = missing(REQUIRED_BOM_FIELDS)
+    return {
+        "ok": not missing_required,
+        "missing_required": missing_required,
+        "missing_optional": missing(OPTIONAL_BOM_FIELDS),
+    }
+
+
+def bom_file_columns(path: str) -> list[str]:
+    """The header row of a BOM export, without reading its data rows."""
+    import pandas as pd
+    ext = os.path.splitext(path)[1].lower()
+    if ext in (".csv", ".txt"):
+        head = pd.read_csv(path, sep="\t" if ext == ".txt" else ",", nrows=0)
+    elif ext in (".xls", ".xlsx"):
+        head = pd.read_excel(path, sheet_name=0, nrows=0)
+    else:
+        raise ValueError(f"Unsupported file type: {ext}. Use .xlsx, .xls, .csv, or .txt.")
+    return [str(c).strip() for c in head.columns]
+
+
 def _file_stem(value) -> str:
     """A file name without its extension ("CD-001578.ipt" -> "CD-001578")."""
     if _is_blank(value):

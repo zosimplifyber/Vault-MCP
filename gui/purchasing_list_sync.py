@@ -82,15 +82,19 @@ def launch_bom_list_sync_gui(*, cfg=None, parent=None, **_ignored) -> None:
     if parent is not None:
         win.transient(parent)
     win.title("Simplifyber — BOM → Purchased Parts List")
-    win.geometry("760x660")
-    win.minsize(680, 580)
+    win.geometry("760x740")
+    win.minsize(680, 640)
     win.configure(bg=LIGHT_GRAY)
+
+    import bom_list_sync
 
     path_var = tk.StringVar()
     buyonly_var = tk.BooleanVar(value=False)
     update_var = tk.BooleanVar(value=False)
     status_var = tk.StringVar(value="Ready.")
-    state: dict = {"report": None, "busy": False, "logo": None, "icon": None}
+    check_var = tk.StringVar(value="")
+    state: dict = {"report": None, "busy": False, "logo": None, "icon": None,
+                   "columns_ok": False}
 
     # ----- window icon -----------------------------------------------------
     if _pil_available:
@@ -157,6 +161,25 @@ def launch_bom_list_sync_gui(*, cfg=None, parent=None, **_ignored) -> None:
               activebackground=DARK_BLUE, activeforeground=WHITE,
               borderwidth=0, highlightthickness=0).pack(side="left")
     _hint(src, "Inventor or Vault export — .xlsx / .xls / .csv / .txt")
+
+    # Which columns the export has to carry, and what each extra one fills in.
+    fields = tk.Frame(src, bg=WHITE)
+    fields.pack(fill="x", pady=(8, 0))
+    tk.Label(fields, text="Required:", bg=WHITE, fg=DARK_BLUE,
+             font=("Arial", 9, "bold"), anchor="w", width=10).grid(row=0, column=0, sticky="w")
+    tk.Label(fields, text=", ".join(bom_list_sync.REQUIRED_BOM_FIELDS),
+             bg=WHITE, fg=DARK_BLUE, font=("Arial", 9), anchor="w",
+             ).grid(row=0, column=1, sticky="w")
+    tk.Label(fields, text="Optional:", bg=WHITE, fg=DARK_GRAY,
+             font=("Arial", 9, "bold"), anchor="w", width=10).grid(row=1, column=0, sticky="w")
+    tk.Label(fields, text=", ".join(bom_list_sync.OPTIONAL_BOM_FIELDS),
+             bg=WHITE, fg=DARK_GRAY, font=("Arial", 9), anchor="w",
+             wraplength=560, justify="left").grid(row=1, column=1, sticky="w")
+
+    check_label = tk.Label(src, textvariable=check_var, bg=WHITE, fg=DARK_GRAY,
+                           font=("Arial", 9, "bold"), anchor="w", justify="left",
+                           wraplength=620)
+    check_label.pack(fill="x", pady=(8, 0))
 
     # ----- options card ----------------------------------------------------
     opts = _card(win, "OPTIONS")
@@ -227,6 +250,41 @@ def launch_bom_list_sync_gui(*, cfg=None, parent=None, **_ignored) -> None:
 
     # ----- behaviour -------------------------------------------------------
 
+    def check_columns(*_args) -> None:
+        """Read the picked file's header row and report what it carries."""
+        path = path_var.get().strip()
+        state["columns_ok"] = False
+        if not path:
+            check_var.set("")
+            return
+        if not os.path.isfile(path):
+            check_var.set("File not found.")
+            check_label.config(fg=RUST_ORANGE)
+            return
+        try:
+            columns = bom_list_sync.bom_file_columns(path)
+        except Exception as exc:                        # noqa: BLE001
+            check_var.set(f"Could not read this file: {exc}")
+            check_label.config(fg=RUST_ORANGE)
+            return
+        result = bom_list_sync.check_bom_columns(columns)
+        state["columns_ok"] = result["ok"]
+        if not result["ok"]:
+            check_var.set("Missing required column(s): "
+                          + ", ".join(result["missing_required"])
+                          + " — re-export the BOM with those columns.")
+            check_label.config(fg=RUST_ORANGE)
+        elif result["missing_optional"]:
+            check_var.set("All required columns found. Not in this export: "
+                          + ", ".join(result["missing_optional"])
+                          + " — those list fields stay blank.")
+            check_label.config(fg=DARK_GRAY)
+        else:
+            check_var.set("All required and optional columns found.")
+            check_label.config(fg="#1F6B2E")
+
+    path_var.trace_add("write", check_columns)
+
     def post(fn) -> None:
         win.after(0, fn)
 
@@ -271,13 +329,16 @@ def launch_bom_list_sync_gui(*, cfg=None, parent=None, **_ignored) -> None:
         if not path:
             messagebox.showwarning("No file", "Choose a BOM file first.", parent=win)
             return
+        check_columns()
+        if not state["columns_ok"]:
+            messagebox.showwarning("BOM columns", check_var.get(), parent=win)
+            return
         set_busy(True)
         status_var.set("Adding to the list…" if apply else "Scanning…")
         log(f"\n{'Adding' if apply else 'Scanning'}: {os.path.basename(path)} …", "info")
 
         def work():
             try:
-                import bom_list_sync
                 df, err = bom_list_sync.bom_dataframe_from_file(path)
                 if err:
                     post(lambda: (log(f"BOM parse error: {err}", "err"),

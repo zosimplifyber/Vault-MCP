@@ -1,9 +1,12 @@
 # tests/test_purchasing_list_sync_gui.py
-"""The BOM → Purchased Parts List summary line.
+"""The BOM → Purchased Parts List window: chrome, column feedback, summary line.
 
-"Already in list: 273" read as though 273 BOM parts were found; it is the size
-of the list. The line has to separate the two counts.
+Two things worth stating outright:
+* "Already in list: 273" read as though 273 BOM parts were found; it is the size
+  of the list, so the summary line has to separate the two counts.
+* Picking a file must say which columns it carries BEFORE anything is scanned.
 """
+import glob
 import os
 import sys
 
@@ -28,16 +31,82 @@ def _widget_text(widget, out):
     return out
 
 
+def _entries(widget, out):
+    for child in widget.winfo_children():
+        if isinstance(child, tk.Entry):
+            out.append(child)
+        _entries(child, out)
+    return out
+
+
+@pytest.fixture(scope="module")
+def root():
+    """One Tk root for the module — repeatedly creating roots skips flakily."""
+    try:
+        r = tk.Tk()
+    except tk.TclError:
+        # Re-initialising Tk after another test module has torn its root down
+        # loses the Tcl/Tk library paths here. Point them at the interpreter's
+        # own copies and retry once.
+        base = getattr(sys, "base_prefix", sys.prefix)
+        for var, pattern in (("TCL_LIBRARY", "tcl8.*"), ("TK_LIBRARY", "tk8.*")):
+            hits = [p for p in glob.glob(os.path.join(base, "tcl", pattern))
+                    if os.path.isdir(p)]
+            if hits:
+                os.environ[var] = hits[0]
+        try:
+            r = tk.Tk()
+        except tk.TclError as exc:
+            pytest.skip(f"no display available: {exc}")
+    r.withdraw()
+    yield r
+    r.destroy()
+
+
+def _load(root, path):
+    """Open the window, put `path` in its entry, return every label's text."""
+    launch_bom_list_sync_gui(parent=root)
+    win = [w for w in root.winfo_children() if isinstance(w, tk.Toplevel)][-1]
+    _entries(win, [])[0].insert(0, str(path))
+    root.update()
+    texts = _widget_text(win, [])
+    win.destroy()
+    return texts
+
+
+class TestColumnFeedback:
+    """Picking a file checks its header row and says what is missing."""
+
+    def test_a_missing_required_column_is_called_out(self, root, tmp_path):
+        bad = tmp_path / "bad.csv"
+        bad.write_text("Item,Description\n1,a thing\n", encoding="utf-8")
+        texts = _load(root, bad)
+        assert any("Missing required column(s)" in t and "Part Number" in t
+                   for t in texts)
+
+    def test_a_complete_export_is_confirmed(self, root, tmp_path):
+        good = tmp_path / "good.csv"
+        good.write_text(
+            "Item,Part Number,QTY,BOM Structure,Title,Description,Material,"
+            "Vendor,Web Link,Filename\n"
+            "1,SF-1,2,Purchased,CD-1,thing,Steel,Acme,123,CD-1.ipt\n",
+            encoding="utf-8")
+        texts = _load(root, good)
+        assert any("All required and optional columns found" in t for t in texts)
+
+    def test_optional_gaps_are_listed_without_blocking(self, root, tmp_path):
+        thin = tmp_path / "thin.csv"
+        thin.write_text("Part Number,QTY\nSF-1,2\n", encoding="utf-8")
+        texts = _load(root, thin)
+        assert any("All required columns found" in t and "Filename" in t
+                   for t in texts)
+
+
 class TestWindowBuilds:
-    def test_the_branded_chrome_and_controls_are_all_present(self):
+    def test_the_branded_chrome_and_controls_are_all_present(self, root):
+        launch_bom_list_sync_gui(parent=root)
+        win = [w for w in root.winfo_children() if isinstance(w, tk.Toplevel)][-1]
         try:
-            root = tk.Tk()
-        except tk.TclError:
-            pytest.skip("no display available")
-        root.withdraw()
-        try:
-            launch_bom_list_sync_gui(parent=root)
-            win = [w for w in root.winfo_children() if isinstance(w, tk.Toplevel)][0]
             texts = _widget_text(win, [])
             # header, section cards, actions and the status bar
             assert "BOM → Purchased Parts List" in texts
@@ -47,8 +116,12 @@ class TestWindowBuilds:
             assert any("Add missing" in t for t in texts)
             assert "Close" in texts
             assert "Ready." in texts       # status bar wired to its variable
+            # the required / optional field lists are spelled out on the card
+            assert "Required:" in texts and "Optional:" in texts
+            assert any("Part Number, QTY" in t for t in texts)
+            assert any("Filename" in t for t in texts)
         finally:
-            root.destroy()
+            win.destroy()
 
 
 def _report(**over):

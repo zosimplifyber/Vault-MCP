@@ -60,6 +60,46 @@ def bom():
     })
 
 
+class TestColumnCheck:
+    """What the GUI shows when a BOM is picked: which fields are there."""
+
+    # The real CD-001582 MFG BOM.xlsx export.
+    MFG = ["Item", "Part Number", "Title", "Thumbnail", "BOM Structure",
+           "Unit QTY", "QTY", "Description", "REV", "Material", "Vendor",
+           "Web Link", "Filename"]
+
+    def test_a_complete_export_reports_nothing_missing(self):
+        result = bls.check_bom_columns(self.MFG)
+        assert result["ok"] is True
+        assert result["missing_required"] == []
+        assert result["missing_optional"] == []
+
+    def test_a_missing_required_field_is_named(self):
+        result = bls.check_bom_columns(["Item", "Description"])
+        assert result["ok"] is False
+        assert "Part Number" in result["missing_required"]
+        assert "QTY" in result["missing_required"]
+
+    def test_optional_gaps_do_not_make_it_invalid(self):
+        result = bls.check_bom_columns(["Part Number", "QTY"])
+        assert result["ok"] is True
+        assert "Filename" in result["missing_optional"]
+        assert "Vendor" in result["missing_optional"]
+
+    def test_vault_style_headers_satisfy_the_same_fields(self):
+        result = bls.check_bom_columns(["Number", "Quantity", "Description"])
+        assert result["missing_required"] == []
+
+    def test_matching_ignores_case_and_padding(self):
+        result = bls.check_bom_columns([" part number ", "qty"])
+        assert result["missing_required"] == []
+
+    def test_reads_the_header_row_off_a_file(self, tmp_path):
+        p = tmp_path / "bom.csv"
+        p.write_text("Item,Part Number,QTY\n1,SF-1,2\n", encoding="utf-8")
+        assert bls.bom_file_columns(str(p)) == ["Item", "Part Number", "QTY"]
+
+
 class TestTitleFallsBackToTheFileName:
     """A part with no Title in Vault should still get a readable Title in the
     list — its file name without the extension."""
