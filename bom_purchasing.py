@@ -51,6 +51,21 @@ ONEDRIVE_SUBFOLDER = os.path.join(
 PURCHASED_ITEMS_FILENAME = "purchased items.xlsx"
 PURCHASED_ITEMS_SHEET = "purchased parts"
 
+# Where generated sheets go by default: the Vault working folder the BOMs are
+# exported from, so the sheet lands beside its source.
+DEFAULT_OUTPUT_DIR = r"C:\Vault Workspace\DESIGNS\PRODUCTION EQUIPMENT"
+
+
+def default_output_dir() -> str:
+    """The Vault working folder, or ~/Downloads when it is not on this machine.
+
+    The standalone .exe runs on machines with no Vault workspace; defaulting
+    there would silently create an empty C:\\Vault Workspace tree for them.
+    """
+    if os.path.isdir(DEFAULT_OUTPUT_DIR):
+        return DEFAULT_OUTPUT_DIR
+    return os.path.join(os.path.expanduser("~"), "Downloads")
+
 
 # ---------------------------------------------------------------------------
 # Column definitions
@@ -978,7 +993,7 @@ def generate_from_vault_bom(
     warnings.extend(_fill_state_from_vault(df))
 
     if not output_dir:
-        output_dir = os.path.join(os.path.expanduser("~"), "Downloads")
+        output_dir = default_output_dir()
     os.makedirs(output_dir, exist_ok=True)
     out_file = os.path.join(output_dir, f"{assembly_number}-PurchasingExport.xlsx")
 

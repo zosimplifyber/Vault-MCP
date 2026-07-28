@@ -100,19 +100,25 @@ class TestColumnCheck:
         assert result["ok"] is False
         assert "Part Number" in result["missing_required"]
         assert "QTY" in result["missing_required"]
+        assert "Filename" in result["missing_required"]
+
+    def test_filename_is_required_because_it_is_the_lookup_key(self):
+        result = bls.check_bom_columns(["Part Number", "QTY"])
+        assert result["ok"] is False
+        assert result["missing_required"] == ["Filename"]
 
     def test_optional_gaps_do_not_make_it_invalid(self):
-        result = bls.check_bom_columns(["Part Number", "QTY"])
+        result = bls.check_bom_columns(["Part Number", "QTY", "Filename"])
         assert result["ok"] is True
-        assert "Filename" in result["missing_optional"]
         assert "Vendor" in result["missing_optional"]
+        assert "Filename" not in result["missing_optional"]
 
     def test_vault_style_headers_satisfy_the_same_fields(self):
-        result = bls.check_bom_columns(["Number", "Quantity", "Description"])
+        result = bls.check_bom_columns(["Number", "Quantity", "File Name"])
         assert result["missing_required"] == []
 
     def test_matching_ignores_case_and_padding(self):
-        result = bls.check_bom_columns([" part number ", "qty"])
+        result = bls.check_bom_columns([" part number ", "qty", " FILENAME "])
         assert result["missing_required"] == []
 
     def test_reads_the_header_row_off_a_file(self, tmp_path):

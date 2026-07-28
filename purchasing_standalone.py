@@ -93,7 +93,7 @@ class App(tk.Tk):
         self._label(body, "BOM File (Inventor or Vault export):").grid(row=1, column=0, sticky="w")
         self._browse_row(body, self.bom_var, 2, self._browse_bom)
 
-        self.out_var = tk.StringVar(value=os.path.join(os.path.expanduser("~"), "Downloads"))
+        self.out_var = tk.StringVar(value=bp.default_output_dir())
         self._label(body, "Save Output To:").grid(row=3, column=0, sticky="w")
         self._browse_row(body, self.out_var, 4, self._browse_out)
 
@@ -187,7 +187,7 @@ class App(tk.Tk):
 
     def _generate(self):
         bom_path = self.bom_var.get().strip()
-        out_dir = self.out_var.get().strip() or os.path.join(os.path.expanduser("~"), "Downloads")
+        out_dir = self.out_var.get().strip() or bp.default_output_dir()
         asm = self.asm_var.get().strip()
         if not bom_path:
             messagebox.showwarning("Missing input", "Please select a BOM file.")

@@ -105,3 +105,16 @@ def test_first_reference_row_wins_when_two_normalize_to_the_same_number():
                         "Vendor": ["First", "Second"]})
     out, _, _ = bp.lookup_purchased_data(bom, ref)
     assert out.loc[0, "Vendor"] == "First"
+
+
+class TestDefaultOutputDir:
+    """Sheets land in the Vault working folder when it exists."""
+
+    def test_prefers_the_vault_production_equipment_folder(self, monkeypatch):
+        monkeypatch.setattr(bp.os.path, "isdir", lambda p: p == bp.DEFAULT_OUTPUT_DIR)
+        assert bp.default_output_dir() == bp.DEFAULT_OUTPUT_DIR
+
+    def test_falls_back_to_downloads_when_it_is_not_there(self, monkeypatch):
+        # Teammates running the standalone .exe have no C:\Vault Workspace.
+        monkeypatch.setattr(bp.os.path, "isdir", lambda p: False)
+        assert bp.default_output_dir().endswith("Downloads")

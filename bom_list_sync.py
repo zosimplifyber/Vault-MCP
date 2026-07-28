@@ -226,6 +226,10 @@ _FILE_NAME_COLUMNS = ("Filename", "File Name", "File", "Document Name")
 # field. Required fields are the ones without which the export cannot be read
 # at all; the rest only decide how much of a new list row gets filled in.
 REQUIRED_BOM_FIELDS: dict[str, tuple[str, ...]] = {
+    # Filename is required because its stem IS the lookup key — without it a row
+    # cannot be matched against the list's "Title (Name)" at all, and there is
+    # no part-number fallback.
+    "Filename": ("filename", "file name", "file", "document name"),
     "Part Number": ("part number", "partnumber", "number", "item number"),
     "QTY": ("qty", "quantity", "item qty"),
 }
@@ -234,7 +238,6 @@ REQUIRED_BOM_FIELDS: dict[str, tuple[str, ...]] = {
 # spreadsheet. Title is deliberately absent — the template dropped it, and the
 # code still reads one when an older export happens to carry it.
 OPTIONAL_BOM_FIELDS: dict[str, tuple[str, ...]] = {
-    "Filename": ("filename", "file name", "file", "document name"),
     "BOM Structure": ("bom structure", "bomstructure", "source", "itemsource"),
     "Unit QTY": ("unit qty", "units", "unit", "uom"),
     "Description": ("description", "desc", "description (item,co)"),

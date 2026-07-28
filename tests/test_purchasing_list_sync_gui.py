@@ -96,9 +96,17 @@ class TestColumnFeedback:
 
     def test_optional_gaps_are_listed_without_blocking(self, root, tmp_path):
         thin = tmp_path / "thin.csv"
+        thin.write_text("Part Number,QTY,Filename\nSF-1,2,CD-1.ipt\n", encoding="utf-8")
+        texts = _load(root, thin)
+        assert any("All required columns found" in t and "Vendor" in t
+                   for t in texts)
+
+    def test_a_missing_filename_column_blocks_the_scan(self, root, tmp_path):
+        # Filename is the lookup key, so its absence is fatal, not cosmetic.
+        thin = tmp_path / "thin.csv"
         thin.write_text("Part Number,QTY\nSF-1,2\n", encoding="utf-8")
         texts = _load(root, thin)
-        assert any("All required columns found" in t and "Filename" in t
+        assert any("Missing required column(s)" in t and "Filename" in t
                    for t in texts)
 
 

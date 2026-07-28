@@ -159,7 +159,7 @@ class PurchasingGUI:
         self.part_var = self.pn_var
         self.busy = False  # SearchDialog reads this to refuse mid-flight searches
         self.bom_var = tk.StringVar()
-        self.out_var = tk.StringVar(value=os.path.join(os.path.expanduser("~"), "Downloads"))
+        self.out_var = tk.StringVar(value=bom_purchasing.default_output_dir())
         self.asm_var = tk.StringVar()
         self.ref_status_var = tk.StringVar(value="Searching for reference file…")
         self.status_var = tk.StringVar(value="Ready.")
