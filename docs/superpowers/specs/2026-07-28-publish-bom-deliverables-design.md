@@ -57,12 +57,49 @@ have no drawing to publish.
 | `Phantom` rows | Included | Still real manufactured geometry |
 | Surface | GUI tool + engine module | Matches every other tool in this repo |
 
+### Reference BOM
+
+`C:\Vault Workspace\DESIGNS\PRODUCTION EQUIPMENT\CD-001608 BOM.xlsx`, copied
+to `tests/fixtures/CD-001608-bom.xlsx`, is the worked example this tool is
+built against. Its shape:
+
+```
+Item | Filename | Thumbnail | BOM Structure | Unit QTY | QTY
+     | Description | REV | Material | Vendor | Web Link
+```
+
+22 rows: 13 `Purchased`, 9 `Normal`. There is **no `Part Number` column** —
+`coerce_bom_dataframe` derives `Number` from the filename stem, which is
+exactly the case the "Part Number optional" change added.
+
+The 9 Make rows, and therefore the publish set:
+
+```
+CD-001613.iam   CD-001612.ipt   CD-001577.ipt
+CD-001578.ipt   CD-001621.iam   CD-001623.ipt
+CD-001620.ipt   CD-001660.ipt   CD-001364.ipt
+```
+
+Plus `CD-001608` as the top assembly, derived from the file name. Ten stems,
+up to twenty jobs.
+
+Two properties of this file drive requirements:
+
+- `ISO 4762 - M6 x 20ISO Stainless Steel.ipt` appears on rows 2.3 and 12.
+  Deduplication by stem is not hypothetical.
+- Row 13 is `CD-001366.ipt` marked `Purchased` — an in-house-numbered part
+  flagged as bought. It is excluded, with no special case. `BOM Structure` is
+  authoritative; a part that needs deliverables but is marked `Purchased` is a
+  BOM error to fix in Inventor, not something the tool second-guesses.
+
 ### Consequence of requiring `Filename`
 
-`tests/fixtures/CD-001608-inventor-bom.txt` has no `Filename` column — its
-rows carry only `SF-######` item numbers. Exports in that shape are rejected.
-The error message must name the column and tell the engineer to re-export
-with it, so the remedy is obvious without reading the code.
+The current export template carries `Filename`, so this requirement does not
+break the workflow in practice. The older
+`tests/fixtures/CD-001608-inventor-bom.txt` export has only `SF-######` item
+numbers and no filename column; exports in that shape are rejected. The error
+message must name the column and tell the engineer to re-export with it, so
+the remedy is obvious without reading the code.
 
 ## Architecture
 
@@ -202,7 +239,7 @@ attached, palette imported from `gui.release_workflow` — the arrangement
 
 ```
 +- Publish BOM Deliverables ------------------------------+
-| BOM file      [ CD-001608 MFG BOM.xlsx    ] [Browse...] |
+| BOM file      [ CD-001608 BOM.xlsx        ] [Browse...] |
 | Top assembly  [ CD-001608                 ]  blank=skip |
 |                                     [ Scan ]  [ Submit ]|
 +---------------------------------------------------------+
@@ -248,16 +285,26 @@ Only an unparseable BOM aborts the whole run.
 with the rest of the suite. No network: a fake `api` object returns canned
 responses and records calls.
 
-New fixture: an Inventor export **with** a `Filename` column, carrying
-`Normal`, `Phantom`, `Reference` and `Purchased` rows plus a duplicated
-filename.
+Two fixtures:
 
-Parsing:
-- `Purchased` rows excluded
+- `tests/fixtures/CD-001608-bom.xlsx` — the real export, for end-to-end
+  parsing against a file that actually ships.
+- A synthetic export built in-test from a DataFrame, covering the
+  `Phantom`, `Inseparable`, `Reference` and blank-structure branches that the
+  real BOM happens not to contain.
+
+Parsing, against the real fixture:
+- Exactly 9 rows survive, and their stems are the nine `CD-` names listed in
+  the Reference BOM section
+- All 13 `Purchased` rows excluded, including `CD-001366.ipt`
+- The duplicated `ISO 4762 - M6 x 20ISO Stainless Steel.ipt` never reaches the
+  output (it is `Purchased`), and a synthetic duplicate of a `Normal` row
+  collapses to one stem
+
+Parsing, against the synthetic fixture:
 - `Reference` rows excluded even though coercion calls them Make
 - `Phantom` and `Inseparable` rows kept
 - A blank or unrecognized `BOM Structure` value is kept
-- Duplicate filenames collapse to one stem
 - Missing `Filename` column returns an error, does not raise
 - A BOM with no `BOM Structure` column falls back to `Source == "Make"`
 
@@ -275,7 +322,8 @@ Submit:
 - One failing submit does not stop the remaining ones
 
 Top assembly:
-- Stem parsed from `"CD-001608 MFG BOM.xlsx"` is `CD-001608`
+- Stem parsed from `"CD-001608 BOM.xlsx"` and from `"CD-001608 MFG BOM.xlsx"`
+  is `CD-001608` in both cases
 - Blank field queues no top-level jobs
 - Top assembly gets both a PDF and a STEP job when both files exist
 
