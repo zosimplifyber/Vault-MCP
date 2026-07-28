@@ -99,7 +99,9 @@ SHEET_COLUMNS = [c for c in ALL_COLUMNS if c not in HIDDEN_SHEET_COLUMNS]
 # internal canonical column name (which the vendor/costing logic keys on).
 HEADER_LABELS = {
     "Description (Item,CO)": "Description",
-    "Title (Item,CO)": "Title",
+    # The column carries the matched list row's "Title (Name)", which everyone
+    # refers to as the file's name — so the sheet heads it "Name".
+    "Title": "Name",
 }
 
 COLUMN_WIDTHS = {

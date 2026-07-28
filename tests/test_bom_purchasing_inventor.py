@@ -330,7 +330,7 @@ def test_cd001608_end_to_end(tmp_path, monkeypatch):
     # sheet's identity column is empty on every row. The part numbers are still
     # in the data (they drive matching) and still appear on the By Vendor tab
     # for anything with a vendor.
-    title_col = header.index("Title") + 1
+    title_col = header.index("Name") + 1     # the Title column is headed "Name"
     assert all(ws.cell(r, title_col).value is None for r in range(4, 4 + n_rows))
 
     acost = "\n".join(

@@ -58,11 +58,13 @@ class TestAutoFilter:
 
 
 class TestTitleColumn:
-    def test_title_leads_the_sheet_and_number_is_not_shown(self, tmp_path):
+    def test_the_title_column_is_headed_name(self, tmp_path):
+        # The value is the list's Title (Name); the sheet calls it Name.
         df = _df([dict(BUY, Title="CD-001578")])
         ws = _book(tmp_path, df)["Purchasing"]
         header = [c.value for c in ws[HDR_ROW]]
-        assert header[0] == "Title"
+        assert header[0] == "Name"
+        assert "Title" not in header
         assert "Number" not in header
         assert ws.cell(row=4, column=1).value == "CD-001578"
 
