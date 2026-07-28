@@ -117,7 +117,7 @@
         "Description (File)": { "required": false, "description": "TEMPORARILY UNGATED — reported for reference only. Still drives the Vendor / Vendor Number exemptions below when it names a published standard." },
         "Revision":           { "required": true,  "pattern": "[0-9]+" },
         "State":              { "required": true,  "allowed_values": ["Released", "In Review", "Work in Progress"] },
-        "Source":             { "required": true,  "allowed_values": ["Buy"] },
+        "Source":             { "required": false, "description": "Not gated on library parts. Content Center files inherit whatever Source the library template carries — in practice a mix of 'N/A', 'Buy' and blank — so the value is reported but never fails. To gate it again, restore: \"required\": true, \"allowed_values\": [\"Buy\"]" },
         "Material":           { "required": true,  "min_length": 3 },
         "Material Finish":    { "required": false },
         "Vendor":             { "required": true,  "description": "Who you buy it from. Required on every part — a library standard still has a supplier." },

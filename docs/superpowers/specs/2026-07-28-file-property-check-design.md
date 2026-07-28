@@ -174,7 +174,8 @@ nobody in-house designs, engineers, approves, or bills to a project.
 
 | Property | Required in |
 |---|---|
-| `State`, `Source` | every category |
+| `State` | every category |
+| `Source` | every category except `Part - Content Center` |
 | `Revision` | every category except `Part - Purchased` |
 | `Engineer`, `Engr Approved By`, `Project` | in-house categories only |
 | `Designer` | in-house categories except `Assembly - Engineering` |
@@ -187,6 +188,12 @@ catalogue fastener is never engineering-reviewed. `Vendor Number` keeps its
 published-standard exemption because a generic ISO screw has a supplier but no
 single supplier SKU. `Designer` is exempt on assemblies because the design
 credit lives on the child parts.
+
+`Source` is ungated on Content Center rather than merely optional. Those files
+inherit whatever the library template carries — in this vault 7 `N/A`, 5 blank,
+2 `Buy` — so keeping `allowed_values: ["Buy"]` alongside `required: false`
+would still have failed half of them. Dropping the constraint is what actually
+removes the gate.
 
 A test asserts the two groups together cover every rule set, so adding a
 category forces a decision about which group it belongs to.

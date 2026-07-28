@@ -154,7 +154,8 @@ Categories split into **in-house work** (`Assembly - Engineering`, `Part - Engin
 
 | Property | Required in |
 |---|---|
-| State, Source | every category |
+| State | every category |
+| Source | every category except `Part - Content Center` |
 | Revision | every category except `Part - Purchased` |
 | Engineer, Engr Approved By, Project | in-house categories only |
 | Designer | in-house categories except `Assembly - Engineering` |

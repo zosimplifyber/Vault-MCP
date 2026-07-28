@@ -331,7 +331,7 @@ IN_HOUSE = ("Assembly - Engineering", "Part - Engineering", "Drawing - Engineeri
 # category that isn't exempt silently weakens the gate, so it fails here.
 GATED_COLUMNS = {
     "State": (),
-    "Source": (),
+    "Source": (CONTENT_CENTER,),
     "Revision": (PURCHASED,),
     "Engineer": BOUGHT,
     "Engr Approved By": BOUGHT,
@@ -376,7 +376,7 @@ def test_content_center_parts_skip_the_sign_off_fields(rules):
     props = {p: "" for p in rules["categories"][CONTENT_CENTER]["properties"]}
     props.update({
         "File Name": "ISO 4762 M6x20.ipt", "Revision": "1", "State": "Released",
-        "Source": "Buy", "Material": "Steel", "Vendor": "McMASTER-CARR",
+        "Material": "Steel", "Vendor": "McMASTER-CARR",
         "Vendor Number": "91290A326", "Category Name": CONTENT_CENTER,
     })
     result = cfp.evaluate_against_rules(props, CONTENT_CENTER, rules)
@@ -384,6 +384,32 @@ def test_content_center_parts_skip_the_sign_off_fields(rules):
         (r["property"], r["failures"])
         for r in result["report"]["results"] if not r["passed"]
     ]
+
+
+@pytest.mark.parametrize("source", ["Buy", "N/A", "Make", ""])
+def test_content_center_accepts_any_source(rules, source):
+    """Library files inherit whatever Source the template carries.
+
+    In this vault that's a mix of 'N/A' (7), blank (5) and 'Buy' (2), so an
+    allowed_values list would fail most of them even with required:false.
+    """
+    props = {p: "placeholder" for p in rules["categories"][CONTENT_CENTER]["properties"]}
+    props["Source"] = source
+    result = cfp.evaluate_against_rules(props, CONTENT_CENTER, rules)
+    checked = next(r for r in result["report"]["results"]
+                   if r["property"] == "Source")
+    assert checked["passed"], f"Content Center rejected Source={source!r}"
+
+
+@pytest.mark.parametrize("category", ("Assembly - Engineering", "Part - Engineering"))
+def test_other_categories_still_constrain_source(rules, category):
+    """Ungating Content Center must not have loosened Source everywhere."""
+    props = {p: "placeholder" for p in rules["categories"][category]["properties"]}
+    props["Source"] = "N/A"
+    result = cfp.evaluate_against_rules(props, category, rules)
+    checked = next(r for r in result["report"]["results"]
+                   if r["property"] == "Source")
+    assert not checked["passed"], f"{category} should still require Source=Make"
 
 
 @pytest.mark.parametrize("category", BOUGHT)
