@@ -88,3 +88,96 @@ class ScanRow:
     @property
     def job_count(self) -> int:
         return bool(self.model_version_id) + bool(self.drawing_version_id)
+
+
+# ---------------------------------------------------------------------------
+# Stage 1: BOM -> publish rows
+# ---------------------------------------------------------------------------
+
+def _norm(value: Any) -> str:
+    if value is None:
+        return ""
+    try:
+        if value != value:            # NaN
+            return ""
+    except Exception:                 # noqa: BLE001
+        pass
+    return str(value).strip()
+
+
+def _find_column(columns, candidates) -> Optional[str]:
+    """First column whose lower-cased, stripped name is in ``candidates``."""
+    lower = {str(c).strip().lower(): c for c in columns}
+    for name in candidates:
+        if name in lower:
+            return lower[name]
+    return None
+
+
+def load_publish_rows(
+    bom_file_path: str,
+) -> tuple[list[PublishRow], Optional[str]]:
+    """Parse a BOM export into the unique CAD file stems to publish.
+
+    Returns ``(rows, error)``. ``error`` is None on success; on failure it is
+    a message meant to be shown to the user verbatim, and ``rows`` is empty.
+
+    Manufactured rows are kept: everything except ``Purchased`` and
+    ``Reference``. The raw ``BOM Structure`` column is read *before*
+    ``coerce_bom_dataframe`` runs, because that function maps ``Reference``
+    onto ``Make`` and the distinction cannot be recovered afterwards.
+    """
+    try:
+        raw = bom_purchasing.read_bom_file(bom_file_path)
+    except ValueError as exc:
+        return [], str(exc)
+    except Exception as exc:  # noqa: BLE001 — unreadable file, bad sheet, etc.
+        name = os.path.basename(bom_file_path)
+        return [], f"Could not read {name}: {exc}"
+
+    structure_col = _find_column(raw.columns, STRUCTURE_HEADERS)
+    structures = (
+        [_norm(v).lower() for v in raw[structure_col]]
+        if structure_col is not None else None
+    )
+
+    df, error = bom_purchasing.coerce_bom_dataframe(raw)
+    if error:
+        return [], error
+
+    file_col = _find_column(df.columns, bom_purchasing.FILE_NAME_HEADERS)
+    if file_col is None:
+        return [], MISSING_FILENAME_ERROR
+
+    rows: list[PublishRow] = []
+    seen: set[str] = set()
+
+    # coerce_bom_dataframe renames and reindexes but never drops rows, so
+    # positions still line up with the structures list read off the raw frame.
+    for pos, (_idx, rec) in enumerate(df.iterrows()):
+        if structures is not None:
+            if structures[pos] in NON_MAKE_STRUCTURES:
+                continue
+        elif _norm(rec.get("Source")).lower() != "make":
+            continue
+
+        stem = file_stem(rec.get(file_col))
+        if not stem:
+            # A Make row with no file name cannot be published. Log it rather
+            # than dropping it silently — a blank Filename cell is a BOM
+            # problem worth noticing.
+            logger.info(
+                "Skipping BOM row %s: no file name", _norm(rec.get("Row Order"))
+            )
+            continue
+        key = stem.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+
+        rows.append(PublishRow(
+            stem=stem,
+            description=_norm(rec.get("Description (Item,CO)")),
+        ))
+
+    return rows, None
