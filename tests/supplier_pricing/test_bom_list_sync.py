@@ -60,6 +60,47 @@ def bom():
     })
 
 
+class TestTitleFallsBackToTheFileName:
+    """A part with no Title in Vault should still get a readable Title in the
+    list — its file name without the extension."""
+
+    def _bom(self, tmp_path, rows: str):
+        p = tmp_path / "bom.csv"
+        p.write_text("Item,Part Number,QTY,BOM Structure,Title,Filename\n" + rows,
+                     encoding="utf-8")
+        df, err = bls.bom_dataframe_from_file(str(p))
+        assert err is None, err
+        return df
+
+    def test_blank_title_becomes_the_file_stem(self, tmp_path):
+        df = self._bom(tmp_path, "1,93501A112,8,Purchased,,Lock-Washers-M6-Steel.ipt\n")
+        assert df.loc[0, "Title (Item,CO)"] == "Lock-Washers-M6-Steel"
+
+    def test_an_existing_title_is_kept(self, tmp_path):
+        df = self._bom(tmp_path, "1,SF-001922,1,Normal,CD-001578,CD-001578.ipt\n")
+        assert df.loc[0, "Title (Item,CO)"] == "CD-001578"
+
+    def test_only_the_last_extension_is_stripped(self, tmp_path):
+        df = self._bom(tmp_path, "1,ISO 2338,7,Purchased,,ISO 2338 - 5 h8 x 16 v2.ipt\n")
+        assert df.loc[0, "Title (Item,CO)"] == "ISO 2338 - 5 h8 x 16 v2"
+
+    def test_no_title_and_no_file_name_stays_blank(self, tmp_path):
+        p = tmp_path / "bom.csv"
+        p.write_text("Item,Part Number,QTY,BOM Structure\n1,SF-1,2,Purchased\n",
+                     encoding="utf-8")
+        df, err = bls.bom_dataframe_from_file(str(p))
+        assert err is None
+        client = FakeClient()
+        bls.add_missing_bom_rows(client, df, dry_run=False)
+        assert "field_1" not in client.created[0]      # nothing invented
+
+    def test_the_fallback_title_reaches_the_list(self, tmp_path):
+        df = self._bom(tmp_path, "1,93501A112,8,Purchased,,Lock-Washers-M6-Steel.ipt\n")
+        client = FakeClient()
+        bls.add_missing_bom_rows(client, df, dry_run=False)
+        assert client.created[0]["field_1"] == "Lock-Washers-M6-Steel"
+
+
 class TestPlanMissing:
     def test_dry_run_finds_missing_and_writes_nothing(self):
         client = FakeClient()

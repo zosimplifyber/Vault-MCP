@@ -19,6 +19,7 @@ hard-coded except for the built-in ``Title`` key.
 """
 from __future__ import annotations
 
+import os
 from typing import Iterable
 
 from supplier_pricing.normalize import normalize_part_number
@@ -191,6 +192,16 @@ _RAW_EXTRA = {
     "Web Link": "Vendor Number",     # owner's mapping: Vendor Number <- Web Link
 }
 
+# Where the export records the CAD file name, in the spellings Inventor uses.
+_FILE_NAME_COLUMNS = ("Filename", "File Name", "File", "Document Name")
+
+
+def _file_stem(value) -> str:
+    """A file name without its extension ("CD-001578.ipt" -> "CD-001578")."""
+    if _is_blank(value):
+        return ""
+    return os.path.splitext(str(value).strip())[0].strip()
+
 
 def bom_dataframe_from_file(path: str):
     """Read + header-map a BOM file into the canonical DataFrame (reuses
@@ -207,4 +218,19 @@ def bom_dataframe_from_file(path: str):
     for src, dest in _RAW_EXTRA.items():
         if src in raw.columns:
             coerced[dest] = raw[src].values
+
+    # Parts whose Vault file carries no Title (every library fastener) would land
+    # in the list with a blank Title. Fall back to the file name without its
+    # extension, which is what a person would call the part anyway.
+    file_col = next((c for c in _FILE_NAME_COLUMNS if c in raw.columns), None)
+    if file_col is not None:
+        stems = raw[file_col].map(_file_stem)
+        if "Title (Item,CO)" not in coerced.columns:
+            coerced["Title (Item,CO)"] = stems.values
+        else:
+            # An all-empty Title column reads as float64; cast to object before
+            # writing strings into it.
+            titles = coerced["Title (Item,CO)"].astype(object)
+            keep = ~titles.map(_is_blank)
+            coerced["Title (Item,CO)"] = titles.where(keep, stems.values)
     return coerced, None
