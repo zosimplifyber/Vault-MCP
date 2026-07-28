@@ -1,0 +1,177 @@
+{
+  "_comment": "Property rules for Vault FILES (iProperties), keyed by the file's Category Name. Used by scripts/check_file_properties.py — type a file name (e.g. CD-001659.iam) and every rule below runs against that file's properties. Reloaded on every run, so edits take effect immediately.\n\nThis is the file-side twin of item_property_rules.json. The rule engine is shared (check_item_properties.evaluate_rule), so the schema is identical, but the property NAMES differ because files and items expose different properties:\n    item 'Number'                -> file 'File Name'\n    item 'Title (Item,CO)'       -> file 'Title'\n    item 'Description (Item,CO)' -> file 'Description (File)'\n    item 'Units'                 -> (no file equivalent; dropped)\n    (file-only)                  -> 'CAD Category', 'Material Finish'\n\nDescription rules follow the 'Vault PDM – Item Description' standard (rev A): lowercase keyword nouns only — no dimensions, no material, no ISO/DIN/standard numbers, no project/customer names. Standard numbers belong in the Title.\n\n'CAD Category' is gated per rule set with allowed_values matching the category itself, which enforces 'the CAD category agrees with the Vault category' without needing a cross-property rule type.\n\nALWAYS REQUIRED, in every category: State, Revision, Project, Designer, Engineer, Engr Approved By, Source — plus Vendor on every part and assembly. 'Engr Approved By' additionally forbids the value 'NOT REVIEWED' everywhere, because that string means the review has not happened. tests/test_check_file_properties.py locks all of this in, so dropping one of them from a category fails the suite rather than silently weakening the gate.\n\nEach property may declare any of: required (bool), allowed_values (list), forbidden_values (list), pattern (regex, fullmatch), forbidden_patterns (list of regex, re.search), min_length (int), max_length (int), description (str), required_unless ({property, matches_pattern}).",
+
+  "category_aliases": {
+    "Assembly-Engineering": "Assembly - Engineering",
+    "Engineering Assembly": "Assembly - Engineering",
+    "Part-Engineering": "Part - Engineering",
+    "Engineering Part": "Part - Engineering",
+    "Part-Purchased": "Part - Purchased",
+    "Purchased Part": "Part - Purchased",
+    "Drawing-Engineering": "Drawing - Engineering",
+    "Engineering Drawing": "Drawing - Engineering",
+    "Part-Content Center": "Part - Content Center",
+    "Content Center Part": "Part - Content Center"
+  },
+
+  "categories": {
+    "Assembly - Engineering": {
+      "description": "Inventor assemblies (.iam) designed in-house. Source = Make; sign-off + project required. Material lives on the child parts, not the assembly.",
+      "properties": {
+        "File Name":          { "required": true,  "min_length": 3 },
+        "Title": {
+          "required": true,
+          "min_length": 3,
+          "forbidden_patterns": ["(?i)^\\s*(CD|SF|MFG|DT)-\\d+\\s*$"],
+          "description": "A descriptive title — ISO / DIN / standard numbers are allowed here. A Title that only repeats the part number is not a title."
+        },
+        "Description (File)": {
+          "required": true,
+          "min_length": 5,
+          "pattern": "^[a-z][a-z \\-]*[a-z]$",
+          "forbidden_patterns": ["\\b(iso|din|astm|ansi|jis|sae|asme|nist|en|bs)\\b"],
+          "description": "Lowercase keyword nouns only per Vault PDM – Item Description standard. No dimensions, materials, standards, or project/customer names."
+        },
+        "Revision":           { "required": true,  "pattern": "[0-9]+" },
+        "State":              { "required": true,  "allowed_values": ["Released", "In Review", "Work in Progress"] },
+        "Source":             { "required": true,  "allowed_values": ["Make"] },
+        "Material":           { "required": false },
+        "Material Finish":    { "required": false },
+        "Vendor":             { "required": true,  "description": "Who supplies it. Required on every part and assembly." },
+        "Vendor Number":      { "required": false },
+        "Engineer":           { "required": true },
+        "Engr Approved By":   { "required": true,  "allowed_values": ["Zak O.", "Justin S.", "Mackenzie M.", "Alan Y.", "N/A"], "forbidden_values": ["NOT REVIEWED"], "description": "Must name an approver. 'NOT REVIEWED' is never acceptable — it means the review has not happened." },
+        "Designer":           { "required": true },
+        "Project":            { "required": true },
+        "Category Name":      { "required": true,  "allowed_values": ["Assembly - Engineering"] },
+        "CAD Category":       { "required": true,  "allowed_values": ["Assembly - Engineering"], "description": "The Inventor-side category must agree with the Vault category." }
+      }
+    },
+
+    "Part - Engineering": {
+      "description": "Inventor parts (.ipt) designed in-house. Source = Make; Material spelled out; sign-off + project required.",
+      "properties": {
+        "File Name":          { "required": true,  "min_length": 3 },
+        "Title": {
+          "required": true,
+          "min_length": 3,
+          "forbidden_patterns": ["(?i)^\\s*(CD|SF|MFG|DT)-\\d+\\s*$"],
+          "description": "A descriptive title — ISO / DIN / standard numbers are allowed here."
+        },
+        "Description (File)": {
+          "required": true,
+          "min_length": 5,
+          "pattern": "^[a-z][a-z \\-]*[a-z]$",
+          "forbidden_patterns": ["\\b(iso|din|astm|ansi|jis|sae|asme|nist|en|bs)\\b"],
+          "description": "Lowercase keyword nouns only per Vault PDM – Item Description standard."
+        },
+        "Revision":           { "required": true,  "pattern": "[0-9]+" },
+        "State":              { "required": true,  "allowed_values": ["Released", "In Review", "Work in Progress"] },
+        "Source":             { "required": true,  "allowed_values": ["Make"] },
+        "Material": {
+          "required": true,
+          "min_length": 4,
+          "forbidden_patterns": [
+            "(?i)\\b(ss|sst|sus)\\b",
+            "(?i)\\b(al|alu|alum)\\b",
+            "(?i)\\b(cs|crs|hrs|ms|gi|galv)\\b",
+            "(?i)\\b(stl|stnls|alm)\\b",
+            "(?i)\\b(pc|pe|pp|abs|pvc|ptfe|hdpe|ldpe|pom|pmma|peek)\\b",
+            "(?i)\\b(qty|asm|asy|mfg|mtl|mat|matl|approx|spec)\\b"
+          ],
+          "description": "Spell out the material — no abbreviations. Use 'Stainless Steel 304' not 'SS304', 'Aluminum 6061-T6' not 'AL6061', 'Polycarbonate' not 'PC'. Grade designators (304, 6061-T6, etc.) are fine; the leading material noun must be a full word."
+        },
+        "Material Finish":    { "required": false },
+        "Vendor":             { "required": true,  "description": "Who supplies it — the outside shop for machined parts, the stock supplier otherwise. Required on every part." },
+        "Vendor Number":      { "required": false },
+        "Engineer":           { "required": true },
+        "Engr Approved By":   { "required": true,  "allowed_values": ["Zak O.", "Justin S.", "Mackenzie M.", "Alan Y.", "N/A"], "forbidden_values": ["NOT REVIEWED"], "description": "Must name an approver. 'NOT REVIEWED' is never acceptable — it means the review has not happened." },
+        "Designer":           { "required": true },
+        "Project":            { "required": true },
+        "Category Name":      { "required": true,  "allowed_values": ["Part - Engineering"] },
+        "CAD Category":       { "required": true,  "allowed_values": ["Part - Engineering"], "description": "The Inventor-side category must agree with the Vault category." }
+      }
+    },
+
+    "Part - Purchased": {
+      "description": "Bought parts modelled or downloaded as .ipt. Source = Buy; Vendor + Vendor Number required unless the Title names a published standard (ISO/DIN/etc.).",
+      "properties": {
+        "File Name":          { "required": true,  "min_length": 3 },
+        "Title": {
+          "required": true,
+          "min_length": 3,
+          "forbidden_patterns": ["(?i)^\\s*(CD|SF|MFG|DT)-\\d+\\s*$"],
+          "description": "ISO / DIN / standard numbers are allowed here (e.g. 'ISO 4762 M6x20')."
+        },
+        "Description (File)": {
+          "required": true,
+          "min_length": 5,
+          "pattern": "^[a-z][a-z \\-]*[a-z]$",
+          "forbidden_patterns": ["\\b(iso|din|astm|ansi|jis|sae|asme|nist|en|bs)\\b"],
+          "description": "Lowercase keyword nouns only per Vault PDM – Item Description standard."
+        },
+        "Revision":           { "required": true,  "pattern": "[0-9]+" },
+        "State":              { "required": true,  "allowed_values": ["Released", "In Review", "Work in Progress"] },
+        "Source":             { "required": true,  "allowed_values": ["Buy"] },
+        "Material":           { "required": false },
+        "Material Finish":    { "required": false },
+        "Vendor":             { "required": true,  "description": "Who you buy it from. Required on every part — a published standard still has a supplier." },
+        "Vendor Number":      { "required": true,  "required_unless": { "property": "Title", "matches_pattern": "(?i)^\\s*(ISO|DIN|ANSI|ASME|JIS|SAE|EN|BS|ASTM|NIST)\\b" }, "description": "The supplier's own part number. Exempt when the Title names a published standard — a generic ISO screw has no single supplier SKU." },
+        "Engineer":           { "required": true },
+        "Engr Approved By":   { "required": true,  "allowed_values": ["Zak O.", "Justin S.", "Mackenzie M.", "Alan Y.", "N/A"], "forbidden_values": ["NOT REVIEWED"], "description": "Must name an approver. 'NOT REVIEWED' is never acceptable — it means the review has not happened." },
+        "Designer":           { "required": true },
+        "Project":            { "required": true },
+        "Category Name":      { "required": true,  "allowed_values": ["Part - Purchased"] },
+        "CAD Category":       { "required": true,  "allowed_values": ["Part - Purchased"], "description": "The Inventor-side category must agree with the Vault category." }
+      }
+    },
+
+    "Drawing - Engineering": {
+      "description": "Inventor drawings (.idw / .dwg). No Material or Source of their own — they inherit from the model they document. Sign-off + project required so released prints are attributable.",
+      "properties": {
+        "File Name":          { "required": true,  "min_length": 3 },
+        "Description (File)": {
+          "required": true,
+          "min_length": 5,
+          "pattern": "^[a-z][a-z \\-]*[a-z]$",
+          "forbidden_patterns": ["\\b(iso|din|astm|ansi|jis|sae|asme|nist|en|bs)\\b"],
+          "description": "Lowercase keyword nouns only per Vault PDM – Item Description standard."
+        },
+        "Revision":           { "required": true,  "pattern": "[0-9]+" },
+        "State":              { "required": true,  "allowed_values": ["Released", "In Review", "Work in Progress"] },
+        "Source":             { "required": true,  "allowed_values": ["Make"] },
+        "Engineer":           { "required": true },
+        "Engr Approved By":   { "required": true,  "allowed_values": ["Zak O.", "Justin S.", "Mackenzie M.", "Alan Y.", "N/A"], "forbidden_values": ["NOT REVIEWED"], "description": "Must name an approver. 'NOT REVIEWED' is never acceptable — it means the review has not happened." },
+        "Designer":           { "required": true },
+        "Project":            { "required": true },
+        "Category Name":      { "required": true,  "allowed_values": ["Drawing - Engineering"] },
+        "CAD Category":       { "required": true,  "allowed_values": ["Drawing - Engineering"], "description": "The Inventor-side category must agree with the Vault category." }
+      }
+    },
+
+    "Part - Content Center": {
+      "description": "Inventor Content Center parts — library fasteners and standard hardware. Identity + supplier tracked; in-house sign-off fields are not expected.",
+      "properties": {
+        "File Name":          { "required": true,  "min_length": 3 },
+        "Description (File)": { "required": true,  "min_length": 3 },
+        "Revision":           { "required": true,  "pattern": "[0-9]+" },
+        "State":              { "required": true,  "allowed_values": ["Released", "In Review", "Work in Progress"] },
+        "Source":             { "required": true,  "allowed_values": ["Buy"] },
+        "Material":           { "required": true,  "min_length": 3 },
+        "Material Finish":    { "required": false },
+        "Vendor":             { "required": true,  "description": "Who you buy it from. Required on every part — a library standard still has a supplier." },
+        "Vendor Number":      { "required": true,  "required_unless": { "property": "Description (File)", "matches_pattern": "(?i)\\b(ISO|DIN|ANSI|ASME|JIS|SAE|BS|ASTM|NIST)\\b" }, "description": "The supplier's own part number. Exempt when the description names a published standard." },
+        "Engineer":           { "required": true },
+        "Engr Approved By":   { "required": true,  "allowed_values": ["Zak O.", "Justin S.", "Mackenzie M.", "Alan Y.", "N/A"], "forbidden_values": ["NOT REVIEWED"], "description": "Must name an approver. 'NOT REVIEWED' is never acceptable — it means the review has not happened." },
+        "Designer":           { "required": true },
+        "Project":            { "required": true },
+        "Category Name":      { "required": true,  "allowed_values": ["Part - Content Center"] }
+      }
+    }
+  },
+
+  "_unchecked_categories": {
+    "_comment": "Categories deliberately left without a rule set. Files in these categories report SKIP (no rule set) rather than a misleading PASS. Add a block under `categories` above to start gating one.",
+    "categories": ["Documents", "Design Representation", "Unclassified", "DT Data", "Folder"]
+  }
+}

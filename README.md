@@ -131,6 +131,23 @@ python app.py --workflow --part-number SF-001717   # skip launcher, open Release
 python app.py --config path/to/my_config.json      # custom config path
 ```
 
+### Property Check
+
+Type a Vault file name and get back every property that is out of compliance. Open it from the launcher dashboard, or run it directly:
+
+```bash
+python scripts/check_file_properties.py CD-001659.iam              # one file
+python scripts/check_file_properties.py CD-001659.iam --recursive  # + every child in the CAD BOM
+python scripts/check_file_properties.py CD-001659.iam --markdown   # Markdown report
+python scripts/check_file_properties.py                            # no argument → GUI
+```
+
+Exit codes: `0` everything passed, `1` at least one failure, `2` no rule set matched the file's category.
+
+Rules live in [`file_property_rules.json`](file_property_rules.json), keyed by the file's Category Name, and are re-read on every run — edit and re-check, no restart. Every category requires **State, Revision, Project, Designer, Engineer, Engr Approved By, Source**, plus **Vendor** on every part and assembly; `Engr Approved By` rejects `NOT REVIEWED` everywhere. A category with no rule set reports SKIP rather than a misleading pass.
+
+Note this checks **files** (iProperties). The item-side equivalent, `scripts/check_item_properties.py`, still backs the Release Workflow's readiness report and uses `item_property_rules.json`.
+
 ## Connecting MCP clients
 
 All clients connect to the same SSE endpoint exposed by the running launcher: `http://127.0.0.1:8765/sse`. The launcher must be running first.
@@ -331,7 +348,8 @@ Vault-MCP/
 ├── bom_purchasing.py           # Purchasing-sheet generation engine
 ├── mfg_package.py              # Manufacturing-order package builder engine (PDF + STEP + Excel BOM)
 ├── pdf_watermark.py            # PDF watermark helper (RELEASED / FOR REVIEW overlays)
-├── item_property_rules.json    # Property-compliance rules used by readiness reports
+├── file_property_rules.json    # Property-compliance rules for FILES (used by Property Check)
+├── item_property_rules.json    # Property-compliance rules for ITEMS (used by readiness reports)
 ├── config.json.example         # Template (committed) — copy to config.json
 ├── config.json                 # Live credentials (gitignored)
 ├── requirements.txt
@@ -342,13 +360,15 @@ Vault-MCP/
 │   ├── launcher.py             # Vault Integration launcher dashboard
 │   ├── release_workflow.py     # Release Workflow wizard (compliance → sync → release)
 │   ├── purchasing.py           # Purchasing-sheet GUI
+│   ├── file_property_check.py  # Property Check GUI (file name → compliance report)
 │   └── mfg_package.py          # Manufacturing Package builder GUI
 │
 └── scripts/                    # Helpers and CLI tools used by the GUIs / for one-offs
     ├── vault_sdk.py            # Python wrapper around the Vault .NET SDK (via PowerShell bridge)
     ├── vault_sdk.ps1           # PowerShell .NET SDK bridge (sign-in, lifecycle, property writes)
     ├── vault_soap.py           # Direct legacy SOAP client (used by some workflow steps)
-    ├── check_item_properties.py # Property-compliance checker (per part-number)
+    ├── check_file_properties.py # Property Check — file name in, compliance report out
+    ├── check_item_properties.py # Item-side compliance engine (backs the readiness report)
     ├── inventor_automation.py  # Inventor COM automation (open + rebuild + save)
     ├── release_workflow.py     # CLI release workflow (also reachable via ``--gui`` / ``--workflow``)
     └── probes/                 # One-off diagnostic / probe scripts (not part of the server)

@@ -36,9 +36,16 @@ is why file properties have never come back. Verified against
 `CD-001659.iam`: `propDefIds=<csv>` returns 0 properties, `option[propDefIds]=all`
 returns 74.
 
-Properties arrive as `[{propertyDefinitionId, value}]` with no names, so
-resolving them needs a second call to `/property-definitions` to build an
-`id → displayName` map.
+Properties arrive as `[{propertyDefinitionId, value}]` with no names — but the
+same response embeds an `included.propertyDefinition` map naming every property
+it returned, so a single request yields both the values and their display
+names. `/property-definitions` is only needed as a fallback when that block is
+absent.
+
+The same applies to `/file-versions/{id}/uses`: passing the selector enriches
+the parent **and every child** in one call, so walking a CAD BOM costs one
+request regardless of child count (unlike the item-side BOM walk, which
+hydrates per child).
 
 ### Ground truth — `CD-001659.iam`
 
@@ -67,9 +74,10 @@ file tool imports its rule engine rather than duplicating it.
 
 | File | Change |
 |---|---|
-| `scripts/check_file_properties.py` | **New.** File-name in, compliance report out. CLI + GUI. |
+| `scripts/check_file_properties.py` | **New.** File-name in, compliance report out. Fetch + rules + CLI. |
+| `gui/file_property_check.py` | **New.** The GUI, styled from the shared brand palette. |
 | `file_property_rules.json` | **New.** Rule sets keyed by file Category Name. |
-| `vault_rest_api.py` | **New method** `search_file_versions()`. Existing methods untouched. |
+| `vault_rest_api.py` | **New method** `search_file_versions()`; `get_file_uses()` gains a `prop_def_ids` passthrough. Existing behavior unchanged. |
 | `gui/launcher.py` | Property Check row re-points at the new tool; `broken=True` removed. |
 | `tests/test_check_file_properties.py` | **New.** Unit tests over a recorded fixture. |
 | `scripts/check_item_properties.py` | **Untouched.** |
@@ -146,23 +154,39 @@ engineering parts carry `Engr Approved By = NOT REVIEWED`. That drift is the
 thing worth surfacing. The rules are JSON and reloaded every run, so they are
 tunable without a code change.
 
+**Always required, every category:** `State`, `Revision`, `Project`,
+`Designer`, `Engineer`, `Engr Approved By`, `Source` — the Vault grid columns
+that must never be blank. `Engr Approved By` additionally forbids the literal
+`NOT REVIEWED` in every category, since that string means the review has not
+happened. `Vendor` is required on every part and assembly with no exemption;
+`Vendor Number` keeps its published-standard exemption, because a generic ISO
+screw has a supplier but no single supplier SKU.
+
+The test suite parametrises over every category and asserts each of these,
+so dropping one from a rule set fails the build rather than silently weakening
+the gate.
+
 **One judgment call:** `Title` gets a `forbidden_patterns` entry rejecting a
 value that is only the part number (`^(CD|SF|MFG|DT)-\d+$`). Mirroring the
 standard means a Title repeating the file number is not a title. One line to
 delete if unwanted.
 
-### Expected output for `CD-001659.iam`
+### Actual output for `CD-001659.iam`
 
 ```
-Assembly - Engineering                              9/12 passed
+Assembly - Engineering                            13/16 properties passed
 
 [FAIL]  Title              CD-001659
-        > contains forbidden pattern — Title is just the file number
+        > contains forbidden pattern /(?i)^\s*(CD|SF|MFG|DT)-\d+\s*$/
 [FAIL]  Description (File) bmw kft90 hot a adapter plate assembly
         > does not match pattern /^[a-z][a-z \-]*[a-z]$/
 [FAIL]  CAD Category       (empty)
         > missing (required)
 ```
+
+With `--recursive`, all three CAD BOM children fail too — two are categorised
+`Part - Engineering` but carry `Source = Buy`, and `CD-001624.ipt` has a blank
+`Vendor` and `Engr Approved By = NOT REVIEWED`.
 
 ### Surface
 
@@ -201,16 +225,26 @@ suite, replacing the old tool's dark-terminal look.
 probe of `CD-001659.iam` (`tests/fixtures/`) — no network in the test suite:
 
 - `flatten_file_properties` resolves ids to display names, merges system
-  fields, and prefers populated values over empty ones.
-- File-name resolution: exact match wins over a prefix match; ambiguity sets
-  `note`; no match raises.
+  fields, prefers populated values over empty ones, keeps historical twins from
+  shadowing live values, and skips values whose definition did not come back
+  rather than inventing a key for them.
+- File-name resolution: exact match wins over a prefix match, ignores case,
+  sets `note` on ambiguity, raises on no match.
 - Rules applied to the recorded fixture produce exactly the three expected
-  failures (`Title`, `Description (File)`, `CAD Category`) and nine passes.
-- Every category in `file_property_rules.json` parses and its rules are
-  well-formed (regexes compile).
-- Unknown category → SKIP, not a pass.
+  failures (`Title`, `Description (File)`, `CAD Category`).
+- Parametrised over every category: each of the seven always-required columns
+  is required and is actually reported when blank; `Engr Approved By` rejects
+  `NOT REVIEWED`; every part category requires `Vendor` with no exemption.
+- Every category in `file_property_rules.json` parses, its regexes compile, and
+  each `required_unless` names a property the same rule set checks.
+- No rule set uses item-only property names (guards against copy-paste drift).
+- CAD BOM children arrive enriched and are deduplicated by file version; a
+  failed walk raises with the Vault message.
+- Exit codes: 0 / 1 (file or child failure) / 2 (no rule set); a SKIP child is
+  not a failure.
+- The GUI builds headless and renders a fixture-derived report.
 
-Plus a live smoke run of the CLI against `CD-001659.iam` before completion.
+Plus a live run of the CLI against `CD-001659.iam` before completion.
 
 ## Out of scope
 

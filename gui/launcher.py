@@ -6,7 +6,7 @@ This is what `app.py --gui` opens. From here the user can:
   * see the live Vault connection status (server / database / user / vault id)
   * see the MCP server status and start/stop it (SSE on the configured port)
   * launch the Release Workflow wizard with the live session pre-attached
-  * launch the standalone Property Check GUI (the original lookup tool)
+  * launch Property Check — file-name-driven property compliance
   * open the Log folder where readiness reports get saved
 
 Same Simplifyber palette as the workflow wizard. The dashboard owns the Tk
@@ -616,13 +616,13 @@ class LauncherGUI:
         )
         self._tool_row(
             body,
-            "Property Check (Lookup)",
-            "Quick standalone tool for checking a single item's properties "
-            "against the rules without running the full release workflow.",
-            "Open Lookup",
+            "Property Check",
+            "Type a file name (e.g. CD-001659.iam) to pull its properties "
+            "from Vault and flag anything out of compliance. Optionally "
+            "checks every child file in the CAD BOM too.",
+            "Open Property Check",
             self._on_open_property_check,
             primary=False,
-            broken=True,
         )
         self._tool_row(
             body,
@@ -635,8 +635,8 @@ class LauncherGUI:
         self._tool_row(
             body,
             "Edit Property Rules",
-            "Open item_property_rules.json in your default editor to tune "
-            "what gets enforced per category.",
+            "Open file_property_rules.json in your default editor to tune "
+            "what Property Check enforces per category.",
             "Edit Rules",
             self._on_edit_rules,
             primary=False,
@@ -1009,18 +1009,17 @@ class LauncherGUI:
         self.status_var.set("Launching MFG Package Builder…")
 
     def _on_open_property_check(self) -> None:
-        # The original tool sits in check_item_properties.py — it has its own
-        # GUI (a single-item lookup). It signs in lazily; runs in its own
-        # window. We launch it on a worker thread because run_gui calls
-        # mainloop internally — we don't want to block the launcher.
-        def worker() -> None:
-            try:
-                from check_item_properties import run_gui as run_lookup_gui
-                run_lookup_gui()
-            except Exception as exc:  # noqa: BLE001
-                self.q.put(("status", f"Property Check failed: {exc}"))
-
-        threading.Thread(target=worker, daemon=True).start()
+        # File-based property compliance check (gui/file_property_check.py).
+        # Opens as a Toplevel child so it shares our event loop; it signs in to
+        # Vault lazily on its own worker thread.
+        try:
+            from gui.file_property_check import run_gui as run_property_check
+        except ImportError as exc:
+            messagebox.showerror(
+                "Property Check unavailable", str(exc), parent=self.root,
+            )
+            return
+        run_property_check(parent=self.root)
         self.status_var.set("Launching Property Check…")
 
     def _on_open_logs(self) -> None:
@@ -1040,7 +1039,9 @@ class LauncherGUI:
             )
 
     def _on_edit_rules(self) -> None:
-        rules_path = PROJECT_ROOT / "item_property_rules.json"
+        # The rules Property Check runs. item_property_rules.json still backs
+        # the release workflow's item-side gate and is edited directly.
+        rules_path = PROJECT_ROOT / "file_property_rules.json"
         if not rules_path.exists():
             messagebox.showerror(
                 "Rules file missing",

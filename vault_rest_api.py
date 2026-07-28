@@ -426,12 +426,22 @@ class VaultRestAPI:
         vault_id: str,
         file_version_id: str,
         *,
+        prop_def_ids: Optional[str] = None,
         limit: int = 200,
         cursor_state: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """GET /vaults/{vaultId}/file-versions/{id}/uses — child file associations (CAD BOM)."""
+        """GET /vaults/{vaultId}/file-versions/{id}/uses — child file associations (CAD BOM).
+
+        Rows come back as ``{parentFile, childFile, fileAssocType}``. Passing
+        ``prop_def_ids`` (``"all"`` or a comma-separated list) enriches both the
+        parent and every child with their properties in this single call — no
+        per-child hydration needed. As with ``search_file_versions``, the
+        selector must be spelled ``option[propDefIds]``.
+        """
         resolved = vault_id or self._vault_id or ""
         params: Dict[str, Any] = {"limit": limit}
+        if prop_def_ids:
+            params["option[propDefIds]"] = prop_def_ids
         if cursor_state:
             params["cursorState"] = cursor_state
         return await self._request(
@@ -536,6 +546,53 @@ class VaultRestAPI:
             params["cursorState"] = cursor_state
         return await self._request(
             "GET", f"/vaults/{resolved}/search-results", params=params
+        )
+
+    async def search_file_versions(
+        self,
+        vault_id: str,
+        query: str = "",
+        *,
+        prop_def_ids: str = "all",
+        latest_only: bool = True,
+        released_files_only: bool = False,
+        category_name: Optional[str] = None,
+        sort: Optional[str] = None,
+        limit: int = 100,
+        cursor_state: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """GET /vaults/{vaultId}/file-versions — file search that returns properties.
+
+        Unlike ``search_files`` / ``get_folder_contents``, this passes the
+        property selector as ``option[propDefIds]``, which is the spelling the
+        file endpoints actually honour (items use a bare ``propDefIds`` — see
+        ``search_items``). With the wrong spelling Vault returns 200 and simply
+        omits the properties, so file UDPs silently never arrive.
+
+        ``prop_def_ids`` accepts a comma-separated list of IDs or the literal
+        ``"all"`` (the default). Responses carry properties as
+        ``[{propertyDefinitionId, value}]`` plus an ``included.propertyDefinition``
+        map that names them, so no separate ``/property-definitions`` call is
+        needed to resolve display names.
+        """
+        resolved = vault_id or self._vault_id or ""
+        params: Dict[str, Any] = {
+            "limit": limit,
+            "option[latestOnly]": str(latest_only).lower(),
+            "option[releasedFilesOnly]": str(released_files_only).lower(),
+        }
+        if query:
+            params["q"] = query
+        if prop_def_ids:
+            params["option[propDefIds]"] = prop_def_ids
+        if category_name:
+            params["filter[CategoryName]"] = category_name
+        if sort:
+            params["sort"] = sort
+        if cursor_state:
+            params["cursorState"] = cursor_state
+        return await self._request(
+            "GET", f"/vaults/{resolved}/file-versions", params=params
         )
 
     async def advanced_search(

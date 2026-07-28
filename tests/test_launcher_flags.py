@@ -28,7 +28,7 @@ def _make_gui():
 def test_item_master_tools_are_flagged_broken():
     root, gui = _make_gui()
     try:
-        for title in ("Release Workflow", "MFG Order Package", "Property Check (Lookup)"):
+        for title in ("Release Workflow", "MFG Order Package"):
             btn = gui.tool_buttons[title]
             assert str(btn["state"]) == "disabled", f"{title} should be disabled"
     finally:
@@ -39,6 +39,19 @@ def test_working_tools_stay_enabled():
     root, gui = _make_gui()
     try:
         btn = gui.tool_buttons["BOM → Purchasing Sheet"]
+        assert str(btn["state"]) != "disabled"
+    finally:
+        root.destroy()
+
+
+def test_property_check_is_no_longer_flagged_broken():
+    """Property Check was rewritten onto files, so it is off the broken list."""
+    root, gui = _make_gui()
+    try:
+        assert "Property Check (Lookup)" not in gui.tool_buttons, (
+            "the old item-based Property Check row should be gone"
+        )
+        btn = gui.tool_buttons["Property Check"]
         assert str(btn["state"]) != "disabled"
     finally:
         root.destroy()

@@ -1,0 +1,1053 @@
+{
+  "pagination": {
+    "limit": 5,
+    "totalResults": 1,
+    "indexingStatus": "IndexingComplete"
+  },
+  "results": [
+    {
+      "name": "CD-001659.iam",
+      "id": "124814",
+      "state": "Released",
+      "stateColor": -9920812,
+      "revision": "4",
+      "category": "Assembly - Engineering",
+      "categoryColor": -4173747,
+      "lastModifiedDate": "2026-07-28T21:47:41.223Z",
+      "isCheckedOut": false,
+      "hasVisualizationAttachment": true,
+      "size": 520704,
+      "isCloaked": false,
+      "checkinDate": "2026-07-28T21:47:48.49Z",
+      "checkoutDate": "2026-07-28T21:47:48.383Z",
+      "isHidden": false,
+      "isReadOnly": true,
+      "parentFolderId": "56090",
+      "file": {
+        "id": "123720",
+        "entityType": "File",
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/files/123720"
+      },
+      "lifecycleState": {
+        "id": "7",
+        "lifecycleDefinition": {
+          "id": "2",
+          "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/lifecycle-definitions/2"
+        },
+        "name": "Released",
+        "displayName": "Released",
+        "description": "State for controlling access and modifications",
+        "comments": [
+          "Released to manufacturing"
+        ],
+        "isDefault": false,
+        "color": -9920812,
+        "isReleasedState": true,
+        "isObsoleteState": false,
+        "displayOrder": 2,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/lifecycle-states/7"
+      },
+      "isOnSite": true,
+      "createDate": "2026-07-28T21:47:48.49Z",
+      "createUserName": "ZOlech",
+      "properties": [
+        {
+          "propertyDefinitionId": "31",
+          "value": false
+        },
+        {
+          "propertyDefinitionId": "6",
+          "value": "2026-07-28T21:47:48.49Z"
+        },
+        {
+          "propertyDefinitionId": "70",
+          "value": false
+        },
+        {
+          "propertyDefinitionId": "136",
+          "value": "None"
+        },
+        {
+          "propertyDefinitionId": "135",
+          "value": "None"
+        },
+        {
+          "propertyDefinitionId": "105",
+          "value": false
+        },
+        {
+          "propertyDefinitionId": "106",
+          "value": false
+        },
+        {
+          "propertyDefinitionId": "104",
+          "value": true
+        },
+        {
+          "propertyDefinitionId": "7",
+          "value": "ZOlech"
+        },
+        {
+          "propertyDefinitionId": "32",
+          "value": true
+        },
+        {
+          "propertyDefinitionId": "3",
+          "value": 21.0
+        },
+        {
+          "propertyDefinitionId": "4",
+          "value": "Released to manufacturing"
+        },
+        {
+          "propertyDefinitionId": "5",
+          "value": 0.0
+        },
+        {
+          "propertyDefinitionId": "10",
+          "value": "CD-001659.iam"
+        },
+        {
+          "propertyDefinitionId": "27",
+          "value": "CD-001659.iam"
+        },
+        {
+          "propertyDefinitionId": "9",
+          "value": "2026-07-28T21:47:48.49Z"
+        },
+        {
+          "propertyDefinitionId": "11",
+          "value": "CD-001659.iam"
+        },
+        {
+          "propertyDefinitionId": "12",
+          "value": "2026-07-28T21:47:41.223Z"
+        },
+        {
+          "propertyDefinitionId": "17",
+          "value": "2026-07-28T21:47:48.383Z"
+        },
+        {
+          "propertyDefinitionId": "13",
+          "value": 520704.0
+        },
+        {
+          "propertyDefinitionId": "30",
+          "value": "iam"
+        },
+        {
+          "propertyDefinitionId": "61",
+          "value": "User"
+        },
+        {
+          "propertyDefinitionId": "57",
+          "value": false
+        },
+        {
+          "propertyDefinitionId": "58",
+          "value": true
+        },
+        {
+          "propertyDefinitionId": "26",
+          "value": "$/DESIGNS/PRODUCTION EQUIPMENT"
+        },
+        {
+          "propertyDefinitionId": "71",
+          "value": "Assembly - Engineering"
+        },
+        {
+          "propertyDefinitionId": "73",
+          "value": -4173747.0
+        },
+        {
+          "propertyDefinitionId": "75",
+          "value": "Flexible Release Process"
+        },
+        {
+          "propertyDefinitionId": "77",
+          "value": "Released"
+        },
+        {
+          "propertyDefinitionId": "79",
+          "value": -9920812.0
+        },
+        {
+          "propertyDefinitionId": "81",
+          "value": "Numeric W/ 0"
+        },
+        {
+          "propertyDefinitionId": "80",
+          "value": -9920812.0
+        },
+        {
+          "propertyDefinitionId": "68",
+          "value": "2026-07-28T21:47:48.49Z"
+        },
+        {
+          "propertyDefinitionId": "69",
+          "value": "ZOlech"
+        },
+        {
+          "propertyDefinitionId": "66",
+          "value": "2026-07-28T19:37:59.013Z"
+        },
+        {
+          "propertyDefinitionId": "67",
+          "value": "AYeh"
+        },
+        {
+          "propertyDefinitionId": "64",
+          "value": true
+        },
+        {
+          "propertyDefinitionId": "65",
+          "value": true
+        },
+        {
+          "propertyDefinitionId": "62",
+          "value": 0.0
+        },
+        {
+          "propertyDefinitionId": "63",
+          "value": 0.0
+        },
+        {
+          "propertyDefinitionId": "24",
+          "value": "Inventor"
+        },
+        {
+          "propertyDefinitionId": "21",
+          "value": "AYeh"
+        },
+        {
+          "propertyDefinitionId": "22",
+          "value": "2026-07-27T13:47:58.28Z"
+        },
+        {
+          "propertyDefinitionId": "59",
+          "value": false
+        },
+        {
+          "propertyDefinitionId": "2",
+          "value": "None"
+        },
+        {
+          "propertyDefinitionId": "19",
+          "value": false
+        },
+        {
+          "propertyDefinitionId": "20",
+          "value": true
+        },
+        {
+          "propertyDefinitionId": "33",
+          "value": false
+        },
+        {
+          "propertyDefinitionId": "34",
+          "value": false
+        },
+        {
+          "propertyDefinitionId": "35",
+          "value": false
+        },
+        {
+          "propertyDefinitionId": "36",
+          "value": "AYeh"
+        },
+        {
+          "propertyDefinitionId": "41",
+          "value": "CD-001659"
+        },
+        {
+          "propertyDefinitionId": "49",
+          "value": "bmw kft90 hot a adapter plate assembly"
+        },
+        {
+          "propertyDefinitionId": "55",
+          "value": "2026.3 (Build 303398000, 398)"
+        },
+        {
+          "propertyDefinitionId": "72",
+          "value": "Assembly - Engineering"
+        },
+        {
+          "propertyDefinitionId": "74",
+          "value": -4173747.0
+        },
+        {
+          "propertyDefinitionId": "76",
+          "value": "Flexible Release Process"
+        },
+        {
+          "propertyDefinitionId": "78",
+          "value": "Released"
+        },
+        {
+          "propertyDefinitionId": "82",
+          "value": "Numeric W/ 0"
+        },
+        {
+          "propertyDefinitionId": "83",
+          "value": "4"
+        },
+        {
+          "propertyDefinitionId": "107",
+          "value": "Alan Y."
+        },
+        {
+          "propertyDefinitionId": "108",
+          "value": "Alan Y."
+        },
+        {
+          "propertyDefinitionId": "109",
+          "value": "Zak O."
+        },
+        {
+          "propertyDefinitionId": "112",
+          "value": "BMW"
+        },
+        {
+          "propertyDefinitionId": "120",
+          "value": "Yaodi"
+        },
+        {
+          "propertyDefinitionId": "125",
+          "value": "Make"
+        },
+        {
+          "propertyDefinitionId": "134",
+          "value": "As Finished"
+        },
+        {
+          "propertyDefinitionId": "37",
+          "value": ""
+        },
+        {
+          "propertyDefinitionId": "140",
+          "value": ""
+        },
+        {
+          "propertyDefinitionId": "15",
+          "value": ""
+        },
+        {
+          "propertyDefinitionId": "16",
+          "value": ""
+        },
+        {
+          "propertyDefinitionId": "18",
+          "value": ""
+        },
+        {
+          "propertyDefinitionId": "25",
+          "value": ""
+        },
+        {
+          "propertyDefinitionId": "60",
+          "value": ""
+        }
+      ],
+      "classification": "None",
+      "visualizationAttachmentStatus": "NotSyncronized",
+      "version": 21,
+      "entityType": "FileVersion",
+      "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/file-versions/124814"
+    }
+  ],
+  "included": {
+    "folder": {
+      "56090": {
+        "name": "PRODUCTION EQUIPMENT",
+        "id": "56090",
+        "fullName": "$/DESIGNS/PRODUCTION EQUIPMENT",
+        "category": "Folder",
+        "categoryColor": -2302756,
+        "stateColor": 0,
+        "subfolderCount": 10,
+        "isLibrary": false,
+        "isCloaked": false,
+        "isReadOnly": false,
+        "createDate": "2024-08-15T11:38:00.677Z",
+        "createUserName": "ZOlech",
+        "entityType": "Folder",
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/folders/56090"
+      }
+    },
+    "propertyDefinition": {
+      "31": {
+        "id": "31",
+        "displayName": "Has Drawing",
+        "systemName": "HasDrawing",
+        "dataType": "Bool",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/31"
+      },
+      "6": {
+        "id": "6",
+        "displayName": "Date Version Created",
+        "systemName": "DateVersionCreated",
+        "dataType": "DateTime",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/6"
+      },
+      "70": {
+        "id": "70",
+        "displayName": "Obsolete",
+        "systemName": "Obsolete",
+        "dataType": "Bool",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/70"
+      },
+      "136": {
+        "id": "136",
+        "displayName": "Archive Status (Historical)",
+        "systemName": "ArchiveStatus(Ver)",
+        "dataType": "String",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/136"
+      },
+      "135": {
+        "id": "135",
+        "displayName": "Archive Status",
+        "systemName": "ArchiveStatus",
+        "dataType": "String",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/135"
+      },
+      "105": {
+        "id": "105",
+        "displayName": "Has Markup",
+        "systemName": "HasMarkup",
+        "dataType": "Bool",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/105"
+      },
+      "106": {
+        "id": "106",
+        "displayName": "Has Markup (Historical)",
+        "systemName": "HasMarkup(Ver)",
+        "dataType": "Bool",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/106"
+      },
+      "104": {
+        "id": "104",
+        "displayName": "File Replicated",
+        "systemName": "FileReplicated",
+        "dataType": "Bool",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/104"
+      },
+      "7": {
+        "id": "7",
+        "displayName": "Created By",
+        "systemName": "CreateUserName",
+        "dataType": "String",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/7"
+      },
+      "32": {
+        "id": "32",
+        "displayName": "Has Parent Relationship",
+        "systemName": "HasParentRelationship",
+        "dataType": "Bool",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/32"
+      },
+      "3": {
+        "id": "3",
+        "displayName": "Version",
+        "systemName": "VersionNumber",
+        "dataType": "Numeric",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/3"
+      },
+      "4": {
+        "id": "4",
+        "displayName": "Comment",
+        "systemName": "Comment",
+        "dataType": "String",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/4"
+      },
+      "5": {
+        "id": "5",
+        "displayName": "Number of Attachments",
+        "systemName": "NumManualAttachments",
+        "dataType": "Numeric",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/5"
+      },
+      "10": {
+        "id": "10",
+        "displayName": "File Name",
+        "systemName": "ClientFileName",
+        "dataType": "String",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/10"
+      },
+      "27": {
+        "id": "27",
+        "displayName": "Name",
+        "systemName": "Name",
+        "dataType": "String",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/27"
+      },
+      "9": {
+        "id": "9",
+        "displayName": "Checked In",
+        "systemName": "CheckInDate",
+        "dataType": "DateTime",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/9"
+      },
+      "11": {
+        "id": "11",
+        "displayName": "File Name (Historical)",
+        "systemName": "ClientFileName(Ver)",
+        "dataType": "String",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/11"
+      },
+      "12": {
+        "id": "12",
+        "displayName": "Date Modified",
+        "systemName": "ModDate",
+        "dataType": "DateTime",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/12"
+      },
+      "17": {
+        "id": "17",
+        "displayName": "Checked Out",
+        "systemName": "CheckoutDate",
+        "dataType": "DateTime",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/17"
+      },
+      "13": {
+        "id": "13",
+        "displayName": "File Size",
+        "systemName": "FileSize",
+        "dataType": "Numeric",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/13"
+      },
+      "30": {
+        "id": "30",
+        "displayName": "File Extension",
+        "systemName": "Extension",
+        "dataType": "String",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/30"
+      },
+      "61": {
+        "id": "61",
+        "displayName": "Visualization Attachment",
+        "systemName": "VisualizationAttachment",
+        "dataType": "String",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/61"
+      },
+      "57": {
+        "id": "57",
+        "displayName": "Linked to Item",
+        "systemName": "ItemLinked",
+        "dataType": "Bool",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/57"
+      },
+      "58": {
+        "id": "58",
+        "displayName": "Item Assignable",
+        "systemName": "ItemAssignable",
+        "dataType": "Bool",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/58"
+      },
+      "26": {
+        "id": "26",
+        "displayName": "Folder Path",
+        "systemName": "FolderPath",
+        "dataType": "String",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/26"
+      },
+      "71": {
+        "id": "71",
+        "displayName": "Category Name",
+        "systemName": "CategoryName",
+        "dataType": "String",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/71"
+      },
+      "73": {
+        "id": "73",
+        "displayName": "Category Glyph",
+        "systemName": "CategoryGlyph",
+        "dataType": "Numeric",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/73"
+      },
+      "75": {
+        "id": "75",
+        "displayName": "Lifecycle Definition",
+        "systemName": "LifeCycleDefinition",
+        "dataType": "String",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/75"
+      },
+      "77": {
+        "id": "77",
+        "displayName": "State",
+        "systemName": "State",
+        "dataType": "String",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/77"
+      },
+      "79": {
+        "id": "79",
+        "displayName": "State Glyph",
+        "systemName": "StateGlyph",
+        "dataType": "Numeric",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/79"
+      },
+      "81": {
+        "id": "81",
+        "displayName": "Revision Scheme",
+        "systemName": "RevisionDefinition",
+        "dataType": "String",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/81"
+      },
+      "80": {
+        "id": "80",
+        "displayName": "State Glyph (Historical)",
+        "systemName": "StateGlyph(Ver)",
+        "dataType": "Numeric",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/80"
+      },
+      "68": {
+        "id": "68",
+        "displayName": "Latest Released Date",
+        "systemName": "LatestReleaseDate",
+        "dataType": "DateTime",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/68"
+      },
+      "69": {
+        "id": "69",
+        "displayName": "Latest Approver",
+        "systemName": "LatestApprover",
+        "dataType": "String",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/69"
+      },
+      "66": {
+        "id": "66",
+        "displayName": "Initial Release Date",
+        "systemName": "InitReleaseDate",
+        "dataType": "DateTime",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/66"
+      },
+      "67": {
+        "id": "67",
+        "displayName": "Initial Approver",
+        "systemName": "InitApprover",
+        "dataType": "String",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/67"
+      },
+      "64": {
+        "id": "64",
+        "displayName": "Latest Released Revision",
+        "systemName": "LatestReleasedRevision",
+        "dataType": "Bool",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/64"
+      },
+      "65": {
+        "id": "65",
+        "displayName": "Released Revision",
+        "systemName": "ReleasedRevision",
+        "dataType": "Bool",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/65"
+      },
+      "62": {
+        "id": "62",
+        "displayName": "Property Compliance",
+        "systemName": "Compliance",
+        "dataType": "Numeric",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/62"
+      },
+      "63": {
+        "id": "63",
+        "displayName": "Property Compliance (Historical)",
+        "systemName": "Compliance(Ver)",
+        "dataType": "Numeric",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/63"
+      },
+      "24": {
+        "id": "24",
+        "displayName": "Provider",
+        "systemName": "Provider",
+        "dataType": "String",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/24"
+      },
+      "21": {
+        "id": "21",
+        "displayName": "Originator",
+        "systemName": "Originator",
+        "dataType": "String",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/21"
+      },
+      "22": {
+        "id": "22",
+        "displayName": "Original Create Date",
+        "systemName": "OrigCreateDate",
+        "dataType": "DateTime",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/22"
+      },
+      "59": {
+        "id": "59",
+        "displayName": "Controlled By Change Order",
+        "systemName": "ControlledByChangeOrder",
+        "dataType": "Bool",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/59"
+      },
+      "2": {
+        "id": "2",
+        "displayName": "Classification",
+        "systemName": "Classification",
+        "dataType": "String",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/2"
+      },
+      "19": {
+        "id": "19",
+        "displayName": "Hidden",
+        "systemName": "Hidden",
+        "dataType": "Bool",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/19"
+      },
+      "20": {
+        "id": "20",
+        "displayName": "Latest Version",
+        "systemName": "LatestVersion",
+        "dataType": "Bool",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/20"
+      },
+      "33": {
+        "id": "33",
+        "displayName": "Has Model State",
+        "systemName": "HasModelState",
+        "dataType": "Bool",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/33"
+      },
+      "34": {
+        "id": "34",
+        "displayName": "Is Table Driven",
+        "systemName": "IsTableDriven",
+        "dataType": "Bool",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/34"
+      },
+      "35": {
+        "id": "35",
+        "displayName": "Is True Model State",
+        "systemName": "IsTrueModelState",
+        "dataType": "Bool",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/35"
+      },
+      "36": {
+        "id": "36",
+        "displayName": "Author",
+        "systemName": "Author",
+        "dataType": "String",
+        "isSystem": false,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/36"
+      },
+      "41": {
+        "id": "41",
+        "displayName": "Title",
+        "systemName": "Title",
+        "dataType": "String",
+        "isSystem": false,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/41"
+      },
+      "49": {
+        "id": "49",
+        "displayName": "Description (File)",
+        "systemName": "Description",
+        "dataType": "String",
+        "isSystem": false,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/49"
+      },
+      "55": {
+        "id": "55",
+        "displayName": "Application Version",
+        "systemName": "ApplicationVersion",
+        "dataType": "String",
+        "isSystem": false,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/55"
+      },
+      "72": {
+        "id": "72",
+        "displayName": "Category Name (Historical)",
+        "systemName": "CategoryName(Ver)",
+        "dataType": "String",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/72"
+      },
+      "74": {
+        "id": "74",
+        "displayName": "Category Glyph (Historical)",
+        "systemName": "CategoryGlyph(Ver)",
+        "dataType": "Numeric",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/74"
+      },
+      "76": {
+        "id": "76",
+        "displayName": "Lifecycle Definition (Historical)",
+        "systemName": "LifeCycleDefinition(Ver)",
+        "dataType": "String",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/76"
+      },
+      "78": {
+        "id": "78",
+        "displayName": "State (Historical)",
+        "systemName": "State(Ver)",
+        "dataType": "String",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/78"
+      },
+      "82": {
+        "id": "82",
+        "displayName": "Revision Scheme (Historical)",
+        "systemName": "RevisionDefinition(Ver)",
+        "dataType": "String",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/82"
+      },
+      "83": {
+        "id": "83",
+        "displayName": "Revision",
+        "systemName": "Revision",
+        "dataType": "String",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/83"
+      },
+      "107": {
+        "id": "107",
+        "displayName": "Designer",
+        "systemName": "Designer",
+        "dataType": "String",
+        "isSystem": false,
+        "active": true,
+        "initialValue": "N/A",
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/107"
+      },
+      "108": {
+        "id": "108",
+        "displayName": "Engineer",
+        "systemName": "Engineer",
+        "dataType": "String",
+        "isSystem": false,
+        "active": true,
+        "initialValue": "None",
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/108"
+      },
+      "109": {
+        "id": "109",
+        "displayName": "Engr Approved By",
+        "systemName": "EngrApprovedBy",
+        "dataType": "String",
+        "isSystem": false,
+        "active": true,
+        "initialValue": "NOT REVIEWED",
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/109"
+      },
+      "112": {
+        "id": "112",
+        "displayName": "Project",
+        "systemName": "Project",
+        "dataType": "String",
+        "isSystem": false,
+        "active": true,
+        "initialValue": "General",
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/112"
+      },
+      "120": {
+        "id": "120",
+        "displayName": "Vendor",
+        "systemName": "4bed4fae-b7d5-46d8-99d2-5abc3b058355",
+        "dataType": "String",
+        "isSystem": false,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/120"
+      },
+      "125": {
+        "id": "125",
+        "displayName": "Source",
+        "systemName": "6d059f7e-0f8f-4a13-a2af-c8d07cad30bd",
+        "dataType": "String",
+        "isSystem": false,
+        "active": true,
+        "initialValue": "N/A",
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/125"
+      },
+      "134": {
+        "id": "134",
+        "displayName": "Material Finish",
+        "systemName": "e866f1e8-83df-468c-9098-c4a9b832c5b7",
+        "dataType": "String",
+        "isSystem": false,
+        "active": true,
+        "initialValue": "As Finished",
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/134"
+      },
+      "37": {
+        "id": "37",
+        "displayName": "Comments",
+        "systemName": "Comments",
+        "dataType": "String",
+        "isSystem": false,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/37"
+      },
+      "140": {
+        "id": "140",
+        "displayName": "CAD Category",
+        "systemName": "1298cfe1-7e17-4c14-88c4-07b2614d8bd7",
+        "dataType": "String",
+        "isSystem": false,
+        "active": false,
+        "initialValue": "Unassigned",
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/140"
+      },
+      "15": {
+        "id": "15",
+        "displayName": "Checked Out Local Spec",
+        "systemName": "CheckoutLocalSpec",
+        "dataType": "String",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/15"
+      },
+      "16": {
+        "id": "16",
+        "displayName": "Checked Out Machine",
+        "systemName": "CheckoutMachine",
+        "dataType": "String",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/16"
+      },
+      "18": {
+        "id": "18",
+        "displayName": "Checked Out By",
+        "systemName": "CheckoutUserName",
+        "dataType": "String",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/18"
+      },
+      "25": {
+        "id": "25",
+        "displayName": "iLogicRuleStatus",
+        "systemName": "iLogicRuleStatus",
+        "dataType": "String",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/25"
+      },
+      "60": {
+        "id": "60",
+        "displayName": "Change Order State",
+        "systemName": "ChangeOrderState",
+        "dataType": "String",
+        "isSystem": true,
+        "active": true,
+        "url": "/AutodeskDM/Services/api/vault/v2/vaults/1/property-definitions/60"
+      }
+    }
+  }
+}
