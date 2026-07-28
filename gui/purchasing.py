@@ -1,8 +1,9 @@
 """
 Purchasing Sheet GUI — generate Simplifyber-branded purchasing workbooks
-from either a Vault part number (live lookup) or a manually exported BOM
-file. Opens as a Toplevel from the launcher dashboard so the live Vault
-session is reused.
+from an exported BOM file. Opens as a Toplevel from the launcher dashboard.
+
+A BOM export is the only source: parts are identified by their CAD file
+name, which a live Vault item lookup cannot supply.
 
 The actual workbook builder lives in ``bom_purchasing.py``; this module is
 just the input form, threading, and status reporting around it.
@@ -39,75 +40,7 @@ from gui.release_workflow import (  # noqa: E402
     _pil_available, _resource_path,
 )
 
-# Reuse the Vault BOM-lookup helpers the MCP server already uses, so the
-# GUI fetches BOMs through exactly the same chain as the MCP tool.
-from mcp_server import (  # noqa: E402
-    _extract_collection, _extract_id,
-    _pick_latest_version, _latest_by_revision,
-)
-
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Vault BOM lookup (mirrors vault_generate_purchasing_sheet's resolution chain)
-# ---------------------------------------------------------------------------
-
-async def _fetch_bom_for_part(
-    api: VaultRestAPI, vault_id: str, part_number: str, limit: int = 500,
-) -> dict[str, Any]:
-    """Resolve a part number → latest item-version → BOM rows.
-
-    Returns ``{"ok": True, "rows": [...], "notes": [...]}`` on success or
-    ``{"ok": False, "message": "..."}`` on any failure step.
-    """
-    notes: list[str] = []
-
-    search = await api.search_items(vault_id=vault_id, query=part_number, limit=10)
-    if search["error"]:
-        return {"ok": False, "message": f"search_items failed: {search.get('data')}"}
-
-    items = _extract_collection(search.get("data"))
-    if not items:
-        return {"ok": False, "message": f"No items found matching '{part_number}'."}
-    if len(items) > 1:
-        notes.append(
-            f"{len(items)} items matched '{part_number}'; using the first. "
-            "Refine the part number to disambiguate."
-        )
-
-    master = items[0]
-    item_id = _extract_id(master)
-    if not item_id:
-        return {"ok": False, "message": "Could not determine the master item ID."}
-
-    item_version_id, _ = _pick_latest_version(master)
-    if not item_version_id:
-        history = await api.get_item_version_history(
-            vault_id=vault_id, item_id=item_id, limit=50,
-        )
-        if history["error"]:
-            return {"ok": False, "message": f"get_item_version_history failed: {history.get('data')}"}
-        versions = _extract_collection(history.get("data"))
-        if not versions:
-            return {"ok": False, "message": "Item has no versions."}
-        latest = _latest_by_revision(versions)
-        item_version_id = _extract_id(latest)
-
-    if not item_version_id:
-        return {"ok": False, "message": "Could not determine an item-version ID."}
-
-    bom = await api.get_item_bom(
-        vault_id=vault_id, item_version_id=item_version_id, limit=limit,
-    )
-    if bom["error"]:
-        return {"ok": False, "message": f"get_item_bom failed: {bom.get('data')}"}
-
-    rows = _extract_collection(bom.get("data"))
-    if not rows:
-        return {"ok": False, "message": "BOM lookup succeeded but returned no rows."}
-
-    return {"ok": True, "rows": rows, "notes": notes}
 
 
 # ---------------------------------------------------------------------------
@@ -149,15 +82,7 @@ class PurchasingGUI:
         self._logo_img = None
         self._icon_img = None
 
-        # Source selector — "vault" (part number lookup) or "file" (manual export)
-        self.source_var = tk.StringVar(value="vault" if self.api and self.vault_id else "file")
-
-        # ``pn_var`` mirrors the name the shared SearchDialog expects on its
-        # parent. We expose ``part_var`` as an alias so the rest of this file
-        # can keep its previous naming.
-        self.pn_var = tk.StringVar()
-        self.part_var = self.pn_var
-        self.busy = False  # SearchDialog reads this to refuse mid-flight searches
+        self.busy = False   # guards against a second run mid-flight
         self.bom_var = tk.StringVar()
         self.out_var = tk.StringVar(value=bom_purchasing.default_output_dir())
         self.asm_var = tk.StringVar()
@@ -166,7 +91,6 @@ class PurchasingGUI:
 
         self._set_window_icon()
         self._build_ui()
-        self._update_source_visibility()
         self._refresh_reference_status()
         self.root.after(100, self._drain_queue)
 
@@ -263,77 +187,19 @@ class PurchasingGUI:
         body = tk.Frame(card, bg=WHITE, padx=14, pady=10)
         body.pack(fill="x")
 
-        # Source toggle row
-        toggles = tk.Frame(body, bg=WHITE)
-        toggles.pack(fill="x", pady=(0, 8))
-
-        vault_enabled = bool(self.api and self.vault_id)
-        rb_vault = tk.Radiobutton(
-            toggles, text="Look up from Vault (by part number)",
-            variable=self.source_var, value="vault",
-            bg=WHITE, fg=DARK_BLUE,
-            activebackground=WHITE, activeforeground=DARK_BLUE,
-            selectcolor=PALE_BLUE, font=("Arial", 10),
-            command=self._update_source_visibility,
-            state="normal" if vault_enabled else "disabled",
-        )
-        rb_vault.pack(side="left", padx=(0, 16))
-
-        tk.Radiobutton(
-            toggles, text="Import BOM file (Inventor or Vault: .xlsx/.xls/.csv/.txt)",
-            variable=self.source_var, value="file",
-            bg=WHITE, fg=DARK_BLUE,
-            activebackground=WHITE, activeforeground=DARK_BLUE,
-            selectcolor=PALE_BLUE, font=("Arial", 10),
-            command=self._update_source_visibility,
-        ).pack(side="left")
-
-        if not vault_enabled:
-            tk.Label(
-                body, text="(Vault lookup disabled — not signed in to Vault.)",
-                bg=WHITE, fg=DARK_GRAY, font=("Arial", 8, "italic"),
-                anchor="w",
-            ).pack(fill="x", pady=(0, 6))
-
-        # ----- Vault sub-form -----
-        self.vault_frame = tk.Frame(body, bg=WHITE)
-        tk.Label(
-            self.vault_frame, text="Part / Assembly Number:",
-            bg=WHITE, fg=DARK_BLUE,
-            font=("Arial", 9, "bold"), anchor="w", width=22,
-        ).grid(row=0, column=0, sticky="w", pady=2)
-        # Entry + Search button live in a sub-frame so the column layout
-        # doesn't shift when the button width changes.
-        pn_row = tk.Frame(self.vault_frame, bg=WHITE)
-        pn_row.grid(row=0, column=1, sticky="we", pady=2, padx=(4, 0))
-        pn_row.columnconfigure(0, weight=1)
-        tk.Entry(
-            pn_row, textvariable=self.pn_var, width=24,
-            relief="solid", bd=1, font=("Arial", 10),
-            highlightthickness=1, highlightbackground=GRAY_BDR,
-            highlightcolor=MID_BLUE,
-        ).grid(row=0, column=0, sticky="we")
-        self._brand_button(
-            pn_row, "Search…", self._open_search_dialog, primary=False,
-        ).grid(row=0, column=1, sticky="w", padx=(6, 0))
-        self.vault_frame.columnconfigure(1, weight=1)
-
-        tk.Label(
-            self.vault_frame,
-            text="The latest item-version's BOM will be pulled from Vault.",
-            bg=WHITE, fg=DARK_GRAY, font=("Arial", 8, "italic"),
-            anchor="w", wraplength=500, justify="left",
-        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(2, 0))
-
-        # ----- File sub-form -----
+        # A BOM export is the only source. The old "look up from Vault by part
+        # number" mode is gone: rows are identified by their CAD file name now,
+        # which only an export carries.
         self.file_frame = tk.Frame(body, bg=WHITE)
+        self.file_frame.pack(fill="x")
         self._labeled_browse(
             self.file_frame, "BOM File:",
             self.bom_var, self._on_browse_bom, row=0,
         )
         tk.Label(
             self.file_frame,
-            text="Export from Vault (File → Save As → Excel/CSV) with default columns.",
+            text="Inventor or Vault export (.xlsx / .xls / .csv / .txt). "
+                 "Needs a Filename column — that is what parts are matched on.",
             bg=WHITE, fg=DARK_GRAY, font=("Arial", 8, "italic"),
             anchor="w", wraplength=500, justify="left",
         ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(2, 0))
@@ -446,7 +312,7 @@ class PurchasingGUI:
 
     def _brand_button(self, parent, text, command, *, primary: bool) -> tk.Button:
         """Brand-styled button factory — also satisfies the contract the
-        shared SearchDialog uses to build its own buttons."""
+        the action bar uses to build its buttons."""
         if primary:
             bg, fg = DARK_BLUE, WHITE
             active_bg, active_fg = MID_BLUE, WHITE
@@ -465,46 +331,6 @@ class PurchasingGUI:
             disabledforeground="#DDDDDD",
             borderwidth=0, highlightthickness=0,
         )
-
-    # ----- SearchDialog integration ----------------------------------------
-
-    def _ensure_signed_in(self) -> bool:
-        """Contract for the shared SearchDialog. Purchasing inherits its Vault
-        session from the launcher; if there isn't one, we fail loudly rather
-        than trying to sign in here (the launcher handles credentials).
-        """
-        return bool(self.api and self.vault_id)
-
-    def _open_search_dialog(self) -> None:
-        if self.busy:
-            messagebox.showwarning(
-                "Busy",
-                "Wait for the current generation to finish before searching.",
-                parent=self.root,
-            )
-            return
-        if not self._ensure_signed_in():
-            messagebox.showwarning(
-                "Vault not connected",
-                "No Vault session is attached. Reconnect from the launcher first.",
-                parent=self.root,
-            )
-            return
-        try:
-            from gui.release_workflow import SearchDialog
-        except ImportError as exc:
-            messagebox.showerror(
-                "Search unavailable", str(exc), parent=self.root,
-            )
-            return
-        SearchDialog(self)  # type: ignore[arg-type]
-
-    def set_part_number(self, number: str) -> None:
-        """Called by SearchDialog when the user picks a result."""
-        self.pn_var.set(number)
-        if not self.asm_var.get().strip():
-            self.asm_var.set(number)
-        self.status_var.set(f"Part number set to {number}.")
 
     def _set_window_icon(self) -> None:
         if not _pil_available:
@@ -526,14 +352,6 @@ class PurchasingGUI:
             pass
 
     # ----- State updates ---------------------------------------------------
-
-    def _update_source_visibility(self) -> None:
-        if self.source_var.get() == "vault":
-            self.file_frame.pack_forget()
-            self.vault_frame.pack(fill="x", pady=(4, 0))
-        else:
-            self.vault_frame.pack_forget()
-            self.file_frame.pack(fill="x", pady=(4, 0))
 
     def _refresh_reference_status(self) -> None:
         cfg = purchasing_reference.resolve_reference_config()
@@ -696,75 +514,19 @@ class PurchasingGUI:
             )
             return
 
-        source = self.source_var.get()
-        if source == "vault":
-            part_number = self.part_var.get().strip()
-            if not part_number:
-                messagebox.showerror(
-                    "Missing part number",
-                    "Enter the part / assembly number to look up in Vault.",
-                    parent=self.root,
-                )
-                return
-            asm_label = self.asm_var.get().strip() or part_number
-            self._run_vault_flow(part_number, asm_label, out_dir)
-        else:
-            bom_path = self.bom_var.get().strip()
-            if not bom_path:
-                messagebox.showerror(
-                    "Missing BOM file",
-                    "Select a BOM export (.xlsx, .xls, .csv, or .txt).",
-                    parent=self.root,
-                )
-                return
-            asm_label = (
-                self.asm_var.get().strip()
-                or os.path.splitext(os.path.basename(bom_path))[0]
-            )
-            self._run_file_flow(bom_path, asm_label, out_dir)
-
-    def _run_vault_flow(self, part_number: str, asm_label: str, out_dir: str) -> None:
-        if not (self.api and self.vault_id):
+        bom_path = self.bom_var.get().strip()
+        if not bom_path:
             messagebox.showerror(
-                "Vault not connected",
-                "No Vault session is attached. Reconnect from the launcher first.",
+                "Missing BOM file",
+                "Select a BOM export (.xlsx, .xls, .csv, or .txt).",
                 parent=self.root,
             )
             return
-
-        self.busy = True
-        self.generate_btn.configure(state="disabled")
-        self.status_var.set(f"Looking up '{part_number}' in Vault…")
-
-        def worker() -> None:
-            try:
-                bom_result = asyncio.run(_fetch_bom_for_part(
-                    self.api, self.vault_id, part_number,
-                ))
-                if not bom_result.get("ok"):
-                    self.q.put(("done", (False, bom_result.get("message", "Unknown error"))))
-                    return
-
-                self.q.put(("status", "BOM received — building workbook…"))
-                rows = bom_result["rows"]
-                notes = bom_result.get("notes", [])
-
-                result = bom_purchasing.generate_from_vault_bom(
-                    vault_bom_response={"bom": rows},
-                    assembly_number=asm_label,
-                    output_dir=out_dir,
-                )
-                if result.get("error"):
-                    self.q.put(("done", (False, result.get("message", "Unknown build error"))))
-                    return
-                if notes:
-                    result.setdefault("warnings", []).extend(notes)
-                self.q.put(("done", (True, result)))
-            except Exception as exc:  # noqa: BLE001
-                logger.exception("Vault purchasing flow failed")
-                self.q.put(("done", (False, str(exc))))
-
-        threading.Thread(target=worker, daemon=True, name="purchasing-vault").start()
+        asm_label = (
+            self.asm_var.get().strip()
+            or os.path.splitext(os.path.basename(bom_path))[0]
+        )
+        self._run_file_flow(bom_path, asm_label, out_dir)
 
     def _run_file_flow(self, bom_path: str, asm_label: str, out_dir: str) -> None:
         self.busy = True

@@ -118,3 +118,29 @@ class TestDefaultOutputDir:
         # Teammates running the standalone .exe have no C:\Vault Workspace.
         monkeypatch.setattr(bp.os.path, "isdir", lambda p: False)
         assert bp.default_output_dir().endswith("Downloads")
+
+
+class TestTitleComesFromTheList:
+    """The sheet's Title column shows the matched list row's Title (Name)."""
+
+    def test_a_matched_row_takes_the_lists_title_name(self):
+        bom = pd.DataFrame({"Number": ["X"], "Source": ["Buy"], "Title": [None],
+                            "Filename": ["CD-001625.ipt"]})
+        ref = pd.DataFrame({"Number": ["CD-001625"], "Vendor": ["Acme"]})
+        out, _, _ = bp.lookup_purchased_data(bom, ref)
+        assert out.loc[0, "Title"] == "CD-001625"
+
+    def test_the_lists_own_spelling_is_kept(self):
+        bom = pd.DataFrame({"Number": ["X"], "Source": ["Buy"], "Title": [None],
+                            "Filename": ["ISO 4762 - M6 x 50 - Steel.ipt"]})
+        ref = pd.DataFrame({"Number": ["ISO 4762 - M6 X 50 - Steel"],
+                            "Vendor": ["McMASTER-CARR"]})
+        out, _, _ = bp.lookup_purchased_data(bom, ref)
+        assert out.loc[0, "Title"] == "ISO 4762 - M6 X 50 - Steel"
+
+    def test_an_unmatched_row_keeps_whatever_the_bom_had(self):
+        bom = pd.DataFrame({"Number": ["X"], "Source": ["Buy"],
+                            "Title": ["CD-000001"], "Filename": ["CD-999999.ipt"]})
+        ref = pd.DataFrame({"Number": ["CD-001625"], "Vendor": ["Acme"]})
+        out, _, _ = bp.lookup_purchased_data(bom, ref)
+        assert out.loc[0, "Title"] == "CD-000001"

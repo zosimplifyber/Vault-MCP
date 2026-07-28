@@ -378,6 +378,14 @@ def lookup_purchased_data(
         # downstream `.isna()` / `.notna()` checks' perspective.
         result[col] = bom_keys.map(col_map)
 
+    # Show the list's own Title (Name) for anything that matched, spelled the
+    # way the list spells it. Unmatched rows keep whatever Title the BOM had.
+    if "Title" in result.columns:
+        title_map = dict(zip(ref_unique_keys, ref_unique[ref_key]))
+        matched_titles = bom_keys.map(title_map)
+        result["Title"] = matched_titles.where(matched_titles.notna(),
+                                               result["Title"])
+
     buy_mask = result["Source"].isin(["Buy", "Other"])
     matched = int(result[buy_mask]["Vendor"].notna().sum())
     total_buy = int(buy_mask.sum())
