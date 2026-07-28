@@ -81,7 +81,7 @@ class TestColumnFeedback:
         bad = tmp_path / "bad.csv"
         bad.write_text("Item,Description\n1,a thing\n", encoding="utf-8")
         texts = _load(root, bad)
-        assert any("Missing required column(s)" in t and "Part Number" in t
+        assert any("Missing required column(s)" in t and "Filename" in t
                    for t in texts)
 
     def test_a_complete_export_is_confirmed(self, root, tmp_path):
@@ -128,9 +128,10 @@ class TestWindowBuilds:
             assert "Ready." in texts       # status bar wired to its variable
             # the required / optional field lists are spelled out on the card
             assert "Required:" in texts and "Optional:" in texts
-            assert any("Part Number, Filename" in t and "Material" in t
+            assert any("Filename, BOM Structure" in t and "Material" in t
                        for t in texts)                    # the required list
-            assert any("Unit QTY, Web Link" in t for t in texts)   # the optional one
+            assert any("Part Number, Unit QTY, Web Link" in t
+                       for t in texts)                    # the optional one
         finally:
             win.destroy()
 

@@ -92,7 +92,8 @@ def build_item_fields(row, number: str, d2i: dict[str, str]) -> dict:
     part number so a row is recognisable in list views, but nothing matches on
     it. Everything else comes from the matching BOM column.
     """
-    fields: dict[str, object] = {"Title": number}
+    fields: dict[str, object] = {"Title": number} if number else {}
+
     for bom_col, display in _BOM_TO_LIST_DISPLAY.items():
         internal = d2i.get(display)
         if not internal:
@@ -141,8 +142,9 @@ def add_missing_bom_rows(client, bom_df, *, dry_run: bool = True,
 
     has_source = "Source" in getattr(bom_df, "columns", [])
     for _idx, row in bom_df.iterrows():
-        number = normalize_part_number(_row_get(row, "Number"))
         name = normalize_part_number(_row_get(row, "Name"))
+        # The file name is the part number's equivalent when the BOM has none.
+        number = normalize_part_number(_row_get(row, "Number")) or name
         source = str(_row_get(row, "Source")).strip() if has_source else ""
         if source_set is not None and source not in source_set:
             continue
@@ -231,7 +233,6 @@ _FILE_NAME_COLUMNS = ("Filename", "File Name", "File", "Document Name")
 # of the list row being created. "Required" means the COLUMN must exist — an
 # individual cell may still be empty (REV and Vendor usually are on fasteners).
 REQUIRED_BOM_FIELDS: dict[str, tuple[str, ...]] = {
-    "Part Number": ("part number", "partnumber", "number", "item number"),
     "Filename": ("filename", "file name", "file", "document name"),
     "BOM Structure": ("bom structure", "bomstructure", "source", "itemsource"),
     "QTY": ("qty", "quantity", "item qty"),
@@ -245,6 +246,9 @@ REQUIRED_BOM_FIELDS: dict[str, tuple[str, ...]] = {
 # spreadsheet. Title is deliberately absent — the template dropped it, and the
 # code still reads one when an older export happens to carry it.
 OPTIONAL_BOM_FIELDS: dict[str, tuple[str, ...]] = {
+    # Nothing matches on the part number any more; it is written to the list's
+    # legacy column when the export happens to carry it.
+    "Part Number": ("part number", "partnumber", "number", "item number"),
     "Unit QTY": ("unit qty", "units", "unit", "uom"),
     "Web Link": ("web link", "weblink", "vendor number", "vendor #"),
 }
@@ -300,6 +304,16 @@ def bom_dataframe_from_file(path: str):
     coerce_bom_dataframe drops. Returns (df, error_message)."""
     import bom_purchasing
     raw = bom_purchasing.read_bom_file(path)
+
+    # An export without a Part Number column is still usable: the file name
+    # without its extension stands in for it, which is what the list's legacy
+    # column would otherwise be missing.
+    file_col = next((c for c in _FILE_NAME_COLUMNS if c in raw.columns), None)
+    has_number = any(c in raw.columns for c in ("Part Number", "Number"))
+    if file_col is not None and not has_number:
+        raw = raw.copy()
+        raw["Part Number"] = raw[file_col].map(_file_stem)
+
     coerced, err = bom_purchasing.coerce_bom_dataframe(raw.copy())
     if err:
         return coerced, err

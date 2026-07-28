@@ -98,11 +98,11 @@ class TestColumnCheck:
     def test_a_missing_required_field_is_named(self):
         result = bls.check_bom_columns(["Item", "Description"])
         assert result["ok"] is False
-        assert "Part Number" in result["missing_required"]
         assert "QTY" in result["missing_required"]
         assert "Filename" in result["missing_required"]
+        assert "Part Number" not in result["missing_required"]
 
-    REQUIRED = ["Part Number", "Filename", "BOM Structure", "QTY",
+    REQUIRED = ["Filename", "BOM Structure", "QTY",
                 "Description", "REV", "Vendor", "Material"]
 
     def test_filename_is_required_because_it_is_the_lookup_key(self):
@@ -111,23 +111,29 @@ class TestColumnCheck:
         assert "Filename" in result["missing_required"]
 
     def test_every_field_the_list_row_needs_is_required(self):
-        result = bls.check_bom_columns(["Part Number", "QTY", "Filename"])
+        result = bls.check_bom_columns(["QTY", "Filename"])
         assert result["ok"] is False
         assert set(result["missing_required"]) == {
             "BOM Structure", "Description", "REV", "Vendor", "Material"}
 
+    def test_part_number_is_optional_now_that_the_file_name_is_the_key(self):
+        result = bls.check_bom_columns(self.REQUIRED)
+        assert result["ok"] is True
+        assert "Part Number" in result["missing_optional"]
+
     def test_optional_gaps_do_not_make_it_invalid(self):
         result = bls.check_bom_columns(self.REQUIRED)
         assert result["ok"] is True
-        assert set(result["missing_optional"]) == {"Unit QTY", "Web Link"}
+        assert set(result["missing_optional"]) == {"Part Number", "Unit QTY",
+                                                   "Web Link"}
 
     def test_vault_style_headers_satisfy_the_same_fields(self):
-        result = bls.check_bom_columns(["Number", "Quantity", "File Name", "Source",
+        result = bls.check_bom_columns(["Quantity", "File Name", "Source",
                                         "Desc", "Revision", "Supplier", "Material"])
         assert result["missing_required"] == []
 
     def test_matching_ignores_case_and_padding(self):
-        result = bls.check_bom_columns([" part number ", "qty", " FILENAME ",
+        result = bls.check_bom_columns(["qty", " FILENAME ",
                                         "bom structure", "DESCRIPTION", "rev",
                                         "vendor", " Material "])
         assert result["missing_required"] == []
@@ -182,6 +188,34 @@ class TestFileNameIsTheKey:
                            "Source": ["Buy"]})
         report = bls.add_missing_bom_rows(client, df, dry_run=True)
         assert report["missing"] == ["CD-999999"]
+
+
+class TestWithoutAPartNumber:
+    """The key is the file name, so a BOM with no Part Number still works."""
+
+    def _bom(self, tmp_path):
+        p = tmp_path / "bom.csv"
+        p.write_text("QTY,BOM Structure,Filename\n2,Purchased,CD-999900.ipt\n",
+                     encoding="utf-8")
+        df, err = bls.bom_dataframe_from_file(str(p))
+        assert err is None, err
+        return df
+
+    def test_it_parses_without_a_part_number_column(self, tmp_path):
+        df = self._bom(tmp_path)
+        assert df.loc[0, "Name"] == "CD-999900"
+
+    def test_the_row_is_added_under_its_file_name(self, tmp_path):
+        client = FakeClient()
+        report = bls.add_missing_bom_rows(client, self._bom(tmp_path), dry_run=False)
+        assert report["created"] == 1
+        assert client.created[0]["field_1"] == "CD-999900"
+
+    def test_the_legacy_title_falls_back_to_the_file_stem(self, tmp_path):
+        # No Part Number in the export -> the file name stands in for it.
+        client = FakeClient()
+        bls.add_missing_bom_rows(client, self._bom(tmp_path), dry_run=False)
+        assert client.created[0]["Title"] == "CD-999900"
 
 
 class TestPlanMissing:
