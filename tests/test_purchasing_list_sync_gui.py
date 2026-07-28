@@ -13,9 +13,42 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-pytest.importorskip("tkinter")
+tk = pytest.importorskip("tkinter")
 
-from gui.purchasing_list_sync import summary_line  # noqa: E402
+from gui.purchasing_list_sync import launch_bom_list_sync_gui, summary_line  # noqa: E402
+
+
+def _widget_text(widget, out):
+    for child in widget.winfo_children():
+        try:
+            out.append(str(child.cget("text")))
+        except Exception:      # noqa: BLE001 — frames have no text
+            pass
+        _widget_text(child, out)
+    return out
+
+
+class TestWindowBuilds:
+    def test_the_branded_chrome_and_controls_are_all_present(self):
+        try:
+            root = tk.Tk()
+        except tk.TclError:
+            pytest.skip("no display available")
+        root.withdraw()
+        try:
+            launch_bom_list_sync_gui(parent=root)
+            win = [w for w in root.winfo_children() if isinstance(w, tk.Toplevel)][0]
+            texts = _widget_text(win, [])
+            # header, section cards, actions and the status bar
+            assert "BOM → Purchased Parts List" in texts
+            assert "  BOM SOURCE" in texts and "  OPTIONS" in texts
+            assert "  OUTPUT" in texts
+            assert any("Scan" in t for t in texts)
+            assert any("Add missing" in t for t in texts)
+            assert "Close" in texts
+            assert "Ready." in texts       # status bar wired to its variable
+        finally:
+            root.destroy()
 
 
 def _report(**over):
