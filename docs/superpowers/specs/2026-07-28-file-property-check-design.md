@@ -111,6 +111,16 @@ Each unit is independently testable; only `fetch_*` touch the network.
 | `flatten_file_properties(record, defs)` | `{propertyDefinitionId, value}` list + record system fields → `{display name: value}`. Populated values win over empty ones. |
 | `fetch_file(api, vault_id, file_name)` | Resolve a file name to one file version. Exact case-insensitive name match preferred; notes ambiguity when several match. Raises `RuntimeError` when nothing matches. |
 | `fetch_cad_children(api, vault_id, file_version_id)` | Child file versions with properties, hydrating per child if `/uses` does not enrich. |
+| `_fill_in_historical_state(record, flat)` | Recovers `State` on a pinned (non-latest) version — see below. |
+
+**Pinned versions blank their State.** A CAD BOM child is whatever version its
+parent assembly pins, which is often not the latest. Vault returns those with
+the live `State` empty — both the top-level field and property 77 — and reports
+the state that version is actually in via `lifecycleState` and the
+`State (Historical)` twin (property 78). Without compensating, every pinned
+child reports `State missing (required)` while the same file checked on its own
+reports `Released`. `flatten_file_properties` falls back to `lifecycleState`,
+then to the historical twin, and never overwrites a populated live `State`.
 | `check_file_name(...)` | Orchestrates sign-in → fetch → evaluate. Returns the same result shape as the item tool's `check_part_number` so report renderers stay near-identical. |
 | `format_markdown_report(result)` | Markdown report, file flavor. |
 | `run_cli(args)` / `run_gui()` | Presentation only. |
@@ -219,9 +229,10 @@ With `--recursive`, all three CAD BOM children still fail — two are categorise
 `export_to_excel(result, path)` writes a two-sheet workbook using the same
 palette as `bom_purchasing.py`, so it sits alongside the purchasing sheets:
 
-- **Summary** — one row per file: status and which properties failed. This is
-  the sheet you hand to someone; the score columns were dropped because the
-  named failures are what you act on.
+- **Summary** — one row per file: what it is (its `Description (File)`), its
+  status, and which properties failed. This is the sheet you hand to someone;
+  the score columns were dropped because the named failures are what you act
+  on, and the description is carried whether or not it is currently gated.
 - **Detail** — one row per property checked, with its current value and the
   reason it failed.
 

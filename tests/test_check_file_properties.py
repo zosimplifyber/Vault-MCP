@@ -96,6 +96,71 @@ def test_historical_twins_do_not_shadow_the_live_value(properties):
     assert "State (Historical)" in properties
 
 
+def test_a_pinned_version_recovers_its_state_from_lifecycle():
+    """A CAD BOM child is whatever version its parent pins — often not latest.
+
+    Vault blanks the live State on those and reports the real one via
+    lifecycleState. Without the fallback every pinned child would report
+    'State missing (required)' while the same file checked alone reports
+    Released.
+    """
+    defs = {
+        "77": {"displayName": "State", "systemName": "State"},
+        "78": {"displayName": "State (Historical)", "systemName": "State(Ver)"},
+    }
+    record = {
+        "name": "CD-001171.ipt", "state": "", "revision": "4",
+        "lifecycleState": {"name": "Released", "displayName": "Released"},
+        "properties": [
+            {"propertyDefinitionId": "77", "value": ""},
+            {"propertyDefinitionId": "78", "value": "Released"},
+        ],
+    }
+    flat = cfp.flatten_file_properties(record, defs)
+    assert flat["State"] == "Released"
+    assert flat["State (Historical)"] == "Released"
+
+
+def test_the_historical_twin_is_the_fallback_when_lifecycle_is_absent():
+    defs = {
+        "77": {"displayName": "State", "systemName": "State"},
+        "78": {"displayName": "State (Historical)", "systemName": "State(Ver)"},
+    }
+    record = {
+        "name": "CD-001171.ipt", "state": "",
+        "properties": [
+            {"propertyDefinitionId": "77", "value": ""},
+            {"propertyDefinitionId": "78", "value": "Work in Progress"},
+        ],
+    }
+    assert cfp.flatten_file_properties(record, defs)["State"] == "Work in Progress"
+
+
+def test_a_live_state_is_never_overwritten_by_the_historical_one():
+    """The latest version's own State wins — the fallback is only for blanks."""
+    defs = {
+        "77": {"displayName": "State", "systemName": "State"},
+        "78": {"displayName": "State (Historical)", "systemName": "State(Ver)"},
+    }
+    record = {
+        "name": "CD-001171.ipt", "state": "Work in Progress",
+        "lifecycleState": {"name": "Released"},
+        "properties": [
+            {"propertyDefinitionId": "77", "value": "Work in Progress"},
+            {"propertyDefinitionId": "78", "value": "Released"},
+        ],
+    }
+    assert cfp.flatten_file_properties(record, defs)["State"] == "Work in Progress"
+
+
+def test_a_genuinely_stateless_record_stays_blank():
+    """No state anywhere means blank — the rule should still flag it."""
+    defs = {"77": {"displayName": "State", "systemName": "State"}}
+    record = {"name": "X.ipt", "state": "",
+              "properties": [{"propertyDefinitionId": "77", "value": ""}]}
+    assert cfp.flatten_file_properties(record, defs)["State"] == ""
+
+
 def test_unnamed_properties_are_skipped_not_invented():
     """A value whose definition didn't come back must not become a fake key."""
     record = {"name": "X.ipt", "properties": [
@@ -659,15 +724,44 @@ def test_summary_has_one_row_per_file(checked_result, tmp_path):
     ws = openpyxl.load_workbook(out)["Summary"]
 
     header = [c.value for c in ws[3]]
-    assert header == ["File", "Category", "Status", "Failures"], (
-        "Passed/Total were dropped — the summary is status + what failed"
+    assert header == ["File", "Category", "Description", "Status", "Failures"], (
+        "Passed/Total were dropped; Description says what each part is"
     )
 
     rows = {r[0]: r for r in ws.iter_rows(min_row=4, values_only=True)}
     assert set(rows) == {"CD-001659.iam", "CD-001624.ipt", "notes.xlsx"}
-    assert rows["CD-001659.iam"][2] == "FAIL"
-    assert "Engineer" in rows["CD-001659.iam"][3]
-    assert "Vendor" in rows["CD-001624.ipt"][3]
+    assert rows["CD-001659.iam"][3] == "FAIL"
+    assert "Engineer" in rows["CD-001659.iam"][4]
+    assert "Vendor" in rows["CD-001624.ipt"][4]
+
+
+def test_summary_carries_each_files_description(checked_result, tmp_path):
+    """What the part IS, next to whether it passed."""
+    openpyxl = pytest.importorskip("openpyxl")
+    out = tmp_path / "report.xlsx"
+    cfp.export_to_excel(checked_result, out)
+    rows = {r[0]: r for r in
+            openpyxl.load_workbook(out)["Summary"].iter_rows(min_row=4,
+                                                             values_only=True)}
+    expected = checked_result["info"]["properties"]["Description (File)"]
+    assert expected, "the fixture should have a description to carry"
+    assert rows["CD-001659.iam"][2] == expected
+    assert rows["CD-001624.ipt"][2] == expected      # child inherits it here
+
+
+def test_a_file_with_no_description_gets_a_blank_cell(checked_result, tmp_path):
+    """No description is an empty cell, never the string 'None'."""
+    openpyxl = pytest.importorskip("openpyxl")
+    checked_result["info"]["properties"] = dict(
+        checked_result["info"]["properties"], **{"Description (File)": None})
+    out = tmp_path / "report.xlsx"
+    cfp.export_to_excel(checked_result, out)
+    rows = {r[0]: r for r in
+            openpyxl.load_workbook(out)["Summary"].iter_rows(min_row=4,
+                                                             values_only=True)}
+    assert rows["CD-001659.iam"][2] in ("", None)
+    # notes.xlsx has no properties at all — same treatment.
+    assert rows["notes.xlsx"][2] in ("", None)
 
 
 def test_a_file_with_no_rule_set_exports_as_skip_not_pass(checked_result, tmp_path):
@@ -678,8 +772,8 @@ def test_a_file_with_no_rule_set_exports_as_skip_not_pass(checked_result, tmp_pa
     wb = openpyxl.load_workbook(out)
 
     summary = {r[0]: r for r in wb["Summary"].iter_rows(min_row=4, values_only=True)}
-    assert summary["notes.xlsx"][2] == "SKIP"
-    assert "No rule set" in summary["notes.xlsx"][3]
+    assert summary["notes.xlsx"][3] == "SKIP"
+    assert "No rule set" in summary["notes.xlsx"][4]
 
     detail = [r for r in wb["Detail"].iter_rows(min_row=4, values_only=True)
               if r[0] == "notes.xlsx"]

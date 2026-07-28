@@ -137,7 +137,35 @@ def flatten_file_properties(
         if system and system != display and system not in flat:
             flat[system] = entry.get("value")
 
+    _fill_in_historical_state(record, flat)
     return flat
+
+
+def _fill_in_historical_state(record: dict[str, Any], flat: dict[str, Any]) -> None:
+    """Recover ``State`` on a pinned (non-latest) file version.
+
+    A CAD BOM child is whatever version its parent assembly pins, which is
+    often not the latest. Vault returns those with the live ``State`` blank —
+    both the top-level field and property 77 — and reports the state that
+    version is actually in via ``lifecycleState`` and the ``State (Historical)``
+    twin (property 78).
+
+    Without this, every pinned child reports "State missing (required)" while
+    the same file checked on its own reports Released.
+    """
+    if not _is_blank(flat.get("State")):
+        return
+
+    lifecycle = record.get("lifecycleState")
+    if isinstance(lifecycle, dict):
+        for key in ("name", "displayName"):
+            if not _is_blank(lifecycle.get(key)):
+                flat["State"] = lifecycle[key]
+                return
+
+    historical = flat.get("State (Historical)")
+    if not _is_blank(historical):
+        flat["State"] = historical
 
 
 def _is_blank(value: Any) -> bool:
@@ -693,7 +721,8 @@ _DETAIL_COLUMNS = [
     ("Current Value", 46), ("Problem", 62),
 ]
 _SUMMARY_COLUMNS = [
-    ("File", 26), ("Category", 24), ("Status", 9), ("Failures", 62),
+    ("File", 26), ("Category", 24), ("Description", 46), ("Status", 9),
+    ("Failures", 52),
 ]
 
 
@@ -760,20 +789,29 @@ def _export_rows(result: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _summary_rows(result: dict[str, Any]) -> list[dict[str, Any]]:
-    """One roll-up row per file: status and the properties that failed."""
+    """One roll-up row per file: what it is, its status, and what failed.
+
+    The Description column carries the file's own ``Description (File)``
+    property, so the sheet says what each part actually *is* rather than only
+    naming it. It is reported whether or not the description is currently
+    gated.
+    """
     rows: list[dict[str, Any]] = []
 
-    def add(file_name: str, category: str, status: str,
-            report: dict[str, Any] | None, problem: str = "") -> None:
+    def add(file_name: str, category: str, properties: dict[str, Any],
+            status: str, report: dict[str, Any] | None,
+            problem: str = "") -> None:
         failures = problem
         if not failures and report:
             failures = ", ".join(
                 r["property"] for r in report.get("results") or []
                 if not r["passed"]
             )
+        description = (properties or {}).get("Description (File)")
         rows.append({
             "File": file_name,
             "Category": category or "(unknown)",
+            "Description": "" if _is_blank(description) else str(description),
             "Status": status,
             "Failures": failures,
         })
@@ -788,7 +826,7 @@ def _summary_rows(result: dict[str, Any]) -> list[dict[str, Any]]:
     add(
         str(props.get("File Name") or result.get("file_name") or ""),
         result.get("category_resolved") or result.get("category_raw") or "",
-        top_status, report,
+        props, top_status, report,
         "" if result.get("category_resolved") else "No rule set for this category.",
     )
 
@@ -797,6 +835,7 @@ def _summary_rows(result: dict[str, Any]) -> list[dict[str, Any]]:
         add(
             child.get("file_name", ""),
             child.get("category_resolved") or child.get("category_raw") or "",
+            child.get("properties") or {},
             status, child.get("report"),
             child.get("error") or (
                 "No rule set for this category." if status == "SKIP" else ""
