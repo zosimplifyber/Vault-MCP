@@ -155,7 +155,9 @@ BOM file
    dedupe — a BOM lists the same part on many rows, and each file needs one
    job, not one per occurrence.
 
-Rows with a blank or unparseable filename are dropped and counted in a warning.
+Rows with a blank or unparseable filename are dropped and logged. A Make row
+with no file name cannot be published, but a blank cell is a BOM problem worth
+noticing rather than swallowing.
 
 ## Component: Scan
 
