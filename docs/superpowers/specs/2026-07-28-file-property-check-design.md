@@ -154,20 +154,34 @@ engineering parts carry `Engr Approved By = NOT REVIEWED`. That drift is the
 thing worth surfacing. The rules are JSON and reloaded every run, so they are
 tunable without a code change.
 
-**Always required, every category:** `State`, `Revision`, `Project`,
-`Engineer`, `Engr Approved By`, `Source` — the Vault grid columns that must
-never be blank. `Engr Approved By` additionally forbids the literal
-`NOT REVIEWED` in every category, since that string means the review has not
-happened. `Vendor` is required on every part and assembly with no exemption;
-`Vendor Number` keeps its published-standard exemption, because a generic ISO
-screw has a supplier but no single supplier SKU. `Designer` is required
-everywhere **except** assemblies, where the design credit lives on the child
-parts.
+**What is gated:**
 
-**Declared but never gated:** `Title` and `CAD Category` carry
-`required: false` and no other checks, so their values still appear in the
-report but can never fail a file. `Title` stays in the `Part - Purchased` rule
-set because the `Vendor Number` exemption reads it.
+| Property | Required in |
+|---|---|
+| `State`, `Revision`, `Source` | every category |
+| `Engineer`, `Engr Approved By`, `Project` | every category except `Part - Content Center` |
+| `Designer` | every category except `Assembly - Engineering` and `Part - Content Center` |
+| `Vendor` | every part and assembly, no exemption |
+| `Vendor Number` | parts, with a published-standard exemption |
+
+`Engr Approved By` forbids the literal `NOT REVIEWED` in **every** category —
+including the ones where it isn't required — since that string means the review
+has not happened. `Vendor Number` keeps its published-standard exemption
+because a generic ISO screw has a supplier but no single supplier SKU.
+`Designer` is exempt on assemblies because the design credit lives on the child
+parts, and on Content Center because nobody in-house designs a library
+fastener — the same reasoning drops `Engineer`, `Engr Approved By` and
+`Project` there too.
+
+**Declared but never gated:** `Title`, `CAD Category` and `Description (File)`
+carry `required: false` and no other checks, so their values still appear in
+the report but can never fail a file. Two of these stay declared for a
+second reason: the `Vendor Number` exemption reads `Title` on
+`Part - Purchased` and `Description (File)` on `Part - Content Center`, so
+deleting the keys would silently break those exemptions.
+
+`Description (File)` was gated on the Vault PDM – Item Description standard and
+was ungated on request; its rule carries the exact JSON needed to restore it.
 
 The test suite parametrises over every category and asserts each of these,
 so dropping one from a rule set fails the build rather than silently weakening
@@ -181,14 +195,15 @@ delete if unwanted.
 ### Actual output for `CD-001659.iam`
 
 ```
-Assembly - Engineering                            15/16 properties passed
-
-[FAIL]  Description (File) bmw kft90 hot a adapter plate assembly
-        > does not match pattern /^[a-z][a-z \-]*[a-z]$/
+Assembly - Engineering                            16/16 properties passed
 ```
 
-With `--recursive`, all three CAD BOM children fail too — two are categorised
-`Part - Engineering` but carry `Source = Buy`, and `CD-001624.ipt` has a blank
+The file passes every gated property. Its odd-looking `Title` (`CD-001659`),
+empty `CAD Category` and customer-name-carrying description are all reported
+but ungated.
+
+With `--recursive`, all three CAD BOM children still fail — two are categorised
+`Part - Engineering` but carry `Source = Buy`, and `CD-001624.ipt` adds a blank
 `Vendor` and `Engr Approved By = NOT REVIEWED`.
 
 ### Excel export
@@ -196,8 +211,9 @@ With `--recursive`, all three CAD BOM children fail too — two are categorised
 `export_to_excel(result, path)` writes a two-sheet workbook using the same
 palette as `bom_purchasing.py`, so it sits alongside the purchasing sheets:
 
-- **Summary** — one row per file: status, passed/total, and which properties
-  failed. This is the sheet you hand to someone.
+- **Summary** — one row per file: status and which properties failed. This is
+  the sheet you hand to someone; the score columns were dropped because the
+  named failures are what you act on.
 - **Detail** — one row per property checked, with its current value and the
   reason it failed.
 
@@ -253,13 +269,16 @@ probe of `CD-001659.iam` (`tests/fixtures/`) — no network in the test suite:
   rather than inventing a key for them.
 - File-name resolution: exact match wins over a prefix match, ignores case,
   sets `note` on ambiguity, raises on no match.
-- Rules applied to the recorded fixture produce exactly one failure
-  (`Description (File)`).
-- Parametrised over every category: each always-required column is required and
-  is actually reported when blank; `Engr Approved By` rejects `NOT REVIEWED`;
-  every part category requires `Vendor` with no exemption; `Designer` is
-  required everywhere but assemblies; `Title` and `CAD Category` appear in the
-  report but pass on every value including blank.
+- The recorded fixture passes every gated property; blanking one gated column
+  produces exactly one failure, proving the rule set hasn't been hollowed out.
+- Parametrised over every gated column × every category: it is required exactly
+  where it should be, and blanking it is reported in gated categories and
+  ignored in exempt ones. `Engr Approved By` rejects `NOT REVIEWED` even where
+  it isn't required. Every part category requires `Vendor` with no exemption.
+  `Title`, `CAD Category` and `Description (File)` appear in the report but
+  pass on every value including blank.
+- A fully-populated Content Center part passes with all four sign-off fields
+  empty.
 - Excel export: two sheets with filters and frozen headers; one summary row per
   file and one detail row per property; a no-rule-set file exports as SKIP, not
   PASS; a locked target raises a message naming Excel; missing directories are

@@ -693,8 +693,7 @@ _DETAIL_COLUMNS = [
     ("Current Value", 46), ("Problem", 62),
 ]
 _SUMMARY_COLUMNS = [
-    ("File", 26), ("Category", 24), ("Status", 9), ("Passed", 9),
-    ("Total", 9), ("Failures", 62),
+    ("File", 26), ("Category", 24), ("Status", 9), ("Failures", 62),
 ]
 
 
@@ -756,7 +755,7 @@ def _export_rows(result: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _summary_rows(result: dict[str, Any]) -> list[dict[str, Any]]:
-    """One roll-up row per file: status, score, and the properties that failed."""
+    """One roll-up row per file: status and the properties that failed."""
     rows: list[dict[str, Any]] = []
 
     def add(file_name: str, category: str, status: str,
@@ -771,8 +770,6 @@ def _summary_rows(result: dict[str, Any]) -> list[dict[str, Any]]:
             "File": file_name,
             "Category": category or "(unknown)",
             "Status": status,
-            "Passed": (report or {}).get("passed", "") if report else "",
-            "Total": (report or {}).get("total", "") if report else "",
             "Failures": failures,
         })
 

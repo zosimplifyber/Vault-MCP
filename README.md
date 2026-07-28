@@ -146,9 +146,21 @@ python scripts/check_file_properties.py                            # no argument
 
 Exit codes: `0` everything passed, `1` at least one failure, `2` no rule set matched the file's category.
 
-**Excel export.** `--excel` (bare) drops a timestamped workbook in `Log/`; give it a path to choose the name. In the GUI, **Export to Excel** unlocks once a check succeeds. The workbook has two sheets — **Summary** (one row per file: status, score, which properties failed) and **Detail** (one row per property checked) — both filterable with frozen headers and colour-coded PASS / FAIL / SKIP rows.
+**Excel export.** `--excel` (bare) drops a timestamped workbook in `Log/`; give it a path to choose the name. In the GUI, **Export to Excel** unlocks once a check succeeds. The workbook has two sheets — **Summary** (one row per file: status and which properties failed) and **Detail** (one row per property checked) — both filterable with frozen headers and colour-coded PASS / FAIL / SKIP rows.
 
-Rules live in [`file_property_rules.json`](file_property_rules.json), keyed by the file's Category Name, and are re-read on every run — edit and re-check, no restart. Every category requires **State, Revision, Project, Engineer, Engr Approved By, Source**, plus **Vendor** on every part and assembly and **Designer** on everything except assemblies; `Engr Approved By` rejects `NOT REVIEWED` everywhere. `Title` and `CAD Category` are reported but never gated. A category with no rule set reports SKIP rather than a misleading pass.
+Rules live in [`file_property_rules.json`](file_property_rules.json), keyed by the file's Category Name, and are re-read on every run — edit and re-check, no restart. What's gated:
+
+| Property | Required in |
+|---|---|
+| State, Revision, Source | every category |
+| Engineer, Engr Approved By, Project | every category except `Part - Content Center` |
+| Designer | every category except `Assembly - Engineering` and `Part - Content Center` |
+| Vendor | every part and assembly |
+| Title, CAD Category, Description (File) | **nowhere** — reported for reference only |
+
+`Engr Approved By` rejects `NOT REVIEWED` in every category, including the ones where it isn't required. `Part - Content Center` is deliberately lighter: those are Inventor library fasteners nobody in-house designs or bills to a project, so only identity and supplier are gated. A category with no rule set at all reports SKIP rather than a misleading pass.
+
+`Description (File)` was gated on the *Vault PDM – Item Description* standard (lowercase keyword nouns; no dimensions, materials, ISO/DIN numbers, or project/customer names) and is currently switched off. Its rule in the JSON carries the exact snippet needed to turn it back on.
 
 Note this checks **files** (iProperties). The item-side equivalent, `scripts/check_item_properties.py`, still backs the Release Workflow's readiness report and uses `item_property_rules.json`.
 

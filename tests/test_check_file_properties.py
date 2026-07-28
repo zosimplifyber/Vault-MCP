@@ -50,6 +50,16 @@ def properties(search_payload):
     return cfp.flatten_file_properties(record, defs)
 
 
+@pytest.fixture()
+def failing_properties(properties):
+    """CD-001659.iam with two gated columns emptied, so it reports FAIL.
+
+    The real file passes everything now that Title, CAD Category and
+    Description (File) are ungated, so tests that need a failure build one.
+    """
+    return dict(properties, **{"Engineer": "", "Project": ""})
+
+
 # --------------------------------------------------------------------------- extraction
 
 def test_definitions_come_from_the_response_itself(search_payload):
@@ -141,20 +151,29 @@ def test_no_results_raises():
 
 # --------------------------------------------------------------------------- rules
 
-def test_cd001659_reports_its_one_real_failure(properties, rules):
+def test_cd001659_passes_every_gated_property(properties, rules):
     """The end-to-end expectation for the worked example.
 
-    The description carries a customer name and digits. Title is blank-ish and
-    CAD Category is empty, but neither is gated any more.
+    Title, CAD Category and Description (File) are all populated oddly — the
+    description carries a customer name and digits — but none of the three is
+    gated any more, and every gated property is filled in.
     """
     result = cfp.evaluate_against_rules(
         properties, properties["Category Name"], rules)
     assert result["category_resolved"] == "Assembly - Engineering"
 
+    failed = [(r["property"], r["failures"])
+              for r in result["report"]["results"] if not r["passed"]]
+    assert failed == []
+    assert result["report"]["passed"] == result["report"]["total"]
+
+
+def test_a_blank_gated_property_still_fails_cd001659(properties, rules):
+    """Guard against the rule set having been hollowed out entirely."""
+    props = dict(properties, **{"Engineer": ""})
+    result = cfp.evaluate_against_rules(props, "Assembly - Engineering", rules)
     failed = {r["property"] for r in result["report"]["results"] if not r["passed"]}
-    assert failed == {"Description (File)"}
-    assert result["report"]["failed"] == 1
-    assert result["report"]["passed"] == result["report"]["total"] - 1
+    assert failed == {"Engineer"}
 
 
 def test_the_compliant_properties_pass(properties, rules):
@@ -163,14 +182,6 @@ def test_the_compliant_properties_pass(properties, rules):
     passed = {r["property"] for r in result["report"]["results"] if r["passed"]}
     assert {"Source", "Engineer", "Engr Approved By", "Project",
             "Revision", "State", "Category Name", "File Name"} <= passed
-
-
-def test_a_clean_description_passes(properties, rules):
-    props = dict(properties, **{"Description (File)": "adapter plate assembly"})
-    result = cfp.evaluate_against_rules(props, "Assembly - Engineering", rules)
-    desc = next(r for r in result["report"]["results"]
-                if r["property"] == "Description (File)")
-    assert desc["passed"]
 
 
 def test_an_iso_standard_purchased_part_is_exempt_from_a_vendor_number(rules):
@@ -239,49 +250,79 @@ def test_every_rule_set_is_well_formed(rules):
                 assert clause["property"] in spec["properties"], where
 
 
-# The Vault grid columns that must be filled in on every file, in every
-# category. Dropping one of these from a rule set silently weakens the gate,
-# so it fails here instead.
-ALWAYS_REQUIRED = (
-    "State", "Revision", "Project", "Engineer", "Engr Approved By", "Source",
-)
+CONTENT_CENTER = "Part - Content Center"
 
-# Designer is required everywhere except on assemblies, where the design credit
-# lives on the child parts.
-DESIGNER_EXEMPT = ("Assembly - Engineering",)
+# Which categories are exempt from each gated column. Content Center files are
+# Inventor library parts — nobody in-house designs, engineers, or bills them to
+# a project — and assemblies carry no design credit of their own.
+#
+# Every column below is required in every category EXCEPT the ones listed.
+# Dropping one from a category that isn't exempt silently weakens the gate, so
+# it fails here instead.
+GATED_COLUMNS = {
+    "State": (),
+    "Revision": (),
+    "Source": (),
+    "Engineer": (CONTENT_CENTER,),
+    "Engr Approved By": (CONTENT_CENTER,),
+    "Project": (CONTENT_CENTER,),
+    "Designer": ("Assembly - Engineering", CONTENT_CENTER),
+}
 
-# Declared so their values show up in the report, but never gated.
-NEVER_REQUIRED = ("Title", "CAD Category")
+# Declared so their values show up in the report, but never gated anywhere.
+NEVER_REQUIRED = ("Title", "CAD Category", "Description (File)")
 
-PART_CATEGORIES = ("Part - Engineering", "Part - Purchased", "Part - Content Center")
+PART_CATEGORIES = ("Part - Engineering", "Part - Purchased", CONTENT_CENTER)
 
 
-@pytest.mark.parametrize("prop", ALWAYS_REQUIRED)
-def test_every_category_requires_the_core_columns(rules, prop):
+@pytest.mark.parametrize("prop,exempt", sorted(GATED_COLUMNS.items()))
+def test_the_gated_columns_are_required_where_they_should_be(rules, prop, exempt):
     for category, spec in rules["categories"].items():
         rule = (spec.get("properties") or {}).get(prop)
         assert rule is not None, f"{category} has no rule for {prop}"
-        assert rule.get("required") is True, f"{category}.{prop} is not required"
+        expected = category not in exempt
+        assert bool(rule.get("required")) is expected, (
+            f"{category}.{prop} required should be {expected}"
+        )
 
 
-@pytest.mark.parametrize("prop", ALWAYS_REQUIRED)
-def test_a_missing_core_column_is_reported(rules, prop):
-    """Blank it out and the rule set has to catch it."""
+@pytest.mark.parametrize("prop,exempt", sorted(GATED_COLUMNS.items()))
+def test_a_missing_gated_column_is_reported(rules, prop, exempt):
+    """Blank it out: gated categories must flag it, exempt ones must not."""
     for category in rules["categories"]:
         props = {p: "placeholder" for p in rules["categories"][category]["properties"]}
         props[prop] = ""
         result = cfp.evaluate_against_rules(props, category, rules)
         failed = {r["property"] for r in result["report"]["results"] if not r["passed"]}
-        assert prop in failed, f"{category} did not flag a blank {prop}"
+        if category in exempt:
+            assert prop not in failed, f"{category} should not gate {prop}"
+        else:
+            assert prop in failed, f"{category} did not flag a blank {prop}"
 
 
-def test_designer_is_required_except_on_assemblies(rules):
-    for category, spec in rules["categories"].items():
-        rule = spec["properties"]["Designer"]
-        expected = category not in DESIGNER_EXEMPT
-        assert bool(rule.get("required")) is expected, (
-            f"{category}.Designer required should be {expected}"
-        )
+def test_content_center_parts_skip_the_sign_off_fields(rules):
+    """Library fasteners carry no in-house engineering ownership."""
+    props = {p: "" for p in rules["categories"][CONTENT_CENTER]["properties"]}
+    props.update({
+        "File Name": "ISO 4762 M6x20.ipt", "Revision": "1", "State": "Released",
+        "Source": "Buy", "Material": "Steel", "Vendor": "McMASTER-CARR",
+        "Vendor Number": "91290A326", "Category Name": CONTENT_CENTER,
+    })
+    result = cfp.evaluate_against_rules(props, CONTENT_CENTER, rules)
+    assert result["report"]["failed"] == 0, [
+        (r["property"], r["failures"])
+        for r in result["report"]["results"] if not r["passed"]
+    ]
+
+
+def test_content_center_still_rejects_not_reviewed(rules):
+    """Not required doesn't mean anything goes."""
+    props = {p: "placeholder" for p in rules["categories"][CONTENT_CENTER]["properties"]}
+    props["Engr Approved By"] = "NOT REVIEWED"
+    result = cfp.evaluate_against_rules(props, CONTENT_CENTER, rules)
+    approved = next(r for r in result["report"]["results"]
+                    if r["property"] == "Engr Approved By")
+    assert not approved["passed"]
 
 
 def test_an_assembly_with_no_designer_still_passes(properties, rules):
@@ -459,18 +500,19 @@ def test_a_skipped_child_is_not_a_failure():
 
 # --------------------------------------------------------------------------- reporting
 
-def test_markdown_report_names_every_failure(properties, rules):
+def test_markdown_report_names_every_failure(failing_properties, rules):
     evaluated = cfp.evaluate_against_rules(
-        properties, properties["Category Name"], rules)
+        failing_properties, failing_properties["Category Name"], rules)
     md = cfp.format_markdown_report({
         "file_name": "CD-001659.iam",
-        "info": {"properties": properties, "note": None},
+        "info": {"properties": failing_properties, "note": None},
         "children": [], "children_error": None, "recursive": False,
         **evaluated,
     })
     assert "# File Property Compliance — `CD-001659.iam`" in md
     assert "**FAIL**" in md
-    assert "`Description (File)`" in md
+    for prop in ("Engineer", "Project"):
+        assert f"`{prop}`" in md
 
 
 def test_markdown_escapes_pipes_so_tables_do_not_break():
@@ -528,7 +570,7 @@ def test_gui_renders_a_report_without_blowing_up(properties, rules):
         assert "Assembly - Engineering" in rendered
         for prop in ("Title", "Description (File)", "CAD Category"):
             assert prop in rendered
-        assert "15/16 properties passed" in rendered
+        assert "16/16 properties passed" in rendered
     finally:
         root.destroy()
 
@@ -547,9 +589,10 @@ def _find_text_widget(widget):
 # --------------------------------------------------------------------------- excel
 
 @pytest.fixture()
-def checked_result(properties, rules):
-    """A result dict with one failing top file and two children (fail + skip)."""
-    child_props = dict(properties, **{
+def checked_result(failing_properties, rules):
+    """A result covering all three statuses: a failing top file, a failing
+    child, and a child whose category has no rule set."""
+    child_props = dict(failing_properties, **{
         "File Name": "CD-001624.ipt",
         "Category Name": "Part - Engineering",
         "Vendor": "",
@@ -557,7 +600,7 @@ def checked_result(properties, rules):
     })
     return {
         "file_name": "CD-001659.iam",
-        "info": {"properties": properties, "note": None},
+        "info": {"properties": failing_properties, "note": None},
         "recursive": True,
         "children_error": None,
         "children": [
@@ -573,7 +616,8 @@ def checked_result(properties, rules):
                 "report": None,
             },
         ],
-        **cfp.evaluate_against_rules(properties, properties["Category Name"], rules),
+        **cfp.evaluate_against_rules(
+            failing_properties, failing_properties["Category Name"], rules),
     }
 
 
@@ -598,13 +642,15 @@ def test_summary_has_one_row_per_file(checked_result, tmp_path):
     ws = openpyxl.load_workbook(out)["Summary"]
 
     header = [c.value for c in ws[3]]
-    assert header == ["File", "Category", "Status", "Passed", "Total", "Failures"]
+    assert header == ["File", "Category", "Status", "Failures"], (
+        "Passed/Total were dropped — the summary is status + what failed"
+    )
 
     rows = {r[0]: r for r in ws.iter_rows(min_row=4, values_only=True)}
     assert set(rows) == {"CD-001659.iam", "CD-001624.ipt", "notes.xlsx"}
     assert rows["CD-001659.iam"][2] == "FAIL"
-    assert "Description (File)" in rows["CD-001659.iam"][5]
-    assert "Vendor" in rows["CD-001624.ipt"][5]
+    assert "Engineer" in rows["CD-001659.iam"][3]
+    assert "Vendor" in rows["CD-001624.ipt"][3]
 
 
 def test_a_file_with_no_rule_set_exports_as_skip_not_pass(checked_result, tmp_path):
@@ -616,6 +662,7 @@ def test_a_file_with_no_rule_set_exports_as_skip_not_pass(checked_result, tmp_pa
 
     summary = {r[0]: r for r in wb["Summary"].iter_rows(min_row=4, values_only=True)}
     assert summary["notes.xlsx"][2] == "SKIP"
+    assert "No rule set" in summary["notes.xlsx"][3]
 
     detail = [r for r in wb["Detail"].iter_rows(min_row=4, values_only=True)
               if r[0] == "notes.xlsx"]
@@ -635,8 +682,8 @@ def test_detail_has_one_row_per_property_checked(checked_result, tmp_path):
     assert len(top) == checked_result["report"]["total"]
 
     failing = [r for r in top if r[3] == "FAIL"]
-    assert [r[2] for r in failing] == ["Description (File)"]
-    assert failing[0][5], "a failing row must say why"
+    assert sorted(r[2] for r in failing) == ["Engineer", "Project"]
+    assert all(r[5] for r in failing), "every failing row must say why"
 
 
 def test_export_of_a_single_file_check_has_no_child_rows(properties, rules, tmp_path):
