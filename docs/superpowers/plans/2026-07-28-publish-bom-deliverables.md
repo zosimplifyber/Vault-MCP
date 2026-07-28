@@ -95,7 +95,7 @@ REAL_BOM = os.path.join(FIXTURES, "CD-001608-bom.xlsx")
 
 
 def test_scanrow_counts_one_job_per_resolved_file():
-    row = publish_bom.ScanRow(stem="CD-001578", part_number="CD-001578")
+    row = publish_bom.ScanRow(stem="CD-001578")
     assert row.job_count == 0
 
     row.model_version_id = "124814"
@@ -179,9 +179,13 @@ MISSING_FILENAME_ERROR = (
 
 @dataclass
 class PublishRow:
-    """One unique CAD file stem to publish deliverables for."""
+    """One unique CAD file stem to publish deliverables for.
+
+    ``stem`` is the identity — it names the CAD file. The BOM's part number is
+    deliberately not carried: these exports derive Number from the filename
+    stem, so it would be the same string twice.
+    """
     stem: str
-    part_number: str = ""
     description: str = ""
     is_top: bool = False
 
@@ -190,7 +194,7 @@ class PublishRow:
 class ScanRow:
     """A PublishRow after Vault lookup, carrying whatever files were found."""
     stem: str
-    part_number: str = ""
+    description: str = ""
     is_top: bool = False
     model_name: str = ""
     model_version_id: str = ""
@@ -293,6 +297,13 @@ def test_phantom_and_inseparable_and_unknown_structures_are_kept(tmp_path):
     assert error is None
     assert {r.stem for r in rows} == {
         "CD-000001", "CD-000002", "CD-000003", "CD-000004"}
+
+
+def test_the_description_is_carried_through_for_the_results_table():
+    """The scan table shows it — a stem alone is hard to sanity-check."""
+    rows, _ = publish_bom.load_publish_rows(REAL_BOM)
+    by_stem = {r.stem: r for r in rows}
+    assert by_stem["CD-001613"].description == "bmw kft 90 vacuum insert assembly"
 
 
 def test_duplicate_filenames_collapse_to_one_stem(tmp_path):
@@ -435,7 +446,6 @@ def load_publish_rows(
 
         rows.append(PublishRow(
             stem=stem,
-            part_number=_norm(rec.get("Number")) or stem,
             description=_norm(rec.get("Description (Item,CO)")),
         ))
 
@@ -445,7 +455,7 @@ def load_publish_rows(
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `python -m pytest tests/test_publish_bom.py -v`
-Expected: PASS — 9 passed
+Expected: PASS — 10 passed
 
 - [ ] **Step 5: Commit**
 
@@ -519,7 +529,7 @@ def top_assembly_stem(bom_file_path: str) -> str:
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `python -m pytest tests/test_publish_bom.py -v`
-Expected: PASS — 17 passed
+Expected: PASS — 18 passed
 
 - [ ] **Step 5: Commit**
 
@@ -748,7 +758,7 @@ def _status_for(row: ScanRow) -> str:
 
 async def _scan_one(api, vault_id: str, row: PublishRow,
                     progress: ProgressFn) -> ScanRow:
-    out = ScanRow(stem=row.stem, part_number=row.part_number,
+    out = ScanRow(stem=row.stem, description=row.description,
                   is_top=row.is_top)
 
     resp = await api.search_files(
@@ -807,7 +817,7 @@ async def scan_rows(
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `python -m pytest tests/test_publish_bom.py -v`
-Expected: PASS — 24 passed
+Expected: PASS — 25 passed
 
 - [ ] **Step 5: Commit**
 
@@ -833,7 +843,7 @@ Append to `tests/test_publish_bom.py`:
 
 def _scanned(stem="CD-001578", model="CD-001578.ipt", model_id="111",
              drawing="CD-001578.idw", drawing_id="222", is_top=False):
-    row = publish_bom.ScanRow(stem=stem, part_number=stem, is_top=is_top,
+    row = publish_bom.ScanRow(stem=stem, is_top=is_top,
                               model_name=model, model_version_id=model_id,
                               drawing_name=drawing, drawing_version_id=drawing_id)
     row.status = publish_bom._status_for(row)
@@ -1065,7 +1075,7 @@ async def submit_jobs(
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `python -m pytest tests/test_publish_bom.py -v`
-Expected: PASS — 32 passed
+Expected: PASS — 33 passed
 
 - [ ] **Step 5: Commit**
 
@@ -1201,7 +1211,7 @@ async def scan_bom(
         if any(r.stem.lower() == top.lower() for r in rows):
             progress(f"Top assembly {top} is already a BOM row; not repeating it.")
         else:
-            rows.append(PublishRow(stem=top, part_number=top, is_top=True))
+            rows.append(PublishRow(stem=top, is_top=True))
             progress(f"Top assembly: {top}")
 
     if not rows:
@@ -1227,7 +1237,7 @@ def summarize(rows: list[ScanRow]) -> dict[str, int]:
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `python -m pytest tests/test_publish_bom.py -v`
-Expected: PASS — 37 passed
+Expected: PASS — 38 passed
 
 - [ ] **Step 5: Commit**
 
@@ -1381,14 +1391,15 @@ class PublishBOMGUI:
 
         table_frame = tk.Frame(self.win, bg=WHITE, padx=16, pady=10)
         table_frame.pack(fill="both", expand=True)
-        columns = ("part", "model", "drawing", "status")
+        columns = ("part", "description", "model", "drawing", "status")
         self.tree = ttk.Treeview(
             table_frame, columns=columns, show="headings", height=10)
         for key, label, width in (
-            ("part", "Part", 140),
-            ("model", "Model", 210),
-            ("drawing", "Drawing", 210),
-            ("status", "Status", 180),
+            ("part", "Part", 130),
+            ("description", "Description", 200),
+            ("model", "Model", 170),
+            ("drawing", "Drawing", 170),
+            ("status", "Status", 170),
         ):
             self.tree.heading(key, text=label)
             self.tree.column(key, width=width, anchor="w")
@@ -1513,7 +1524,8 @@ class PublishBOMGUI:
             part = f"{row.stem} (top)" if row.is_top else row.stem
             tag = "gap" if row.status != publish_bom.STATUS_BOTH else ""
             self.tree.insert("", "end", values=(
-                part, row.model_name or "-", row.drawing_name or "-", row.status,
+                part, row.description or "-",
+                row.model_name or "-", row.drawing_name or "-", row.status,
             ), tags=(tag,))
 
         s = publish_bom.summarize(rows)
@@ -1697,7 +1709,7 @@ git commit -m "feat(publish-bom): add the publisher tile to the launcher"
 - [ ] **Step 1: Run the whole suite**
 
 Run: `python -m pytest -q`
-Expected: all tests pass, including the 37 new ones. If anything unrelated
+Expected: all tests pass, including the 38 new ones. If anything unrelated
 fails, check whether it failed before this branch — do not "fix" a
 pre-existing failure as part of this work.
 

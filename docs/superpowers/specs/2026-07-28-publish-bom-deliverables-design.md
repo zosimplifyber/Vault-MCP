@@ -245,10 +245,10 @@ attached, palette imported from `gui.release_workflow` — the arrangement
 | Top assembly  [ CD-001608                 ]  blank=skip |
 |                                     [ Scan ]  [ Submit ]|
 +---------------------------------------------------------+
-| Part        Model          Drawing        Status        |
-| CD-001578   CD-001578.ipt  CD-001578.idw  2 jobs        |
-| CD-001601   CD-001601.iam  --             STEP only     |
-| CD-001644   --             --             not in Vault  |
+| Part      Description        Model        Drawing    Status  |
+| CD-001578 bmw vacuum backer  ...578.ipt   ...578.idw 2 jobs  |
+| CD-001601 bmw bladder plate  ...601.iam   --         STEP    |
+| CD-001644 bmw deckle plate   --           --         missing |
 +---------------------------------------------------------+
 | 34 Make rows - 31 models - 28 drawings - 59 jobs - 3 gap|
 | log...                                        [ Close ] |
@@ -259,6 +259,11 @@ attached, palette imported from `gui.release_workflow` — the arrangement
   once submitted. A second run needs a fresh Scan — the guard against
   accidentally queueing sixty jobs twice.
 - Results table is a `ttk.Treeview`; the summary line sits directly beneath it.
+  The Description column comes from the BOM row — a bare stem like `CD-001613`
+  is hard to sanity-check, and the whole point of the scan step is that a
+  human can spot a wrong or missing part before jobs are queued. The BOM's
+  part number is deliberately not shown: these exports derive it from the
+  filename stem, so it would be the same string twice.
 - Work runs on a worker thread pushing status strings to a `queue.Queue`,
   drained by `after()`, so the window never freezes. Same pattern as the other
   dialogs.
