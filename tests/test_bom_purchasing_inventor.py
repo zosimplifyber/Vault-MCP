@@ -34,6 +34,42 @@ def test_coerce_maps_inventor_headers_and_translates_source():
         assert col in out.columns
 
 
+def test_coerce_maps_the_inventor_filename_column_to_name():
+    # The export's file name identifies the CAD file behind the row; the Part
+    # Number is the item number (SF-001922 vs CD-001578.ipt).
+    df = pd.DataFrame({
+        "Item": ["1"], "Part Number": ["SF-001922"], "QTY": [1],
+        "BOM Structure": ["Normal"], "Filename": ["CD-001578.ipt"],
+    })
+    out, err = bp.coerce_bom_dataframe(df)
+    assert err is None
+    assert out.loc[0, "Name"] == "CD-001578.ipt"
+
+
+def test_vault_bom_rows_fill_the_name_column_too():
+    rows = [{"Number": "SF-001922", "File Name": "CD-001578.ipt", "Item Qty": 1}]
+    out = bp.vault_bom_to_dataframe(rows)
+    assert out.loc[0, "Name"] == "CD-001578.ipt"
+
+
+def test_coerce_accepts_the_spaced_file_name_header():
+    df = pd.DataFrame({
+        "Item": ["1"], "Part Number": ["SF-001922"], "QTY": [1],
+        "File Name": ["CD-001578.ipt"],
+    })
+    out, err = bp.coerce_bom_dataframe(df)
+    assert err is None
+    assert out.loc[0, "Name"] == "CD-001578.ipt"
+
+
+def test_coerce_leaves_name_blank_when_the_export_has_no_file_column():
+    df = pd.DataFrame({"Item": ["1"], "Part Number": ["SF-1"], "QTY": [1]})
+    out, err = bp.coerce_bom_dataframe(df)
+    assert err is None
+    assert "Name" in out.columns
+    assert pd.isna(out.loc[0, "Name"])
+
+
 def test_coerce_accepts_canonical_vault_headers_unchanged():
     df = pd.DataFrame({c: ["x"] for c in bp.BOM_COLUMNS})
     out, err = bp.coerce_bom_dataframe(df)

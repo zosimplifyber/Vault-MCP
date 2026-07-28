@@ -182,6 +182,11 @@ class TestLookupKeys:
                            "Title": ["CD-001578"]})
         assert bp._state_lookup_aliases(df)["SF-001922"] == ["CD-001578.ipt", "CD-001578"]
 
+    def test_the_canonical_name_column_is_used_as_the_file_name(self):
+        # coerce_bom_dataframe renames the export's Filename column to Name.
+        df = pd.DataFrame({"Number": ["SF-001922"], "Name": ["CD-001578.ipt"]})
+        assert bp._state_lookup_aliases(df)["SF-001922"] == ["CD-001578.ipt"]
+
     def test_the_title_is_used_when_there_is_no_file_name(self):
         # The BOM's Part Number is the item number; Title carries the CD- number.
         df = pd.DataFrame({"Number": ["SF-001920"], "Title": ["CD-001574"]})
