@@ -30,8 +30,11 @@ def test_coerce_maps_inventor_headers_and_translates_source():
     assert list(out["Row Order"]) == ["1", "2", "2.1"]
     assert list(out["Source"]) == ["Make", "Make", "Buy"]      # translated
     assert list(out["Units"]) == ["Each", "Each", "Each"]
-    for col in ("Position Number",):
-        assert col in out.columns
+
+
+def test_position_number_is_not_an_exported_column():
+    assert "Position Number" not in bp.BOM_COLUMNS
+    assert "Position Number" not in bp.ALL_COLUMNS
 
 
 def test_coerce_keeps_the_inventor_title_column():

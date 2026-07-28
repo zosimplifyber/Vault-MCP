@@ -56,7 +56,7 @@ PURCHASED_ITEMS_SHEET = "purchased parts"
 # Column definitions
 # ---------------------------------------------------------------------------
 BOM_COLUMNS = [
-    "Number", "Title", "Row Order", "Position Number", "Item Qty", "Units",
+    "Number", "Title", "Row Order", "Item Qty", "Units",
     "Revision", "State", "Description (Item,CO)", "Source",
 ]
 
@@ -81,7 +81,7 @@ HEADER_LABELS = {
 }
 
 COLUMN_WIDTHS = {
-    "Number": 14, "Title": 20, "Row Order": 12, "Position Number": 16,
+    "Number": 14, "Title": 20, "Row Order": 12,
     "Item Qty": 10, "Units": 8, "Revision": 10,
     "State": 16, "Description (Item,CO)": 44,
     "Source": 10, "Material": 22,
@@ -119,11 +119,6 @@ VAULT_FIELD_MAP: dict[str, str] = {
     "RowOrder": "Row Order",
     "Row": "Row Order",
     "BomRowOrder": "Row Order",
-    # Position
-    "Position Number": "Position Number",
-    "PositionNumber": "Position Number",
-    "Position": "Position Number",
-    "Pos": "Position Number",
     # Quantity
     "Item Qty": "Item Qty",
     "Qty": "Item Qty",
@@ -1046,7 +1041,7 @@ def read_bom_file(bom_file_path: str) -> pd.DataFrame:
     an unsupported extension.
     """
     str_cols = {c: str for c in
-                ("Item", "Row Order", "Position Number", "Part Number", "Number")}
+                ("Item", "Row Order", "Part Number", "Number")}
     ext = os.path.splitext(bom_file_path)[1].lower()
     if ext == ".csv":
         return pd.read_csv(bom_file_path, dtype=str_cols)
