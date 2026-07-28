@@ -27,9 +27,9 @@ def test_reference_path_override_is_used(tmp_path, monkeypatch):
     ref = tmp_path / "ref.xlsx"
     _ref_workbook(ref)
     bom = tmp_path / "bom.txt"
-    bom.write_text(
-        "Item\tPart Number\tBOM Structure\tQTY\tDescription\n"
-        "1\tSF-1\tPurchased\t2\tpart\n",
+    bom.write_text(              # the reference is keyed on the file name
+        "Item\tPart Number\tBOM Structure\tQTY\tDescription\tFilename\n"
+        "1\tSF-999\tPurchased\t2\tpart\tSF-1.ipt\n",
         encoding="utf-8",
     )
     result = bp.generate_from_file(str(bom), "ASM", str(tmp_path), reference_path=str(ref))

@@ -66,12 +66,13 @@ class TestTitleColumn:
         assert "Number" not in header
         assert ws.cell(row=4, column=1).value == "CD-001578"
 
-    def test_the_part_number_still_drives_matching(self, tmp_path, monkeypatch):
-        # Number is hidden from the sheet, not dropped from the data: the
-        # reference lookup and the Vault state lookup both key on it.
-        ref = pd.DataFrame({"Number": ["SF-000067"], "Vendor": ["Acme"],
+    def test_the_file_name_drives_matching(self, tmp_path, monkeypatch):
+        # Neither Number nor Title is the key: the reference is matched on the
+        # file name without its extension.
+        ref = pd.DataFrame({"Number": ["CD-000891"], "Vendor": ["Acme"],
                             "Cost Per": [1.5]})
-        df, matched, total = bp.lookup_purchased_data(_df([BUY]), ref)
+        df, matched, total = bp.lookup_purchased_data(
+            _df([dict(BUY, Filename="CD-000891.ipt")]), ref)
         assert (matched, total) == (1, 1)
         ws = _book(tmp_path, df)["Purchasing"]
         header = [c.value for c in ws[HDR_ROW]]

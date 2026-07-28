@@ -62,3 +62,22 @@ class TestLoosePartKey:
 
     def test_case_insensitive(self):
         assert nz.loose_part_key("hfs5-2020") == nz.loose_part_key("HFS5 2020")
+
+
+class TestFileStem:
+    def test_strips_the_extension(self):
+        assert nz.file_stem("CD-001578.ipt") == "CD-001578"
+
+    def test_strips_only_the_last_extension(self):
+        assert nz.file_stem("ISO 2338 - 5 h8 x 16 v2.ipt") == "ISO 2338 - 5 h8 x 16 v2"
+
+    def test_drops_any_directory_part(self):
+        assert nz.file_stem(r"C:\parts\CD-001578.ipt") == "CD-001578"
+
+    def test_a_name_without_an_extension_is_kept(self):
+        assert nz.file_stem("SF-001658") == "SF-001658"
+
+    def test_blanks_and_nan_give_an_empty_key(self):
+        assert nz.file_stem(None) == ""
+        assert nz.file_stem(float("nan")) == ""
+        assert nz.file_stem("  ") == ""

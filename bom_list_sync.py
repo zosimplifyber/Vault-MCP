@@ -25,11 +25,14 @@ from typing import Iterable
 from supplier_pricing.normalize import normalize_part_number
 
 # BOM canonical column -> list column DISPLAY name (resolved to internal live).
-# The BOM's own Title / Vendor / Web Link are surfaced under these canonical
-# names by bom_dataframe_from_file (coerce_bom_dataframe drops them).
+# The list was re-keyed on 2026-07-28: "Title (Name)" holds the CAD file name
+# without its extension and is now THE key; the old part-number column was
+# renamed "OLDPt.2-Title" and is written for provenance only, never matched on.
+KEY_LIST_COLUMN = "Title (Name)"
+
 _BOM_TO_LIST_DISPLAY = {
-    "Title (Item,CO)": "Title (Item,CO)",       # <- BOM "Title" (NOT the part number)
-    "Description (Item,CO)": "Description (Item,CO)",
+    "Name": KEY_LIST_COLUMN,                    # <- BOM file name, no extension
+    "Description (Item,CO)": "Description",
     "Material": "Material",
     "Vendor": "Vendor",
     "Vendor Number": "Vendor Number",           # <- BOM "Web Link"
@@ -42,17 +45,24 @@ def _display_to_internal(client) -> dict[str, str]:
 
 
 def existing_index(client) -> dict[str, str]:
-    """Normalized part number -> list item id (from the Title key field)."""
+    """Normalized file name (no extension) -> list item id.
+
+    Read from the list's "Title (Name)" column. Rows that have no name are not
+    indexed: without a fallback key there is nothing to match them on.
+    """
+    key_field = _display_to_internal(client).get(KEY_LIST_COLUMN)
     out: dict[str, str] = {}
+    if not key_field:
+        return out
     for item_id, fields in client.iter_rows():
-        num = normalize_part_number(fields.get("Title"))
-        if num and num not in out:
-            out[num] = item_id
+        name = normalize_part_number(fields.get(key_field))
+        if name and name not in out:
+            out[name] = item_id
     return out
 
 
 def existing_numbers(client) -> set[str]:
-    """Normalized part numbers already in the list."""
+    """Normalized file-name keys already in the list."""
     return set(existing_index(client))
 
 
@@ -77,9 +87,10 @@ def _is_blank(value) -> bool:
 def build_item_fields(row, number: str, d2i: dict[str, str]) -> dict:
     """Build the Graph `fields` body for a new list item from a BOM row.
 
-    The built-in ``Title`` field holds the part number (it drives the list's
-    read-only "Number" column). Everything else comes from the matching BOM
-    column — importantly, "Title (Item,CO)" is the BOM's own Title, not the number.
+    "Title (Name)" — the file name without its extension — is the key and comes
+    from the BOM's Name column. The built-in ``Title`` field still receives the
+    part number so a row is recognisable in list views, but nothing matches on
+    it. Everything else comes from the matching BOM column.
     """
     fields: dict[str, object] = {"Title": number}
     for bom_col, display in _BOM_TO_LIST_DISPLAY.items():
@@ -102,14 +113,20 @@ def add_missing_bom_rows(client, bom_df, *, dry_run: bool = True,
                          update_existing: bool = False) -> dict:
     """Plan (and optionally apply) list changes from a BOM.
 
+    Rows are keyed on the file name without its extension — the list's
+    "Title (Name)" column. A BOM row with no file name cannot be matched and is
+    skipped (counted in ``skipped_no_name``) rather than guessed at from its
+    part number.
+
     Missing parts are created. With ``update_existing=True``, parts already in
-    the list are PATCHed with the BOM's descriptive fields (Title (Item,CO),
-    Description, Material, Vendor, Vendor Number) — the Title key and any
-    Cost/Lead already entered are left untouched. ``sources`` optionally
-    restricts to BOM rows whose Source is in the set. Dry-run writes nothing.
+    the list are PATCHed with the BOM's descriptive fields (Description,
+    Material, Vendor, Vendor Number) — the key and any Cost/Lead already entered
+    are left untouched. ``sources`` optionally restricts to BOM rows whose
+    Source is in the set. Dry-run writes nothing.
     """
     d2i = _display_to_internal(client)
     index = existing_index(client)
+    key_field = d2i.get(KEY_LIST_COLUMN)
     source_set = {str(s).strip() for s in sources} if sources else None
 
     rows_out: list[dict] = []
@@ -120,42 +137,50 @@ def add_missing_bom_rows(client, bom_df, *, dry_run: bool = True,
     created = 0
     updated = 0
     already_present = 0
+    skipped_no_name = 0
 
     has_source = "Source" in getattr(bom_df, "columns", [])
     for _idx, row in bom_df.iterrows():
         number = normalize_part_number(_row_get(row, "Number"))
-        if not number or number in seen:
-            continue
+        name = normalize_part_number(_row_get(row, "Name"))
         source = str(_row_get(row, "Source")).strip() if has_source else ""
         if source_set is not None and source not in source_set:
             continue
-        seen.add(number)
-        if number in index:
+        if not name:
+            skipped_no_name += 1
+            continue
+        if name in seen:
+            continue
+        seen.add(name)
+        if name in index:
             already_present += 1
 
         fields = build_item_fields(row, number, d2i)
-        description = fields.get(d2i.get("Description (Item,CO)", ""), None)
+        description = fields.get(d2i.get("Description", ""), None)
+        entry = {"name": name, "number": number, "description": description,
+                 "source": source}
 
-        if number in index:
+        if name in index:
             if not update_existing:
                 continue
-            patch = {k: v for k, v in fields.items() if k != "Title"}
+            patch = {k: v for k, v in fields.items()
+                     if k not in ("Title", key_field)}
             status = "would_update"
             if patch and not dry_run:
                 try:
-                    client.patch_fields(index[number], patch)
+                    client.patch_fields(index[name], patch)
                     updated += 1
                     status = "updated"
                 except Exception as exc:                   # noqa: BLE001
                     status = "error"
-                    errors.append({"number": number, "error": str(exc)})
+                    errors.append({"name": name, "number": number,
+                                   "error": str(exc)})
             elif not patch:
                 status = "unchanged"
-            rows_out.append({"number": number, "description": description,
-                             "source": source, "status": status, "fields": fields})
+            rows_out.append({**entry, "status": status, "fields": fields})
             continue
 
-        missing.append(number)
+        missing.append(name)
         by_source[source or "(none)"] = by_source.get(source or "(none)", 0) + 1
         status = "would_add"
         if not dry_run:
@@ -165,12 +190,12 @@ def add_missing_bom_rows(client, bom_df, *, dry_run: bool = True,
                 status = "added"
             except Exception as exc:                       # noqa: BLE001
                 status = "error"
-                errors.append({"number": number, "error": str(exc)})
-        rows_out.append({"number": number, "description": description,
-                         "source": source, "status": status, "fields": fields})
+                errors.append({"name": name, "number": number, "error": str(exc)})
+        rows_out.append({**entry, "status": status, "fields": fields})
 
     return {
         "missing": missing,
+        "skipped_no_name": skipped_no_name,
         # BOM-side counts (how many parts this BOM contributed) vs the list-side
         # existing_count (how big the list is) — callers report them separately.
         "checked": len(seen),
@@ -280,18 +305,10 @@ def bom_dataframe_from_file(path: str):
         if src in raw.columns:
             coerced[dest] = raw[src].values
 
-    # Parts whose Vault file carries no Title (every library fastener) would land
-    # in the list with a blank Title. Fall back to the file name without its
-    # extension, which is what a person would call the part anyway.
+    # The key: the CAD file name without its extension. Everything downstream
+    # matches on this, so it is taken from the export's file-name column and
+    # nowhere else — a row without one has no key.
     file_col = next((c for c in _FILE_NAME_COLUMNS if c in raw.columns), None)
-    if file_col is not None:
-        stems = raw[file_col].map(_file_stem)
-        if "Title (Item,CO)" not in coerced.columns:
-            coerced["Title (Item,CO)"] = stems.values
-        else:
-            # An all-empty Title column reads as float64; cast to object before
-            # writing strings into it.
-            titles = coerced["Title (Item,CO)"].astype(object)
-            keep = ~titles.map(_is_blank)
-            coerced["Title (Item,CO)"] = titles.where(keep, stems.values)
+    coerced["Name"] = (raw[file_col].map(_file_stem).values
+                       if file_col is not None else None)
     return coerced, None

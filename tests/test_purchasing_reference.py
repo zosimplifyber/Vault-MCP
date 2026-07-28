@@ -118,7 +118,63 @@ def test_enrich_falls_back_to_excel_when_mslist_fails(tmp_path, monkeypatch):
     wb.save(ref)
     monkeypatch.setattr(bp, "find_purchased_items_file", lambda: str(ref))
 
-    df = pd.DataFrame({"Number": ["SF-1"], "Source": ["Buy"]})
+    # Keyed on the file name, like every reference since 2026-07-28.
+    df = pd.DataFrame({"Number": ["SF-000067"], "Filename": ["SF-1.ipt"],
+                       "Source": ["Buy"]})
     out, matched, total, unmatched, warnings = bp._enrich_with_reference(df)
     assert any("Microsoft List" in w for w in warnings)   # fallback was warned
     assert out.loc[0, "Vendor"] == "Acme"                 # Excel data used
+
+
+def test_the_key_column_is_title_name_not_the_legacy_part_number(monkeypatch):
+    # The list was re-keyed on 2026-07-28: field_1 "Title (Name)" holds the file
+    # name without its extension, and the built-in Title column was renamed
+    # "OLDPt.2-Title". Only the new key may feed the canonical Number column.
+    def fake_get(token, url, params=None):
+        if "/lists/LIST/columns" in url:
+            return {"value": [
+                {"name": "Title", "displayName": "OLDPt.2-Title"},
+                {"name": "field_1", "displayName": "Title (Name)"},
+                {"name": "field_4", "displayName": "Vendor"},
+            ]}
+        if "/lists/LIST/items" in url:
+            return {"value": [
+                {"fields": {"Title": "SF-001944", "field_1": "CD-001625",
+                            "field_4": "Acme"}},
+            ]}
+        if url.endswith("/sites/SITE/lists"):
+            return {"value": [{"id": "LIST", "displayName": "L"}]}
+        if ":/sites/" in url:
+            return {"id": "SITE"}
+        raise AssertionError("unexpected url: " + url)
+
+    monkeypatch.setattr(pref, "_graph_get", fake_get)
+    df = pref.load_mslist_dataframe(
+        {"site_hostname": "h", "site_path": "/sites/S", "list_name": "L", "list_id": ""},
+        token="T")
+    assert list(df["Number"]) == ["CD-001625"]      # the file name, not SF-001944
+
+
+def test_a_row_with_no_title_name_is_dropped(monkeypatch):
+    def fake_get(token, url, params=None):
+        if "/lists/LIST/columns" in url:
+            return {"value": [
+                {"name": "Title", "displayName": "OLDPt.2-Title"},
+                {"name": "field_1", "displayName": "Title (Name)"},
+            ]}
+        if "/lists/LIST/items" in url:
+            return {"value": [
+                {"fields": {"Title": "ISO 4762 - M6 X 50 - STEEL"}},   # no field_1
+                {"fields": {"Title": "SF-1", "field_1": "CD-1"}},
+            ]}
+        if url.endswith("/sites/SITE/lists"):
+            return {"value": [{"id": "LIST", "displayName": "L"}]}
+        if ":/sites/" in url:
+            return {"id": "SITE"}
+        raise AssertionError("unexpected url: " + url)
+
+    monkeypatch.setattr(pref, "_graph_get", fake_get)
+    df = pref.load_mslist_dataframe(
+        {"site_hostname": "h", "site_path": "/sites/S", "list_name": "L", "list_id": ""},
+        token="T")
+    assert list(df["Number"]) == ["CD-1"]

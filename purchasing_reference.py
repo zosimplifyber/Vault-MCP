@@ -56,10 +56,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
 # Microsoft List column DISPLAY name -> our canonical reference column.
 # lookup_purchased_data matches on "Number" and fills the rest.
 MSLIST_FIELD_MAP: dict[str, str] = {
+    # The key. Since 2026-07-28 the list is keyed on "Title (Name)" — the CAD
+    # file name without its extension — and its old part-number column was
+    # renamed "OLDPt.2-Title". The legacy column is deliberately NOT mapped:
+    # matching falls back to nothing, so a row without a name is simply dropped.
+    "Title (Name)": "Number",
     "Number": "Number",
     "Part Number": "Number",
     "PartNumber": "Number",
-    "Title": "Number",                       # Lists default the key column to "Title"
     "Item Number": "Number",
     "Vendor": "Vendor",
     "Supplier": "Vendor",

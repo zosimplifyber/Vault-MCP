@@ -6,6 +6,7 @@ float-inferred ".0" suffix.  These helpers give us stable keys for matching.
 """
 from __future__ import annotations
 
+import os
 import re
 
 # Canonical vendor family -> set of normalized alias tokens.
@@ -77,6 +78,25 @@ def normalize_part_number(pn: object) -> str:
 
     text = re.sub(r"\s+", " ", text)
     return text.upper()
+
+
+def file_stem(value: object) -> str:
+    """A file name without its extension ("CD-001578.ipt" -> "CD-001578").
+
+    The purchasing tools key on this: a BOM row's Part Number is the item
+    number, while the file it refers to is named for the CAD document.
+    """
+    if value is None:
+        return ""
+    try:
+        if value != value:            # NaN
+            return ""
+    except Exception:                 # noqa: BLE001
+        pass
+    text = str(value).strip()
+    if not text or text.lower() == "nan":
+        return ""
+    return os.path.splitext(os.path.basename(text))[0].strip()
 
 
 def loose_part_key(pn: object) -> str:

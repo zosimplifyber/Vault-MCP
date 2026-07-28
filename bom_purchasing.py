@@ -23,7 +23,7 @@ from openpyxl.utils import get_column_letter
 
 import purchasing_reference  # Microsoft-List reference source (with Excel fallback)
 import vault_state           # Vault lifecycle state for the State column
-from supplier_pricing.normalize import normalize_part_number
+from supplier_pricing.normalize import file_stem, normalize_part_number
 
 
 # ---------------------------------------------------------------------------
@@ -309,6 +309,19 @@ def _match_key(value: Any) -> str:
     return "" if key.upper() == "NAN" else key
 
 
+def _lookup_keys(df: pd.DataFrame) -> pd.Series:
+    """The lookup key per BOM row: its file name without the extension.
+
+    Blank where the export carries no file name for that row — such a row has no
+    key and matches nothing, by design.
+    """
+    column = next((c for c in df.columns
+                   if str(c).strip().lower() in FILE_NAME_HEADERS), None)
+    if column is None:
+        return pd.Series([""] * len(df), index=df.index)
+    return df[column].map(lambda v: _match_key(file_stem(v)))
+
+
 def lookup_purchased_data(
     bom_df: pd.DataFrame, ref_df: pd.DataFrame
 ) -> tuple[pd.DataFrame, int, int]:
@@ -328,13 +341,13 @@ def lookup_purchased_data(
 
     available = [c for c in LOOKUP_COLUMNS if c in ref_df.columns]
 
-    # Match on the NORMALIZED part number, not the raw string. The Microsoft
-    # List stores what bom_list_sync wrote — normalize_part_number's upper-cased,
-    # single-spaced form ("ISO 4762 - M6 X 10 - STAINLESS STEEL") — while the BOM
-    # carries the number as authored ("ISO 4762 - M6 x 10 - Stainless Steel").
-    # Raw-string equality missed every such part and left it "not in the
-    # reference file" with a blank Vendor / Cost even though the list had it.
-    bom_keys = result["Number"].map(_match_key)
+    # Key on the CAD FILE NAME without its extension, matched against the
+    # reference's key column (the list's "Title (Name)"). A BOM row's Part
+    # Number is the item number — SF-001944 for the file CD-001625.ipt — so
+    # matching on it looked up the wrong thing. There is deliberately no
+    # part-number fallback: a row with no file name matches nothing.
+    # Matching is normalized on both sides, so case and spacing don't matter.
+    bom_keys = _lookup_keys(result)
     ref_keys = ref_df[ref_key].map(_match_key)
 
     # Reference workbooks frequently list a part number on multiple rows (one per
