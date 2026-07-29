@@ -92,3 +92,46 @@ def test_gate_force_overrides_failures():
     compliance = {"report": {"failed": 2},
                   "children": [{"report": {"failed": 3}}]}
     assert release_steps.property_check_blocked(compliance, force=True) is None
+
+
+def _compliance(top=("100", "10"), children=()):
+    """Build a compliance result shaped like check_file_name's return value."""
+    return {
+        "info": {"file_version_id": top[0], "file_id": top[1]},
+        "children": [
+            {"file_version_id": v, "file_id": m, "file_name": f"F{v}.ipt"}
+            for v, m in children
+        ],
+    }
+
+
+def test_version_ids_lead_with_the_top_file():
+    c = _compliance(children=[("200", "20"), ("300", "30")])
+    assert release_steps.file_version_ids(c) == ["100", "200", "300"]
+
+
+def test_version_ids_dedupe_a_child_that_repeats_the_top():
+    c = _compliance(children=[("100", "10"), ("200", "20")])
+    assert release_steps.file_version_ids(c) == ["100", "200"]
+
+
+def test_version_ids_skip_children_that_failed_to_resolve():
+    c = _compliance(children=[("200", "20")])
+    c["children"].append({"file_version_id": "", "file_id": "",
+                          "error": "not found"})
+    assert release_steps.file_version_ids(c) == ["100", "200"]
+
+
+def test_master_ids_are_ints():
+    c = _compliance(children=[("200", "20")])
+    assert release_steps.file_master_ids(c) == [10, 20]
+
+
+def test_master_ids_skip_blank_and_unparseable():
+    c = _compliance(children=[("200", ""), ("300", "not-a-number")])
+    assert release_steps.file_master_ids(c) == [10]
+
+
+def test_derivation_handles_an_empty_result():
+    assert release_steps.file_version_ids({}) == []
+    assert release_steps.file_master_ids({}) == []

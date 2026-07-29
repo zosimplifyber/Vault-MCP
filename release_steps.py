@@ -75,3 +75,49 @@ def property_check_blocked(
             "tick 'Force past compliance gate' to continue anyway."
         )
     return None
+
+
+def _entries(compliance: dict[str, Any]) -> list[dict[str, Any]]:
+    """Top file first, then every CAD BOM child that actually resolved."""
+    out = [compliance.get("info") or {}]
+    out.extend(compliance.get("children") or [])
+    return out
+
+
+def file_version_ids(compliance: dict[str, Any]) -> list[str]:
+    """File-version IDs for every file in the assembly, top first.
+
+    Order is deterministic and de-duplicated: a child used more than once, or
+    one that repeats the top-level file, is synced once.
+    """
+    ids: list[str] = []
+    seen: set[str] = set()
+    for entry in _entries(compliance):
+        fid = str(entry.get("file_version_id") or "").strip()
+        if fid and fid not in seen:
+            seen.add(fid)
+            ids.append(fid)
+    return ids
+
+
+def file_master_ids(compliance: dict[str, Any]) -> list[int]:
+    """File *master* IDs — what the SDK lifecycle call takes, not version IDs.
+
+    Anything blank or non-numeric is dropped rather than guessed at; a bad ID
+    would fail the whole lifecycle batch.
+    """
+    ids: list[int] = []
+    seen: set[int] = set()
+    for entry in _entries(compliance):
+        raw = entry.get("file_id")
+        if raw in (None, ""):
+            continue
+        try:
+            mid = int(raw)
+        except (TypeError, ValueError):
+            logger.debug("Skipping unparseable file master id %r", raw)
+            continue
+        if mid not in seen:
+            seen.add(mid)
+            ids.append(mid)
+    return ids
