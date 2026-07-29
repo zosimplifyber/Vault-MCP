@@ -398,3 +398,59 @@ async def submit_jobs(
             progress(f"  {name}: {kind} queued (job {job_id or '?'})")
 
     return {"submitted": submitted, "failed": failed, "jobs": jobs}
+
+
+# ---------------------------------------------------------------------------
+# Top-level entry points
+# ---------------------------------------------------------------------------
+
+async def scan_bom(
+    api,
+    vault_id: str,
+    bom_file_path: str,
+    *,
+    top_assembly: str = "",
+    on_progress: Optional[ProgressFn] = None,
+) -> tuple[list[ScanRow], Optional[str]]:
+    """Parse a BOM, append the top assembly, and resolve everything in Vault.
+
+    Returns ``(scan_rows, error)``. On a parse error the list is empty, the
+    message is meant to be shown verbatim, and Vault is never called.
+
+    ``top_assembly`` is a stem such as ``"CD-001608"``; blank skips the
+    top-level row. A top assembly that already appears in the BOM is not
+    duplicated.
+    """
+    progress: ProgressFn = on_progress or (lambda _msg: None)
+
+    rows, error = load_publish_rows(bom_file_path)
+    if error:
+        return [], error
+    progress(f"{len(rows)} Make part(s) in the BOM.")
+
+    top = _norm(top_assembly)
+    if top:
+        if any(r.stem.lower() == top.lower() for r in rows):
+            progress(f"Top assembly {top} is already a BOM row; not repeating it.")
+        else:
+            rows.append(PublishRow(stem=top, is_top=True))
+            progress(f"Top assembly: {top}")
+
+    if not rows:
+        return [], "No Make parts found in this BOM."
+
+    progress("Resolving files in Vault...")
+    return await scan_rows(api, vault_id, rows, progress), None
+
+
+def summarize(rows: list[ScanRow]) -> dict[str, int]:
+    """Counts for the GUI's summary line."""
+    return {
+        "rows": len(rows),
+        "models": sum(1 for r in rows if r.model_version_id),
+        "drawings": sum(1 for r in rows if r.drawing_version_id),
+        "jobs": sum(r.job_count for r in rows),
+        "missing_drawing": sum(1 for r in rows if r.status == STATUS_MODEL_ONLY),
+        "not_found": sum(1 for r in rows if r.status == STATUS_MISSING),
+        "failed": sum(1 for r in rows if r.status == STATUS_FAILED),
+    }

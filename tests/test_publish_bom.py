@@ -425,3 +425,71 @@ async def test_a_disabled_queue_warns_but_still_submits():
 
     assert any("disabled" in m.lower() for m in messages)
     assert result["submitted"] == 2
+
+
+# --------------------------------------------------------------------------- scan_bom
+
+@pytest.mark.asyncio
+async def test_scan_bom_appends_the_top_assembly_row():
+    api = FakeAPI({
+        "CD-001608": [_hit("CD-001608.iam", "900"), _hit("CD-001608.idw", "901")],
+    })
+    rows, error = await publish_bom.scan_bom(
+        api, "1", REAL_BOM, top_assembly="CD-001608")
+
+    assert error is None
+    assert len(rows) == 10          # 9 Make rows + the top assembly
+    top = [r for r in rows if r.is_top]
+    assert len(top) == 1
+    assert top[0].stem == "CD-001608"
+    assert top[0].job_count == 2    # the top assembly gets both
+
+
+@pytest.mark.asyncio
+async def test_scan_bom_with_a_blank_top_assembly_scans_only_the_bom():
+    api = FakeAPI({})
+    rows, error = await publish_bom.scan_bom(api, "1", REAL_BOM, top_assembly="")
+
+    assert error is None
+    assert len(rows) == 9
+    assert not any(r.is_top for r in rows)
+
+
+@pytest.mark.asyncio
+async def test_scan_bom_does_not_duplicate_a_top_assembly_already_in_the_bom():
+    api = FakeAPI({})
+    rows, _ = await publish_bom.scan_bom(
+        api, "1", REAL_BOM, top_assembly="CD-001613")
+
+    assert [r.stem for r in rows].count("CD-001613") == 1
+
+
+@pytest.mark.asyncio
+async def test_scan_bom_surfaces_a_parse_error_without_calling_vault(tmp_path):
+    path = _write_bom(tmp_path, [
+        {"Item": "1", "Part Number": "SF-001580", "BOM Structure": "Normal",
+         "QTY": "1", "Description": "no filename"},
+    ])
+    api = FakeAPI({})
+    rows, error = await publish_bom.scan_bom(api, "1", path, top_assembly="")
+
+    assert rows == []
+    assert error is not None
+    assert api.submitted == []
+
+
+def test_summarize_counts_models_drawings_jobs_and_gaps():
+    rows = [
+        _scanned(),                                              # both
+        _scanned(stem="CD-2", drawing="", drawing_id=""),        # no drawing
+        _scanned(stem="CD-3", model="", model_id="",
+                 drawing="", drawing_id=""),                     # nothing
+    ]
+    summary = publish_bom.summarize(rows)
+
+    assert summary["rows"] == 3
+    assert summary["models"] == 2
+    assert summary["drawings"] == 1
+    assert summary["jobs"] == 3
+    assert summary["missing_drawing"] == 1
+    assert summary["not_found"] == 1
