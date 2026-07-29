@@ -1377,3 +1377,95 @@ def test_publish_only_emits_known_tags(monkeypatch):
     for outcome in (preview, applied):
         for _text, tag in outcome.lines:
             assert tag in release_steps.ALL_TAGS, f"unknown tag {tag!r}"
+
+
+# --- run_purchasing_sheet (Task 10 — Step 6 engine) ------------------------
+#
+# Deliberately no apply gate here: this writes one local .xlsx and touches
+# neither Vault nor SharePoint. A gate guarding nothing trains people to
+# click through gates.
+
+
+def test_purchasing_sheet_writes_in_one_click(monkeypatch, tmp_path):
+    out_path = tmp_path / "CD-001659-PurchasingExport.xlsx"
+    out_path.write_bytes(b"fake xlsx")
+    monkeypatch.setattr(release_steps, "_generate_sheet", lambda **kw: {
+        "output_path": str(out_path),
+        "matched_parts": 38, "total_purchased_parts": 42,
+        "unmatched_parts": ["ISO-4762-M4x12"], "warnings": [],
+    })
+
+    out = release_steps.run_purchasing_sheet("C:/bom.xlsx", "CD-001659")
+
+    assert out.ok is True
+    assert out.pending_apply is None           # deliberately ungated
+    assert "CD-001659-PurchasingExport.xlsx" in out.summary
+
+
+def test_purchasing_sheet_reports_unmatched_parts(monkeypatch, tmp_path):
+    out_path = tmp_path / "x.xlsx"
+    out_path.write_bytes(b"fake xlsx")
+    monkeypatch.setattr(release_steps, "_generate_sheet", lambda **kw: {
+        "output_path": str(out_path), "matched_parts": 1,
+        "total_purchased_parts": 2, "unmatched_parts": ["ISO-4762-M4x12"],
+        "warnings": ["price missing"],
+    })
+
+    out = release_steps.run_purchasing_sheet("C:/bom.xlsx", "CD-001659")
+
+    assert any("ISO-4762-M4x12" in text for text, _tag in out.lines)
+    assert any("price missing" in text for text, _tag in out.lines)
+
+
+def test_purchasing_sheet_surfaces_an_error(monkeypatch):
+    monkeypatch.setattr(release_steps, "_generate_sheet", lambda **kw: {
+        "error": True, "message": "BOM file not found: C:/bom.xlsx"})
+
+    out = release_steps.run_purchasing_sheet("C:/bom.xlsx", "CD-001659")
+
+    assert out.ok is False
+    assert "not found" in out.summary
+
+
+def test_purchasing_sheet_treats_a_missing_output_file_as_failure(
+    monkeypatch, tmp_path,
+):
+    """R1: the generator returning without raising is not itself success —
+    a result whose output_path was never actually written to disk must be
+    treated as a failure, not as a green 'wrote the file' outcome."""
+    missing_path = tmp_path / "does-not-exist.xlsx"
+    monkeypatch.setattr(release_steps, "_generate_sheet", lambda **kw: {
+        "output_path": str(missing_path), "matched_parts": 1,
+        "total_purchased_parts": 2, "unmatched_parts": [], "warnings": [],
+    })
+
+    out = release_steps.run_purchasing_sheet("C:/bom.xlsx", "CD-001659")
+
+    assert out.ok is False
+    assert out.pending_apply is None
+
+
+def test_purchasing_sheet_treats_a_blank_output_path_as_failure(monkeypatch):
+    """Same rule, the other absent-data shape: no output_path key at all."""
+    monkeypatch.setattr(release_steps, "_generate_sheet", lambda **kw: {
+        "matched_parts": 1, "total_purchased_parts": 2,
+        "unmatched_parts": [], "warnings": [],
+    })
+
+    out = release_steps.run_purchasing_sheet("C:/bom.xlsx", "CD-001659")
+
+    assert out.ok is False
+
+
+def test_purchasing_sheet_only_emits_known_tags(monkeypatch, tmp_path):
+    out_path = tmp_path / "x.xlsx"
+    out_path.write_bytes(b"fake xlsx")
+    monkeypatch.setattr(release_steps, "_generate_sheet", lambda **kw: {
+        "output_path": str(out_path), "matched_parts": 1,
+        "total_purchased_parts": 2, "unmatched_parts": ["ISO-4762-M4x12"],
+        "warnings": ["price missing"],
+    })
+
+    out = release_steps.run_purchasing_sheet("C:/bom.xlsx", "CD-001659")
+    for _text, tag in out.lines:
+        assert tag in release_steps.ALL_TAGS, f"unknown tag {tag!r}"

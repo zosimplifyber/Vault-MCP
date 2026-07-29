@@ -15,6 +15,7 @@ See docs/superpowers/specs/2026-07-29-release-workflow-file-driven-design.md
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
@@ -852,6 +853,61 @@ def run_publish_deliverables(
         summary=(f"{total_jobs} job(s) ready across {len(rows)} part(s), "
                  f"{len(gaps)} gap(s) — click Apply to queue."),
         lines=lines, pending_apply=apply,
+    )
+
+
+def _generate_sheet(**kwargs: Any) -> dict[str, Any]:
+    """Thin seam over bom_purchasing.generate_from_file, for testing."""
+    import bom_purchasing
+    return bom_purchasing.generate_from_file(**kwargs)
+
+
+def run_purchasing_sheet(
+    bom_path: str, assembly_number: str, *, output_dir: str = "",
+) -> StepOutcome:
+    """Step 6 — build the branded purchasing workbook.
+
+    Deliberately has no apply gate: it writes one .xlsx to disk and touches
+    neither Vault nor SharePoint. ``output_dir`` defaults to the BOM's own
+    folder.
+    """
+    result = _generate_sheet(
+        bom_file_path=bom_path, assembly_number=assembly_number,
+        output_dir=output_dir,
+    )
+    if result.get("error"):
+        msg = result.get("message", "sheet generation failed")
+        return StepOutcome(ok=False, summary=msg,
+                           lines=[(f"  [fail] {msg}", TAG_FAIL)])
+
+    path = result.get("output_path") or ""
+    # R1: the generator returning without raising is not itself success — a
+    # blank output_path, or one that was never actually written to disk,
+    # must read as failed rather than as a green "wrote the file" outcome.
+    if not path or not os.path.isfile(path):
+        msg = (f"Purchasing Sheet generation returned without an error, "
+               f"but no workbook exists at {path or '(no path given)'} — "
+               f"treating as failed.")
+        return StepOutcome(ok=False, summary=msg,
+                           lines=[(f"  [fail] {msg}", TAG_FAIL)])
+
+    matched = result.get("matched_parts", 0)
+    total = result.get("total_purchased_parts", 0)
+    unmatched = result.get("unmatched_parts") or []
+    warnings = result.get("warnings") or []
+
+    lines = [(f"  [ok] Wrote {path}", TAG_PASS),
+             (f"  {matched}/{total} purchased part(s) matched the reference "
+              f"file.", TAG_INFO)]
+    for part in unmatched:
+        lines.append((f"      ? {part}  (no reference match)", TAG_WARN))
+    for w in warnings:
+        lines.append((f"  [warn] {w}", TAG_WARN))
+
+    return StepOutcome(
+        ok=True,
+        summary=f"Purchasing Sheet written: {path}",
+        lines=lines, result=result,
     )
 
 
