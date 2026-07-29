@@ -1195,3 +1195,185 @@ def test_purchased_parts_only_emits_known_tags(monkeypatch):
     for outcome in (preview, applied):
         for _text, tag in outcome.lines:
             assert tag in release_steps.ALL_TAGS, f"unknown tag {tag!r}"
+
+
+# --- run_publish_deliverables (Task 9 — Step 5 engine) ---------------------
+
+
+def _scan_row(stem, *, model="m.ipt", drawing="d.idw", status="2 jobs"):
+    import publish_bom
+    return publish_bom.ScanRow(
+        stem=stem, description="", is_top=False,
+        model_name=model, model_version_id="1" if model else "",
+        drawing_name=drawing, drawing_version_id="2" if drawing else "",
+        status=status,
+    )
+
+
+def _install_publish(monkeypatch, rows, error=None, submitted=None):
+    seen = {"submits": []}
+
+    async def fake_scan(api, vault_id, path, *, top_assembly="",
+                        on_progress=None):
+        return list(rows), error
+
+    async def fake_submit(api, vault_id, scan_rows, on_progress=None, *,
+                          priority=10):
+        seen["submits"].append(list(scan_rows))
+        return submitted or {"submitted": sum(r.job_count for r in scan_rows),
+                             "failed": 0, "jobs": []}
+
+    monkeypatch.setattr(release_steps, "_publish_deps",
+                        lambda: (fake_scan, fake_submit))
+    return seen
+
+
+def test_publish_preview_scans_without_submitting(monkeypatch):
+    seen = _install_publish(monkeypatch, [_scan_row("CD-001659")])
+    out = release_steps.run_publish_deliverables(None, "V1", "C:/bom.xlsx")
+
+    assert out.ok is True
+    assert out.pending_apply is not None
+    assert seen["submits"] == []
+
+
+def test_publish_preview_never_submits_a_job(monkeypatch):
+    """Distinct from the assertion above: the submit stub raises if it is
+    ever invoked, so a bug that reaches the write path during preview is
+    caught even if nothing inspects a 'submits seen' list."""
+    async def fake_scan(api, vault_id, path, *, top_assembly="",
+                        on_progress=None):
+        return [_scan_row("CD-001659")], None
+
+    async def exploding_submit(api, vault_id, scan_rows, on_progress=None, *,
+                               priority=10):
+        raise AssertionError("preview must not submit jobs")
+
+    monkeypatch.setattr(release_steps, "_publish_deps",
+                        lambda: (fake_scan, exploding_submit))
+    out = release_steps.run_publish_deliverables(None, "V1", "C:/bom.xlsx")
+
+    assert out.ok is True
+    assert out.pending_apply is not None
+
+
+def test_publish_preview_names_parts_with_no_drawing(monkeypatch):
+    rows = [_scan_row("CD-001659"),
+            _scan_row("CD-001700", drawing="", status="STEP only - no drawing")]
+    _install_publish(monkeypatch, rows)
+    out = release_steps.run_publish_deliverables(None, "V1", "C:/bom.xlsx")
+
+    assert any("CD-001700" in text for text, _tag in out.lines)
+
+
+def test_publish_apply_submits_the_scanned_rows(monkeypatch):
+    seen = _install_publish(monkeypatch, [_scan_row("CD-001659")])
+    applied = release_steps.run_publish_deliverables(
+        None, "V1", "C:/bom.xlsx").pending_apply()
+
+    assert applied.ok is True
+    assert len(seen["submits"][0]) == 1
+
+
+def test_publish_surfaces_a_parse_error(monkeypatch):
+    _install_publish(monkeypatch, [], error="This BOM has no file-name column")
+    out = release_steps.run_publish_deliverables(None, "V1", "C:/bom.xlsx")
+
+    assert out.ok is False
+    assert out.pending_apply is None
+    assert "file-name column" in out.summary
+
+
+def test_publish_stages_nothing_when_no_row_has_a_job(monkeypatch):
+    _install_publish(monkeypatch, [
+        _scan_row("CD-001700", model="", drawing="", status="not in Vault")])
+    out = release_steps.run_publish_deliverables(None, "V1", "C:/bom.xlsx")
+
+    # R3: rows WERE found by the scan, but every one of them failed to
+    # resolve — that is a total drop, not "nothing to do", and must not
+    # stage an apply that would submit zero jobs and call it a success.
+    assert out.ok is False
+    assert out.pending_apply is None
+
+
+def test_publish_treats_empty_rows_with_no_error_as_unresolved(monkeypatch):
+    """R1: an empty rows list with error=None is not automatically success —
+    it must be treated the same as 'nothing resolved', never staged for
+    apply, distinct from the explicit-error case above."""
+    _install_publish(monkeypatch, [], error=None)
+    out = release_steps.run_publish_deliverables(None, "V1", "C:/bom.xlsx")
+
+    assert out.ok is False
+    assert out.pending_apply is None
+
+
+def test_publish_apply_reports_against_the_expected_job_count(monkeypatch):
+    """R2: a submitted count lower than what the preview promised must fail
+    even when the server claims zero failures — a bare count gives no
+    baseline, only 'N of M' does."""
+    _install_publish(monkeypatch, [_scan_row("CD-001659")],
+                     submitted={"submitted": 1, "failed": 0, "jobs": []})
+    applied = release_steps.run_publish_deliverables(
+        None, "V1", "C:/bom.xlsx").pending_apply()
+
+    assert applied.ok is False
+    assert "1 of 2" in applied.summary
+
+
+def test_publish_apply_treats_a_missing_submitted_count_as_unverified(
+    monkeypatch,
+):
+    """A missing 'submitted' key gets the same treatment as step 3's missing
+    'updated' count — it cannot be confirmed, so it must not default to 0-
+    and-therefore-ok."""
+    _install_publish(monkeypatch, [_scan_row("CD-001659")],
+                     submitted={"failed": 0, "jobs": []})
+    applied = release_steps.run_publish_deliverables(
+        None, "V1", "C:/bom.xlsx").pending_apply()
+
+    assert applied.ok is False
+
+
+def test_publish_apply_failure_is_reported_not_raised(monkeypatch):
+    """R4: the whole submit call failing must not escape, and the job count
+    the preview promised must survive the raise."""
+    async def fake_scan(api, vault_id, path, *, top_assembly="",
+                        on_progress=None):
+        return [_scan_row("CD-001659")], None
+
+    async def raising_submit(api, vault_id, scan_rows, on_progress=None, *,
+                             priority=10):
+        raise RuntimeError("job server unreachable")
+
+    monkeypatch.setattr(release_steps, "_publish_deps",
+                        lambda: (fake_scan, raising_submit))
+    applied = release_steps.run_publish_deliverables(
+        None, "V1", "C:/bom.xlsx").pending_apply()
+
+    assert applied.ok is False
+    assert "2" in applied.summary      # the expected job count survives
+
+
+def test_publish_apply_refuses_a_second_call(monkeypatch):
+    seen = _install_publish(monkeypatch, [_scan_row("CD-001659")])
+    pending = release_steps.run_publish_deliverables(
+        None, "V1", "C:/bom.xlsx").pending_apply
+
+    pending()
+    second = pending()
+
+    assert len(seen["submits"]) == 1     # nothing submitted again
+    assert second.ok is False
+    assert second.pending_apply is None
+
+
+def test_publish_only_emits_known_tags(monkeypatch):
+    _install_publish(monkeypatch, [
+        _scan_row("CD-001659"),
+        _scan_row("CD-001700", drawing="", status="STEP only - no drawing"),
+    ])
+    preview = release_steps.run_publish_deliverables(None, "V1", "C:/bom.xlsx")
+    applied = preview.pending_apply()
+    for outcome in (preview, applied):
+        for _text, tag in outcome.lines:
+            assert tag in release_steps.ALL_TAGS, f"unknown tag {tag!r}"

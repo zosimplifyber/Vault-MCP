@@ -748,6 +748,113 @@ def run_purchased_parts_list(
     )
 
 
+def _publish_deps():
+    """Return (scan_bom, submit_jobs) from the publish_bom engine."""
+    import publish_bom
+    return publish_bom.scan_bom, publish_bom.submit_jobs
+
+
+def run_publish_deliverables(
+    api: Any, vault_id: str, bom_path: str, *, top_assembly: str = "",
+) -> StepOutcome:
+    """Step 5 — queue PDF and STEP publish jobs for every Make part.
+
+    The scan reports Make parts with no drawing as gaps. The job server
+    publishes a PDF *from* an existing drawing; it cannot author one, so
+    those gaps are reported and never fixed here.
+    """
+    import asyncio
+
+    scan_bom, submit_jobs = _publish_deps()
+
+    rows, error = asyncio.run(
+        scan_bom(api, vault_id, bom_path, top_assembly=top_assembly))
+    if error:
+        return StepOutcome(ok=False, summary=error,
+                           lines=[(f"  [fail] {error}", TAG_FAIL)])
+
+    total_jobs = sum(r.job_count for r in rows)
+    gaps = [r for r in rows if r.job_count < 2]
+
+    lines = [(f"  Scanned {len(rows)} part(s) — {total_jobs} job(s) to queue.",
+              TAG_INFO)]
+    for r in gaps:
+        lines.append((f"      ! {r.stem:20s} {r.status}", TAG_WARN))
+    if gaps:
+        lines.append(("  Gaps are reported, never created — the job server "
+                      "cannot author a missing drawing.", TAG_DIM))
+
+    # R1/R3: an empty (or fully-unresolved) scan is not automatically
+    # success. A BOM with genuinely no Make parts and one whose parts all
+    # failed to resolve in Vault can both reach here with rows possibly
+    # empty and error None — total_jobs is 0 either way, and 0 queued must
+    # never stage an apply that would submit nothing and call it done.
+    if not total_jobs:
+        if not rows:
+            summary = ("Nothing to publish — the scan resolved no parts "
+                       "(no Make parts in the BOM, or nothing found in "
+                       "Vault).")
+        else:
+            summary = (f"Nothing to publish — no resolved files among "
+                       f"{len(rows)} part(s).")
+        return StepOutcome(ok=False, summary=summary, lines=lines)
+
+    # Captured here, not re-derived inside apply() (R6): the job count the
+    # preview promised is what apply's own report gets judged against.
+    applied_once = False
+
+    def apply() -> StepOutcome:
+        nonlocal applied_once
+        if applied_once:
+            return StepOutcome(
+                ok=False,
+                summary=("Publish Deliverables: this preview was already "
+                         "applied — re-run step 5 for a fresh one."),
+                lines=[("  [warn] Already applied once this run — nothing "
+                        "submitted again.", TAG_WARN)],
+            )
+        applied_once = True
+        try:
+            result = asyncio.run(submit_jobs(api, vault_id, rows))
+        except Exception as exc:  # noqa: BLE001 — the whole submit call
+            # failing must not erase the job count the preview promised.
+            msg = (f"Publish Deliverables: the submit call failed before "
+                   f"confirming any result (expected {total_jobs} job(s)): "
+                   f"{exc}")
+            return StepOutcome(ok=False, summary=msg,
+                               lines=[(f"  [fail] {exc}", TAG_FAIL)])
+
+        submitted = result.get("submitted")
+        failed = result.get("failed", 0)
+        # A missing 'submitted' key means the job server told us nothing
+        # verifiable — same treatment as step 3's missing 'updated' count.
+        if submitted is None:
+            msg = (f"Publish Deliverables: the job server did not report "
+                   f"how many job(s) were submitted (expected {total_jobs}) "
+                   f"— treating as failed since it cannot be confirmed.")
+            return StepOutcome(
+                ok=False, summary=msg,
+                lines=[(f"  [fail] No 'submitted' count in the response "
+                        f"(expected {total_jobs}).", TAG_FAIL)])
+
+        ok = submitted == total_jobs and not failed
+        return StepOutcome(
+            ok=ok,
+            summary=(f"Publish Deliverables: {submitted} of {total_jobs} "
+                     f"job(s) queued, {failed} failed."),
+            lines=[(f"  [{'ok' if ok else 'fail'}] Queued {submitted} of "
+                    f"{total_jobs} job(s), {failed} failed.",
+                    TAG_PASS if ok else TAG_FAIL)],
+        )
+
+    return StepOutcome(
+        ok=True,
+        summary=(f"{total_jobs} job(s) ready across {len(rows)} part(s), "
+                 f"{len(gaps)} gap(s) — click Apply to queue."),
+        lines=lines, pending_apply=apply,
+    )
+
+
 def _names_by_version_id(compliance: dict[str, Any]) -> dict[str, str]:
     """Map file-version id -> display name, for readable log lines."""
     names: dict[str, str] = {}
