@@ -453,7 +453,8 @@ def run_sync_properties(
         ok_n, bad_n, out = asyncio.run(submit_all())
         return StepOutcome(
             ok=bad_n == 0,
-            summary=f"Sync Properties: {ok_n} queued, {bad_n} failed.",
+            summary=(f"Sync Properties: {ok_n} of {len(version_ids)} "
+                     f"queued, {bad_n} failed."),
             lines=out,
         )
 
@@ -876,15 +877,43 @@ def run_publish_deliverables(
                         "submitted again.", TAG_WARN)],
             )
         applied_once = True
+
+        # publish_bom.submit_jobs does not wrap its own per-job call (that
+        # module is out of scope for this branch — another session is
+        # actively editing it), so a mid-batch raise there loses the record
+        # of jobs already queued unless THIS engine captures it another
+        # way. submit_jobs calls on_progress once per job attempt (both
+        # successes and failures) before it can raise on a later one, so
+        # threading it through and accumulating those lines is what lets a
+        # partial batch survive the raise — and, on the happy path, names
+        # each file with its job id the same way step 2 does.
+        progress_lines: list[tuple[str, str]] = []
+
+        def on_progress(message: str) -> None:
+            text = str(message).strip()
+            if "FAILED" in text:
+                tag = TAG_FAIL
+            elif "WARNING" in text:
+                tag = TAG_WARN
+            elif "queued" in text:
+                tag = TAG_PASS
+            else:
+                tag = TAG_DIM
+            progress_lines.append((f"  {text}", tag))
+
         try:
-            result = asyncio.run(submit_jobs(api, vault_id, rows))
+            result = asyncio.run(submit_jobs(api, vault_id, rows, on_progress))
         except Exception as exc:  # noqa: BLE001 — the whole submit call
-            # failing must not erase the job count the preview promised.
-            msg = (f"Publish Deliverables: the submit call failed before "
-                   f"confirming any result (expected {total_jobs} job(s)): "
-                   f"{exc}")
-            return StepOutcome(ok=False, summary=msg,
-                               lines=[(f"  [fail] {exc}", TAG_FAIL)])
+            # raising must not erase the per-job record collected so far,
+            # and must not claim to know exactly how many queued before it.
+            msg = (f"Publish Deliverables: the submit call raised partway "
+                   f"through (expected {total_jobs} job(s)): {exc}. It may "
+                   f"have queued some of those {total_jobs} job(s) before "
+                   f"failing — re-run the preview to see the current "
+                   f"state.")
+            return StepOutcome(
+                ok=False, summary=msg,
+                lines=progress_lines + [(f"  [fail] {exc}", TAG_FAIL)])
 
         submitted = result.get("submitted")
         failed = result.get("failed", 0)
@@ -896,17 +925,19 @@ def run_publish_deliverables(
                    f"— treating as failed since it cannot be confirmed.")
             return StepOutcome(
                 ok=False, summary=msg,
-                lines=[(f"  [fail] No 'submitted' count in the response "
-                        f"(expected {total_jobs}).", TAG_FAIL)])
+                lines=progress_lines + [
+                    (f"  [fail] No 'submitted' count in the response "
+                     f"(expected {total_jobs}).", TAG_FAIL)])
 
         ok = submitted == total_jobs and not failed
         return StepOutcome(
             ok=ok,
             summary=(f"Publish Deliverables: {submitted} of {total_jobs} "
                      f"job(s) queued, {failed} failed."),
-            lines=[(f"  [{'ok' if ok else 'fail'}] Queued {submitted} of "
-                    f"{total_jobs} job(s), {failed} failed.",
-                    TAG_PASS if ok else TAG_FAIL)],
+            lines=progress_lines or [
+                (f"  [{'ok' if ok else 'fail'}] Queued {submitted} of "
+                 f"{total_jobs} job(s), {failed} failed.",
+                 TAG_PASS if ok else TAG_FAIL)],
         )
 
     return StepOutcome(
@@ -968,7 +999,7 @@ def run_purchasing_sheet(
     return StepOutcome(
         ok=True,
         summary=f"Purchasing Sheet written: {path}",
-        lines=lines, result=result,
+        lines=lines,
     )
 
 

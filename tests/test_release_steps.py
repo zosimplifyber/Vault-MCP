@@ -473,6 +473,18 @@ def test_sync_apply_submits_one_job_per_file_version():
         ["100", "200", "300"]
 
 
+def test_sync_apply_summary_reports_against_the_denominator():
+    """I6: step 2 was the only one of six engines whose summary carried no
+    denominator ('2 queued, 0 failed' vs the other five's 'N of M') — the
+    line an engineer scans for a shortfall must show the baseline too."""
+    api = RecordingAPI()
+    c = _compliance(children=[("200", "20"), ("300", "30")])
+
+    applied = release_steps.run_sync_properties(api, "V1", c).pending_apply()
+
+    assert "3 of 3 queued" in applied.summary
+
+
 def test_sync_uses_pascal_case_job_params():
     """Vault's /jobs Params keys are case-sensitive PascalCase; camelCase is
     accepted with a 200 and silently ignored."""
@@ -1448,6 +1460,49 @@ def test_publish_apply_submits_the_scanned_rows(monkeypatch):
     assert len(seen["submits"][0]) == 1
 
 
+def test_publish_apply_submits_the_rows_the_preview_scanned_not_a_fresh_scan(
+    monkeypatch,
+):
+    """R6: apply's closure must read the rows the preview already resolved,
+    never re-derive by calling scan_bom again — that is what makes the
+    approved set provably the written set.
+
+    I3: asserting a length (as the test above does) also passes for a bug
+    that re-scans and submits a *different*, same-sized row list. The scan
+    stub here returns a different row object on a second call, so a
+    re-derivation bug is unmistakable: this checks identity, and that
+    scan_bom was called exactly once total."""
+    scanned_row = _scan_row("CD-001659")
+    calls = {"n": 0}
+
+    async def fake_scan(api, vault_id, path, *, top_assembly="",
+                        on_progress=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return [scanned_row], None
+        # A second scan call — i.e. apply re-deriving what to submit —
+        # returns a DIFFERENT row instance entirely.
+        return [_scan_row("CD-999999")], None
+
+    seen = {"submits": []}
+
+    async def fake_submit(api, vault_id, scan_rows, on_progress=None, *,
+                          priority=10):
+        seen["submits"].append(list(scan_rows))
+        return {"submitted": sum(r.job_count for r in scan_rows),
+                "failed": 0, "jobs": []}
+
+    monkeypatch.setattr(release_steps, "_publish_deps",
+                        lambda: (fake_scan, fake_submit))
+
+    applied = release_steps.run_publish_deliverables(
+        None, "V1", "C:/bom.xlsx").pending_apply()
+
+    assert applied.ok is True
+    assert calls["n"] == 1                        # scan_bom called once total
+    assert seen["submits"][0][0] is scanned_row    # identity, not just length
+
+
 def test_publish_surfaces_a_parse_error(monkeypatch):
     _install_publish(monkeypatch, [], error="This BOM has no file-name column")
     out = release_steps.run_publish_deliverables(None, "V1", "C:/bom.xlsx")
@@ -1480,6 +1535,26 @@ def test_publish_treats_empty_rows_with_no_error_as_unresolved(monkeypatch):
     assert out.pending_apply is None
 
 
+def test_publish_zero_job_messages_are_worded_distinctly(monkeypatch):
+    """I5: collapsing the 'no Make parts / nothing resolved in Vault' and
+    'found parts but none resolved' wordings into a single message is a
+    live mutant — the whole point of the delta was to keep them tellable
+    apart, and a shared "ok=False, pending_apply=None" outcome alone does
+    not pin that."""
+    _install_publish(monkeypatch, [], error=None)
+    empty_out = release_steps.run_publish_deliverables(
+        None, "V1", "C:/bom.xlsx")
+
+    _install_publish(monkeypatch, [
+        _scan_row("CD-001700", model="", drawing="", status="not in Vault")])
+    found_out = release_steps.run_publish_deliverables(
+        None, "V1", "C:/bom.xlsx")
+
+    assert empty_out.summary != found_out.summary
+    assert "resolved no parts" in empty_out.summary
+    assert "no resolved files among" in found_out.summary
+
+
 def test_publish_apply_reports_against_the_expected_job_count(monkeypatch):
     """R2: a submitted count lower than what the preview promised must fail
     even when the server claims zero failures — a bare count gives no
@@ -1498,13 +1573,23 @@ def test_publish_apply_treats_a_missing_submitted_count_as_unverified(
 ):
     """A missing 'submitted' key gets the same treatment as step 3's missing
     'updated' count — it cannot be confirmed, so it must not default to 0-
-    and-therefore-ok."""
+    and-therefore-ok.
+
+    I2: asserting only ok is False here is unpinned — R2's denominator
+    check already delivers that (0 == 2 is False) whether or not the
+    missing-key branch exists at all, so a mutant that replaces the branch
+    with `result.get("submitted", 0)` survives. The two behaviours differ
+    materially in what they tell the engineer: "did not report" says the
+    server told us nothing, "0 of 2 queued" claims it told us zero were
+    queued. Assert the actual wording, and use a row (job_count=2) so
+    total_jobs cannot coincide with the 0 a defaulting bug would produce."""
     _install_publish(monkeypatch, [_scan_row("CD-001659")],
                      submitted={"failed": 0, "jobs": []})
     applied = release_steps.run_publish_deliverables(
         None, "V1", "C:/bom.xlsx").pending_apply()
 
     assert applied.ok is False
+    assert "did not report" in applied.summary
 
 
 def test_publish_apply_failure_is_reported_not_raised(monkeypatch):
@@ -1525,6 +1610,59 @@ def test_publish_apply_failure_is_reported_not_raised(monkeypatch):
 
     assert applied.ok is False
     assert "2" in applied.summary      # the expected job count survives
+
+
+def test_publish_apply_survives_a_mid_batch_raise_and_keeps_progress_lines(
+    monkeypatch,
+):
+    """I1: publish_bom.submit_jobs does not wrap its own per-job call (that
+    module is out of scope for this branch — another session owns it), so
+    a mid-batch raise there would otherwise lose the record of jobs already
+    queued. The engine must thread on_progress through submit_jobs and use
+    it to preserve that record — otherwise 3 real jobs land in the Vault
+    queue while the message reads as though none did."""
+    async def fake_scan(api, vault_id, path, *, top_assembly="",
+                        on_progress=None):
+        return [_scan_row("CD-001659"), _scan_row("CD-001700")], None
+
+    async def flaky_submit(api, vault_id, scan_rows, on_progress=None, *,
+                           priority=10):
+        on_progress("  m.ipt: STEP queued (job 501)")
+        on_progress("  d.idw: PDF queued (job 502)")
+        raise ConnectionError("transport reset")
+
+    monkeypatch.setattr(release_steps, "_publish_deps",
+                        lambda: (fake_scan, flaky_submit))
+    applied = release_steps.run_publish_deliverables(
+        None, "V1", "C:/bom.xlsx").pending_apply()
+
+    assert applied.ok is False
+    # The two jobs that queued before the raise must still be visible.
+    assert any("job 501" in text for text, _tag in applied.lines)
+    assert any("job 502" in text for text, _tag in applied.lines)
+    assert "may have queued" in applied.summary
+
+
+def test_publish_apply_names_each_queued_job(monkeypatch):
+    """I5 bonus: step 2 names each file with its job id; step 5 should too."""
+    async def fake_scan(api, vault_id, path, *, top_assembly="",
+                        on_progress=None):
+        return [_scan_row("CD-001659")], None
+
+    async def fake_submit(api, vault_id, scan_rows, on_progress=None, *,
+                          priority=10):
+        on_progress("  m.ipt: STEP queued (job 501)")
+        on_progress("  d.idw: PDF queued (job 502)")
+        return {"submitted": 2, "failed": 0, "jobs": []}
+
+    monkeypatch.setattr(release_steps, "_publish_deps",
+                        lambda: (fake_scan, fake_submit))
+    applied = release_steps.run_publish_deliverables(
+        None, "V1", "C:/bom.xlsx").pending_apply()
+
+    assert applied.ok is True
+    assert any("job 501" in text for text, _tag in applied.lines)
+    assert any("job 502" in text for text, _tag in applied.lines)
 
 
 def test_publish_apply_refuses_a_second_call(monkeypatch):
@@ -1573,6 +1711,10 @@ def test_purchasing_sheet_writes_in_one_click(monkeypatch, tmp_path):
     assert out.ok is True
     assert out.pending_apply is None           # deliberately ungated
     assert "CD-001659-PurchasingExport.xlsx" in out.summary
+    # StepOutcome.result is documented as carrying step 1's compliance dict
+    # for steps 2/3 only, and None for every other step — nothing consumes
+    # it here, so step 6 must not be the one exception to that contract.
+    assert out.result is None
 
 
 def test_purchasing_sheet_reports_unmatched_parts(monkeypatch, tmp_path):
@@ -1588,6 +1730,26 @@ def test_purchasing_sheet_reports_unmatched_parts(monkeypatch, tmp_path):
 
     assert any("ISO-4762-M4x12" in text for text, _tag in out.lines)
     assert any("price missing" in text for text, _tag in out.lines)
+
+
+def test_purchasing_sheet_renders_the_match_ratio_denominator(
+    monkeypatch, tmp_path,
+):
+    """I4: 'report matched_parts against total_purchased_parts' was an
+    explicit delta, and it was untested — three mutants survive without
+    this: dropping '/{total}' from the line, matched=total (a fabricated
+    perfect match), and total=matched (denominator always equals the
+    numerator). Assert the rendered ratio itself."""
+    out_path = tmp_path / "x.xlsx"
+    out_path.write_bytes(b"fake xlsx")
+    monkeypatch.setattr(release_steps, "_generate_sheet", lambda **kw: {
+        "output_path": str(out_path), "matched_parts": 38,
+        "total_purchased_parts": 42, "unmatched_parts": [], "warnings": [],
+    })
+
+    out = release_steps.run_purchasing_sheet("C:/bom.xlsx", "CD-001659")
+
+    assert any("38/42" in text for text, _tag in out.lines)
 
 
 def test_purchasing_sheet_surfaces_an_error(monkeypatch):
