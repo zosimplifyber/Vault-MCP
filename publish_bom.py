@@ -146,6 +146,9 @@ def load_publish_rows(
     ``coerce_bom_dataframe`` runs, because that function maps ``Reference``
     onto ``Make`` and the distinction cannot be recovered afterwards.
     """
+    if not os.path.isfile(bom_file_path):
+        return [], f"BOM file not found: {bom_file_path}"
+
     try:
         raw = bom_purchasing.read_bom_file(bom_file_path)
     except ValueError as exc:
@@ -370,19 +373,29 @@ def _planned_jobs(row: ScanRow) -> list[tuple[str, str, str]]:
     return jobs
 
 
-def _job_spec(kind: str, name: str, fvid: str) -> tuple[str, dict[str, str]]:
-    """JobType and Params for one job.
+def _job_spec(kind: str, name: str, fvid: str) -> Optional[tuple[str, dict[str, str]]]:
+    """JobType and Params for one job, or None if the extension doesn't fit.
 
     Param keys are PascalCase because the job processor's constructor rejects
     the job otherwise. STEP reads both UpdatePdfOption and UpdateViewOption
     despite the names; there is no UpdateStpOption.
+
+    ``_planned_jobs`` only ever proposes a PDF job for a drawing extension and
+    a STEP job for a model extension, so a mismatch should not happen — but
+    this is checked rather than assumed, because submitting a job type built
+    from a bad extension (``"Autodesk.Vault.PDF.Create."``) is worse than
+    skipping it.
     """
     ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
     if kind == "PDF":
+        if ext not in DRAWING_EXTS:
+            return None
         return (
             f"Autodesk.Vault.PDF.Create.{ext}",
             {"FileVersionId": fvid, "UpdateViewOption": "False"},
         )
+    if ext not in MODEL_EXTS:
+        return None
     return (
         f"Autodesk.Vault.STEP.Create.{ext}",
         {
@@ -428,7 +441,14 @@ async def submit_jobs(
 
     for row in scan_rows_in:
         for kind, name, fvid in _planned_jobs(row):
-            job_type, params = _job_spec(kind, name, fvid)
+            spec = _job_spec(kind, name, fvid)
+            if spec is None:
+                logger.warning(
+                    "Skipping %s job for %r: extension does not match a %s file",
+                    kind, name, kind)
+                progress(f"  {name}: skipped - not a valid {kind} source file")
+                continue
+            job_type, params = spec
             resp = await api.submit_job(
                 vault_id=vault_id,
                 job_type=job_type,
@@ -476,18 +496,23 @@ async def scan_bom(
     rows, error = load_publish_rows(bom_file_path)
     if error:
         return [], error
+
+    # Check for zero before announcing a count: the only way rows can still be
+    # empty after the top-assembly block below is an empty BOM with no top
+    # assembly given, so there is no point logging "0 Make part(s)" right
+    # before bailing out with an error that says the same thing.
+    top = _norm(top_assembly)
+    if not rows and not top:
+        return [], "No Make parts found in this BOM."
+
     progress(f"{len(rows)} Make part(s) in the BOM.")
 
-    top = _norm(top_assembly)
     if top:
         if any(r.stem.lower() == top.lower() for r in rows):
             progress(f"Top assembly {top} is already a BOM row; not repeating it.")
         else:
             rows.append(PublishRow(stem=top, is_top=True))
             progress(f"Top assembly: {top}")
-
-    if not rows:
-        return [], "No Make parts found in this BOM."
 
     progress("Resolving files in Vault...")
     return await scan_rows(api, vault_id, rows, progress), None

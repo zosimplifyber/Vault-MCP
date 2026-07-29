@@ -147,6 +147,15 @@ def test_an_unsupported_extension_returns_an_error_not_an_exception(tmp_path):
     assert error is not None
 
 
+def test_a_missing_bom_file_reports_a_clean_not_found_error(tmp_path):
+    """Matches bom_purchasing.generate_from_file's wording rather than
+    leaking an [Errno 2] traceback string to the user."""
+    path = str(tmp_path / "does-not-exist.xlsx")
+    rows, error = publish_bom.load_publish_rows(path)
+    assert rows == []
+    assert error == f"BOM file not found: {path}"
+
+
 # --------------------------------------------------------------------------- top assembly
 
 @pytest.mark.parametrize("filename,expected", [
@@ -185,9 +194,11 @@ class FakeAPI:
         self.search_raises = set(search_raises)
         self.queue_raises = queue_raises
         self.submitted = []
+        self.search_calls = []
         self._next_job_id = 1000
 
     async def search_files(self, vault_id, query, **kwargs):
+        self.search_calls.append({"vault_id": vault_id, "query": query, **kwargs})
         if query in self.search_raises:
             raise RuntimeError(f"search blew up for {query}")
         if query in self.search_errors:
@@ -222,6 +233,23 @@ def _hit(name, fvid):
 
 
 # --------------------------------------------------------------------------- scan
+
+@pytest.mark.asyncio
+async def test_scan_searches_latest_versions_across_sub_folders():
+    """latest_only is exactly what justifies picking one file per stem -
+    dropping it from _scan_one would keep every test green while silently
+    making the tool publish stale versions."""
+    api = FakeAPI({"CD-001578": [_hit("CD-001578.ipt", "111")]})
+    await publish_bom.scan_rows(
+        api, "1", [publish_bom.PublishRow(stem="CD-001578")])
+
+    assert len(api.search_calls) == 1
+    call = api.search_calls[0]
+    assert call["query"] == "CD-001578"
+    assert call["latest_only"] is True
+    assert call["search_sub_folders"] is True
+    assert call["limit"] == publish_bom.SEARCH_LIMIT
+
 
 @pytest.mark.asyncio
 async def test_scan_classifies_model_and_drawing():
@@ -260,6 +288,18 @@ async def test_scan_reports_a_stem_that_matches_nothing():
 
     assert rows[0].status == publish_bom.STATUS_MISSING
     assert rows[0].job_count == 0
+
+
+@pytest.mark.asyncio
+async def test_scan_reports_a_drawing_with_no_model():
+    """The mirror-image gap: a drawing exists but its model doesn't."""
+    api = FakeAPI({"CD-001602": [_hit("CD-001602.idw", "444")]})
+    rows = await publish_bom.scan_rows(
+        api, "1", [publish_bom.PublishRow(stem="CD-001602")])
+
+    assert rows[0].status == publish_bom.STATUS_DRAWING_ONLY
+    assert rows[0].model_version_id == ""
+    assert rows[0].job_count == 1
 
 
 @pytest.mark.asyncio
@@ -339,6 +379,18 @@ async def test_a_search_failure_degrades_only_its_own_row():
 
     assert rows[0].status == publish_bom.STATUS_FAILED
     assert rows[1].status == publish_bom.STATUS_MODEL_ONLY
+
+
+@pytest.mark.asyncio
+async def test_a_search_failure_message_reaches_the_progress_log():
+    """_error_text's extraction has to actually surface, not just classify."""
+    messages = []
+    api = FakeAPI(search_errors=["CD-000001"])
+    await publish_bom.scan_rows(
+        api, "1", [publish_bom.PublishRow(stem="CD-000001")],
+        on_progress=messages.append)
+
+    assert any("boom" in m for m in messages)
 
 
 @pytest.mark.asyncio
@@ -427,6 +479,29 @@ async def test_step_and_pdf_params_match_the_shapes_the_job_processor_accepts():
     }
 
 
+def test_job_spec_rejects_a_mismatched_extension():
+    """kind=='PDF' with a nameless/wrong-extension file used to fall through
+    to a malformed job type ("Autodesk.Vault.PDF.Create."). Unreachable via
+    scan_rows today, but submit_jobs is public - validate rather than trust."""
+    assert publish_bom._job_spec("PDF", "CD-1", "5") is None
+    assert publish_bom._job_spec("PDF", "CD-1.ipt", "5") is None
+    assert publish_bom._job_spec("STEP", "CD-1.idw", "5") is None
+
+
+@pytest.mark.asyncio
+async def test_submit_skips_a_job_whose_extension_does_not_fit():
+    """Defense in depth: a ScanRow built by hand (not by scan_rows) with a
+    mismatched model_name must not reach api.submit_job with a garbage job
+    type for Vault to reject."""
+    api = FakeAPI()
+    row = publish_bom.ScanRow(stem="CD-1", model_name="CD-1.txt",
+                              model_version_id="5")
+    result = await publish_bom.submit_jobs(api, "1", [row])
+
+    assert api.submitted == []
+    assert result["submitted"] == 0
+
+
 @pytest.mark.asyncio
 async def test_every_job_carries_a_non_empty_description():
     """Vault error 155 ("Illegal null parameter") otherwise."""
@@ -460,6 +535,16 @@ async def test_one_failing_submit_does_not_stop_the_rest():
     assert len(api.submitted) == 4
     assert result["failed"] == 1
     assert result["submitted"] == 3
+
+
+@pytest.mark.asyncio
+async def test_a_submit_failure_message_reaches_the_progress_log():
+    messages = []
+    api = FakeAPI(submit_errors=["111"])
+    await publish_bom.submit_jobs(
+        api, "1", [_scanned()], on_progress=messages.append)
+
+    assert any("Job param error" in m for m in messages)
 
 
 @pytest.mark.asyncio
@@ -554,6 +639,27 @@ async def test_scan_bom_surfaces_a_parse_error_without_calling_vault(tmp_path):
     assert api.submitted == []
 
 
+@pytest.mark.asyncio
+async def test_scan_bom_reports_when_the_bom_has_no_make_parts(tmp_path):
+    """Every row Purchased and no top assembly given - a real, parseable BOM
+    that still has nothing to publish. Vault must never be called."""
+    path = _write_bom(tmp_path, [
+        {"Item": "1", "Filename": "CD-000001.ipt", "BOM Structure": "Purchased",
+         "QTY": "1", "Description": "bought"},
+    ])
+    messages = []
+    api = FakeAPI({})
+    rows, error = await publish_bom.scan_bom(
+        api, "1", path, top_assembly="", on_progress=messages.append)
+
+    assert rows == []
+    assert error == "No Make parts found in this BOM."
+    assert api.search_calls == []
+    # Zero is checked before the count is announced - no point logging
+    # "0 Make part(s) in the BOM." right before the same error.
+    assert not any("Make part(s)" in m for m in messages)
+
+
 def test_summarize_counts_models_drawings_jobs_and_gaps():
     rows = [
         _scanned(),                                              # both
@@ -561,11 +667,17 @@ def test_summarize_counts_models_drawings_jobs_and_gaps():
         _scanned(stem="CD-3", model="", model_id="",
                  drawing="", drawing_id=""),                     # nothing
     ]
+    failed_row = _scanned(stem="CD-4", model="", model_id="",
+                          drawing="", drawing_id="")
+    failed_row.status = publish_bom.STATUS_FAILED
+    rows.append(failed_row)
+
     summary = publish_bom.summarize(rows)
 
-    assert summary["rows"] == 3
+    assert summary["rows"] == 4
     assert summary["models"] == 2
     assert summary["drawings"] == 1
     assert summary["jobs"] == 3
     assert summary["missing_drawing"] == 1
     assert summary["not_found"] == 1
+    assert summary["failed"] == 1
