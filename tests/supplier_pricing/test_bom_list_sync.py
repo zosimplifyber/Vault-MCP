@@ -252,6 +252,37 @@ class TestPlanMissing:
         assert report["checked"] == 2            # CD-000891 + CD-999001
         assert report["already_present"] == 1
 
+    def test_source_filtered_rows_are_counted_not_just_dropped(self):
+        """Nothing counted source-filtered rows before this — a caller with
+        no way to see how many rows the filter ate cannot tell 'the list is
+        current' apart from 'every row was filtered out before it could be
+        checked' (e.g. a BOM export with no Source column, where every row's
+        source reads as "" and matches nothing)."""
+        client = FakeClient()
+        report = bls.add_missing_bom_rows(client, bom(), dry_run=True,
+                                          sources={"Buy"})
+        # The two "Make" rows (CD-999002 appears twice) are filtered by
+        # source before the dedupe check runs, so both are counted.
+        assert report["skipped_source"] == 2
+
+    def test_skipped_source_is_zero_with_no_filter(self):
+        client = FakeClient()
+        report = bls.add_missing_bom_rows(client, bom(), dry_run=True)
+        assert report["skipped_source"] == 0
+
+    def test_a_bom_with_no_source_column_filters_every_row(self):
+        """The shape behind C1: a BOM export with no Source column gives
+        every row source="", which never matches a non-None sources set —
+        every row is skipped_source, not missing, and checked stays 0."""
+        client = FakeClient()
+        df = pd.DataFrame({"Number": ["SF-999001", "SF-999002"],
+                           "Name": ["CD-999001", "CD-999002"]})  # no Source
+        report = bls.add_missing_bom_rows(client, df, dry_run=True,
+                                          sources={"Buy", "Other"})
+        assert report["checked"] == 0
+        assert report["missing"] == []
+        assert report["skipped_source"] == 2
+
 
 class TestApply:
     def test_apply_creates_items_with_mapped_fields(self):

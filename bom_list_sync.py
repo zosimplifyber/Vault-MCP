@@ -123,7 +123,11 @@ def add_missing_bom_rows(client, bom_df, *, dry_run: bool = True,
     the list are PATCHed with the BOM's descriptive fields (Description,
     Material, Vendor, Vendor Number) — the key and any Cost/Lead already entered
     are left untouched. ``sources`` optionally restricts to BOM rows whose
-    Source is in the set. Dry-run writes nothing.
+    Source is in the set; a row it excludes is counted in ``skipped_source``
+    rather than silently dropped, so a caller can tell "the list is current"
+    apart from "every row was filtered out before it could be checked" (the
+    shape a BOM export with no Source column produces — every row's source
+    reads as "" and matches nothing). Dry-run writes nothing.
     """
     d2i = _display_to_internal(client)
     index = existing_index(client)
@@ -139,6 +143,7 @@ def add_missing_bom_rows(client, bom_df, *, dry_run: bool = True,
     updated = 0
     already_present = 0
     skipped_no_name = 0
+    skipped_source = 0
 
     has_source = "Source" in getattr(bom_df, "columns", [])
     for _idx, row in bom_df.iterrows():
@@ -147,6 +152,12 @@ def add_missing_bom_rows(client, bom_df, *, dry_run: bool = True,
         number = normalize_part_number(_row_get(row, "Number")) or name
         source = str(_row_get(row, "Source")).strip() if has_source else ""
         if source_set is not None and source not in source_set:
+            # Counted, not just dropped: a caller with no visibility into
+            # how many rows the source filter ate cannot tell "the list is
+            # current" apart from "every row was filtered before it could
+            # be checked" — the shape a BOM export with no Source column
+            # produces, since every row's source then reads as "".
+            skipped_source += 1
             continue
         if not name:
             skipped_no_name += 1
@@ -198,6 +209,7 @@ def add_missing_bom_rows(client, bom_df, *, dry_run: bool = True,
     return {
         "missing": missing,
         "skipped_no_name": skipped_no_name,
+        "skipped_source": skipped_source,
         # BOM-side counts (how many parts this BOM contributed) vs the list-side
         # existing_count (how big the list is) — callers report them separately.
         "checked": len(seen),
