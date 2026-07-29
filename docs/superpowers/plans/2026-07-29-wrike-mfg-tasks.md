@@ -2046,6 +2046,12 @@ Add to `wrike_rest_api.py`, after `move_task`:
         The POST goes to the *successor* — the task that waits. A
         finish-to-start link is what makes a slip in one stage cascade to the
         stages after it on the Wrike Gantt.
+
+        **Both tasks must already have dates.** Wrike rejects a dependency
+        between two undated tasks with ``400: Operation is not allowed due to
+        invalid task scheduling type``, which is a different failure from a
+        bad ``relation_type`` (``400: Parameter 'relationType' value is
+        invalid``). Create the tasks with their start and due dates first.
         """
         return await self._request(
             "POST", f"/tasks/{task_id}/dependencies",
@@ -2064,6 +2070,138 @@ Expected: PASS, all tests.
 ```bash
 git add wrike_rest_api.py tests/test_wrike_rest_api.py
 git commit -m "feat(wrike): add finish-to-start task dependencies"
+```
+
+---
+
+## Task 10b: Fix `list_projects`
+
+Found while pulling a live project list during execution, not during planning.
+`list_projects` is broken today, and Task 12's project dropdown calls it.
+
+Two defects, both confirmed against the live account:
+
+1. It sends `fields=["project"]` to `GET /folders`, and Wrike answers
+   `400: Fields parameter value 'project' not allowed`. The call that works is
+   `GET /folders?project=true`, which returns full folder objects with a
+   `project` key already attached.
+2. The result includes deleted projects. Of 149 rows returned live, only 58
+   carry a workspace `scope` (`WsFolder`/`WsRoot`); the other 91 are
+   `RbFolder` — the Recycle Bin. Unfiltered, the dropdown would be roughly
+   60% deleted projects.
+
+**Files:**
+- Modify: `wrike_rest_api.py:262-271`
+- Modify: `tests/test_wrike_rest_api.py`
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+async def test_list_projects_asks_for_projects_not_a_fields_selector():
+    """Wrike answers 400 to fields=project on /folders. The parameter that
+    works is project=true."""
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        return httpx.Response(200, json={"data": [
+            {"id": "F1", "title": "Live", "scope": "WsFolder",
+             "project": {"status": "Green"}},
+        ]})
+
+    api = make_api(handler)
+    result = await api.list_projects()
+
+    assert result["error"] is False
+    assert "project=true" in seen["url"]
+    assert "fields" not in seen["url"]
+
+
+async def test_list_projects_drops_recycle_bin_folders():
+    """A deleted project keeps its project object but moves to RbFolder
+    scope. Offering one in a picker would create tasks in the bin."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": [
+            {"id": "F1", "title": "Live", "scope": "WsFolder",
+             "project": {"status": "Green"}},
+            {"id": "F2", "title": "Deleted", "scope": "RbFolder",
+             "project": {"status": "Green"}},
+            {"id": "F3", "title": "Not a project", "scope": "WsFolder"},
+        ]})
+
+    api = make_api(handler)
+    result = await api.list_projects()
+
+    rows = result["data"]["data"]
+    assert [r["id"] for r in rows] == ["F1"]
+    assert result["data"]["count"] == 1
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `python -m pytest tests/test_wrike_rest_api.py -k list_projects -v`
+Expected: FAIL — the first on `fields` still being in the URL, the second on the `RbFolder` row surviving.
+
+- [ ] **Step 3: Fix the method**
+
+Replace `list_projects` in `wrike_rest_api.py`:
+
+```python
+    # Folders that live in the Recycle Bin keep their project object, so a
+    # scope check is what separates a real project from a deleted one.
+    WORKSPACE_SCOPE_PREFIX = "Ws"
+
+    async def list_projects(self) -> Dict[str, Any]:
+        """Folders carrying a ``project`` object, excluding the Recycle Bin.
+
+        ``project=true`` is the filter Wrike honours here — passing
+        ``fields=project`` instead returns 400 "Fields parameter value
+        'project' not allowed". The response already carries the project
+        object, so no second call is needed.
+        """
+        result = await self._get_all("/folders", {"project": True})
+        if result["error"]:
+            return result
+        rows = result["data"]["data"]
+        projects = [
+            r for r in rows
+            if isinstance(r, dict) and r.get("project")
+            and str(r.get("scope", "")).startswith(self.WORKSPACE_SCOPE_PREFIX)
+        ]
+        return {"error": False, "status_code": 200,
+                "data": {"data": projects, "count": len(projects)}}
+```
+
+- [ ] **Step 4: Run the tests**
+
+Run: `python -m pytest tests/test_wrike_rest_api.py -v`
+Expected: PASS, all tests.
+
+- [ ] **Step 5: Verify against the live account**
+
+Run:
+
+```bash
+python -c "
+import asyncio, json, sys
+sys.path.insert(0, '.')
+from wrike_rest_api import WrikeRestAPI, DEFAULT_BASE_URL
+w = json.load(open('config.json', encoding='utf-8'))['wrike']
+async def main():
+    api = WrikeRestAPI(token=w['token'], base_url=w.get('base_url', DEFAULT_BASE_URL))
+    r = await api.list_projects()
+    print('error:', r['error'], 'count:', r['data']['count'] if not r['error'] else r['data'])
+asyncio.run(main())
+"
+```
+
+Expected: `error: False count: 58` (or whatever the live count is — the point is a non-zero count and no 400).
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add wrike_rest_api.py tests/test_wrike_rest_api.py
+git commit -m "fix(wrike): list_projects used a rejected fields param and returned deleted projects"
 ```
 
 ---
@@ -2302,6 +2440,20 @@ async def test_a_failed_parent_skips_its_subtasks_entirely():
     assert result.failures
 
 
+async def test_an_unscheduled_order_is_never_linked():
+    """Wrike rejects a dependency between undated tasks outright, so calling
+    add_dependency for one would be a guaranteed error rather than a link."""
+    rows = [wmt.ReconcileRow(part=wmt.OrderPart(title="CD-001200"),
+                             status=wmt.STATUS_MATCHED, proposal="Xometry",
+                             chosen="Xometry")]
+    order = wmt.group_orders(rows)[0]      # grouped but never scheduled
+    wrike = FakeWrike()
+    result = await _create([order], wrike)
+
+    assert wrike.dependencies == []
+    assert result.dependency_failures == []
+
+
 async def test_a_dependency_failure_leaves_the_tasks_in_place():
     """The tasks are the product; the link is the garnish."""
     order = _scheduled_order([wmt.OrderPart(title="CD-001200")])
@@ -2421,6 +2573,7 @@ async def create_orders(
 
         by_stage = {s.stage: s for s in order.schedule}
         previous_id = ""
+        previous_dated = False
         for stage in order.stages:
             sched = by_stage.get(stage)
             stage_owner = owners.get(stage)
@@ -2443,7 +2596,10 @@ async def create_orders(
             result.task_ids.append(task_id)
             progress(f"    {stage}: created")
 
-            if previous_id:
+            # Wrike refuses a dependency between undated tasks, so linking an
+            # unscheduled stage would fail every time. Skip rather than
+            # generate a guaranteed error.
+            if previous_id and sched is not None and previous_dated:
                 dep = await wrike.add_dependency(task_id, previous_id)
                 if dep.get("error"):
                     # The tasks are the product; the link is the garnish.
@@ -2451,6 +2607,7 @@ async def create_orders(
                         f"{sub_title}: {dep.get('data')}")
                     progress(f"    {stage}: dependency not linked")
             previous_id = task_id
+            previous_dated = sched is not None
 
         result.orders_created += 1
 
@@ -3307,6 +3464,7 @@ git commit -m "docs(readme): document BOM to Manufacturing Tasks"
 | Scheduling (business days, lead-time routing, fallbacks) | 7 |
 | Task shape (titles, separator, parent dates/owner, HTML descriptions) | 8, 11 |
 | Wrike client additions (superTasks, dependencies) | 1, 9, 10 |
+| `list_projects` fix (found during execution, not planning) | 10b |
 | Creation (serial, partial failure, dependency failure) | 11 |
 | Re-run detection (exact title, no status filter) | 1, 11, 14 |
 | GUI (notebook, gating, accept-all, exclude, config memory) | 12, 13 |

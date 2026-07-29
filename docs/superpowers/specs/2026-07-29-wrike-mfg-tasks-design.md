@@ -314,11 +314,34 @@ Two gaps in `wrike_rest_api.py`:
 - `add_dependency(task_id, predecessor_id, relation_type="FinishToStart")` —
   `POST /tasks/{taskId}/dependencies`.
 
-The dependency request body is the one shape not confirmed from the codebase.
-The **first implementation step is a live probe** against a throwaway task,
-with the confirmed shape written into the method's docstring — the same way
-this repo pinned down the Vault job param casing. It is wrapped in one method,
-so a wrong guess changes one place.
+### Confirmed by live probe, 2026-07-29
+
+`scripts/probes/probe_wrike_dependency.py`, run against the production
+account. The accepted request:
+
+```
+POST /tasks/{successorId}/dependencies
+body {"predecessorId": "<predecessor>", "relationType": "FinishToStart"}
+```
+
+`FinishToStart` is PascalCase, no hyphens, no underscores. `Finish-to-Start`
+and `finish_to_start` are both rejected with
+`400: Parameter 'relationType' value is invalid`. The link was verified by a
+follow-up `GET` on both tasks' `/dependencies`, not by trusting the POST's
+200.
+
+**A dependency requires both tasks to already have dates.** Two bare tasks
+reject even the correctly spelled `FinishToStart` with
+`400: Operation is not allowed due to invalid task scheduling type` — a
+different message from the wrong-enum case, which is what let the probe tell
+"wrong value" apart from "right value, wrong task state".
+
+This tool is unaffected, because every task it creates carries a start and due
+date from the schedule. But it makes the ordering load-bearing rather than
+incidental: dates must be set **at creation**, before the dependency call, and
+an order that somehow reached creation with no schedule would produce tasks
+whose dependencies all fail. The creation stage therefore never calls
+`add_dependency` for a stage it could not date.
 
 ## Component: re-run detection
 
@@ -327,10 +350,14 @@ Before creating, query the target project for a parent task whose title equals
 the exact comparison happens locally on the returned set.
 
 The query must **not** filter by status: a completed order that got filtered
-out of the result would be recreated on the next run. Whether Wrike's default
-already includes completed tasks is confirmed by the same live probe that
-pins down the dependency body — the unit test asserts only that our code sends
-no `status` param, which is the part we control.
+out of the result would be recreated on the next run.
+
+The same live probe settled what Wrike's default actually is. Sending no
+`status` param to `GET /folders/{id}/tasks` **does** return completed tasks —
+the probe marked its throwaway task `Completed` and the unfiltered listing
+still carried it, reporting `status: Completed`. So no explicit status list is
+needed. The unit test asserts our code sends no `status` param, which is the
+part we control; the probe covers the part we do not.
 
 Matches are reported `already exists - skipped`; new suppliers are created.
 
