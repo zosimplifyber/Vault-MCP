@@ -259,14 +259,27 @@ class WrikeRestAPI:
     async def get_folder(self, folder_id: str) -> Dict[str, Any]:
         return await self._request("GET", f"/folders/{folder_id}")
 
+    # Folders that live in the Recycle Bin keep their project object, so a
+    # scope check is what separates a real project from a deleted one.
+    WORKSPACE_SCOPE_PREFIX = "Ws"
+
     async def list_projects(self) -> Dict[str, Any]:
-        """Folders carrying a ``project`` object. Wrike's /folders tree only
-        includes ``project`` when requested via ``fields``; filter client-side."""
-        result = await self._get_all("/folders", {"fields": ["project"]})
+        """Folders carrying a ``project`` object, excluding the Recycle Bin.
+
+        ``project=true`` is the filter Wrike honours here — passing
+        ``fields=project`` instead returns 400 "Fields parameter value
+        'project' not allowed". The response already carries the project
+        object, so no second call is needed.
+        """
+        result = await self._get_all("/folders", {"project": True})
         if result["error"]:
             return result
         rows = result["data"]["data"]
-        projects = [r for r in rows if isinstance(r, dict) and r.get("project")]
+        projects = [
+            r for r in rows
+            if isinstance(r, dict) and r.get("project")
+            and str(r.get("scope", "")).startswith(self.WORKSPACE_SCOPE_PREFIX)
+        ]
         return {"error": False, "status_code": 200,
                 "data": {"data": projects, "count": len(projects)}}
 

@@ -272,3 +272,43 @@ async def test_add_dependency_surfaces_an_api_error():
 
     assert result["error"] is True
     assert "bad relation" in result["data"]
+
+
+async def test_list_projects_asks_for_projects_not_a_fields_selector():
+    """Wrike answers 400 to fields=project on /folders. The parameter that
+    works is project=true."""
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        return httpx.Response(200, json={"data": [
+            {"id": "F1", "title": "Live", "scope": "WsFolder",
+             "project": {"status": "Green"}},
+        ]})
+
+    api = make_api(handler)
+    result = await api.list_projects()
+
+    assert result["error"] is False
+    assert "project=true" in seen["url"]
+    assert "fields" not in seen["url"]
+
+
+async def test_list_projects_drops_recycle_bin_folders():
+    """A deleted project keeps its project object but moves to RbFolder
+    scope. Offering one in a picker would create tasks in the bin."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": [
+            {"id": "F1", "title": "Live", "scope": "WsFolder",
+             "project": {"status": "Green"}},
+            {"id": "F2", "title": "Deleted", "scope": "RbFolder",
+             "project": {"status": "Green"}},
+            {"id": "F3", "title": "Not a project", "scope": "WsFolder"},
+        ]})
+
+    api = make_api(handler)
+    result = await api.list_projects()
+
+    rows = result["data"]["data"]
+    assert [r["id"] for r in rows] == ["F1"]
+    assert result["data"]["count"] == 1
