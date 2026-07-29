@@ -18,7 +18,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import date, timedelta
 from typing import Any, Callable, Optional
 
 import bom_purchasing
@@ -403,3 +404,155 @@ def accept_proposals(rows: list[ReconcileRow]) -> int:
 
 def unresolved_count(rows: list[ReconcileRow]) -> int:
     return sum(1 for r in rows if not r.resolved)
+
+
+# ---------------------------------------------------------------------------
+# Stage 3: group into one order per supplier
+# ---------------------------------------------------------------------------
+
+STAGE_PURCHASING = "Purchasing"
+STAGE_MANUFACTURING = "Manufacturing"
+STAGE_SHIPPING = "Shipping"
+
+
+@dataclass
+class StageSchedule:
+    stage: str
+    start: date
+    due: date
+
+
+@dataclass
+class SupplierOrder:
+    """One supplier's order — one PO, one shipment, one set of tasks."""
+    supplier: str
+    parts: list[OrderPart] = field(default_factory=list)
+    schedule: list[StageSchedule] = field(default_factory=list)
+
+    @property
+    def make_parts(self) -> list[OrderPart]:
+        return [p for p in self.parts if p.kind == KIND_MAKE]
+
+    @property
+    def has_make(self) -> bool:
+        return bool(self.make_parts)
+
+    @property
+    def stages(self) -> list[str]:
+        """The stages this order passes through. A Buy-only order skips
+        Manufacturing — nothing is made, the supplier ships from stock."""
+        if self.has_make:
+            return [STAGE_PURCHASING, STAGE_MANUFACTURING, STAGE_SHIPPING]
+        return [STAGE_PURCHASING, STAGE_SHIPPING]
+
+    @property
+    def piece_count(self) -> float:
+        return sum(p.qty for p in self.parts)
+
+    @property
+    def total(self) -> float:
+        return sum(p.line_total for p in self.parts)
+
+    @property
+    def start(self) -> Optional[date]:
+        return min((s.start for s in self.schedule), default=None)
+
+    @property
+    def due(self) -> Optional[date]:
+        return max((s.due for s in self.schedule), default=None)
+
+
+def group_orders(rows: list[ReconcileRow]) -> list[SupplierOrder]:
+    """One order per supplier, in first-seen order.
+
+    Grouping normalizes the supplier name the same way the reconcile
+    comparison does, so "xometry" and "Xometry" are one order. The display
+    name is the first row's spelling — that is what reaches the task title.
+    Excluded and unresolved rows contribute to nothing.
+    """
+    orders: dict[str, SupplierOrder] = {}
+    order: list[str] = []
+
+    for row in rows:
+        if row.excluded or not row.chosen:
+            continue
+        key = vendor_key(row.chosen)
+        if key not in orders:
+            orders[key] = SupplierOrder(supplier=row.chosen)
+            order.append(key)
+        orders[key].parts.append(row.part)
+
+    return [orders[k] for k in order]
+
+
+# ---------------------------------------------------------------------------
+# Stage 4: schedule each order forward from a start date
+# ---------------------------------------------------------------------------
+
+@dataclass
+class Durations:
+    """Stage lengths in business days, editable in the GUI.
+
+    ``manufacturing`` is the fallback used when no part in the order carries a
+    lead time; ``shipping`` is likewise the fallback for a Buy-only order.
+    """
+    purchasing: int = 2
+    manufacturing: int = 10
+    shipping: int = 3
+
+
+def add_business_days(start: date, days: int) -> date:
+    """``days`` business days after ``start``, weekends skipped.
+
+    A start that lands on a weekend snaps forward to the next business day, so
+    a Saturday start date never produces a Saturday task. No holiday calendar.
+    """
+    day = start
+    while day.weekday() >= 5:
+        day += timedelta(days=1)
+    remaining = max(0, days)
+    while remaining > 0:
+        day += timedelta(days=1)
+        if day.weekday() < 5:
+            remaining -= 1
+    return day
+
+
+def _stage_length(order: SupplierOrder, stage: str,
+                  durations: Durations) -> int:
+    """How many business days a stage runs, in the order's own terms.
+
+    Lead time lands on the stage that consumes it: manufacturing for an order
+    with Make parts, shipping for one without.
+    """
+    if stage == STAGE_PURCHASING:
+        return max(1, durations.purchasing)
+    if stage == STAGE_MANUFACTURING:
+        leads = [p.lead_time_days for p in order.make_parts
+                 if p.lead_time_days]
+        return max(1, max(leads) if leads else durations.manufacturing)
+    if order.has_make:
+        return max(1, durations.shipping)
+    leads = [p.lead_time_days for p in order.parts if p.lead_time_days]
+    return max(1, max(leads) if leads else durations.shipping)
+
+
+def schedule_orders(orders: list[SupplierOrder], *, start: date,
+                    durations: Durations) -> list[SupplierOrder]:
+    """Fill in each order's stage dates, forward from ``start``.
+
+    Every order starts on the same date; the stages within an order run back
+    to back, which is what the finish-to-start dependencies then express in
+    Wrike. Mutates and returns the orders.
+    """
+    for order in orders:
+        order.schedule = []
+        cursor = start
+        for stage in order.stages:
+            length = _stage_length(order, stage, durations)
+            stage_start = add_business_days(cursor, 0)
+            stage_due = add_business_days(stage_start, length - 1)
+            order.schedule.append(
+                StageSchedule(stage=stage, start=stage_start, due=stage_due))
+            cursor = add_business_days(stage_due, 1)
+    return orders

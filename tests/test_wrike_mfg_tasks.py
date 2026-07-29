@@ -6,6 +6,7 @@ writer rather than a hand-rolled imitation of it.
 """
 import os
 import sys
+from datetime import date
 
 import pandas as pd
 
@@ -338,3 +339,125 @@ def test_accept_proposals_resolves_every_amber_row():
     assert rows[0].chosen == "X"
     assert rows[1].chosen == ""          # reds are never auto-resolved
     assert wmt.unresolved_count(rows) == 1
+
+
+# ----------------------------------------------------------------- grouping
+
+def _resolved(title, supplier, kind=wmt.KIND_MAKE, lead=None, qty=1.0):
+    part = wmt.OrderPart(title=title, sheet_vendor=supplier, kind=kind,
+                         qty=qty, lead_time_days=lead)
+    return wmt.ReconcileRow(part=part, status=wmt.STATUS_MATCHED,
+                            proposal=supplier, chosen=supplier)
+
+
+def test_one_supplier_yields_one_order_however_many_parts():
+    rows = [_resolved(f"ISO-{n}", "McMaster-Carr", wmt.KIND_BUY)
+            for n in range(11)]
+    orders = wmt.group_orders(rows)
+
+    assert len(orders) == 1
+    assert len(orders[0].parts) == 11
+
+
+def test_a_mixed_supplier_gets_one_order_with_a_manufacturing_stage():
+    """One PO to MiSUMi means one set of tasks."""
+    rows = [_resolved("CD-001366", "MiSUMi", wmt.KIND_MAKE),
+            _resolved("ISO 4762", "MiSUMi", wmt.KIND_BUY),
+            _resolved("ISO 4032", "MiSUMi", wmt.KIND_BUY)]
+    orders = wmt.group_orders(rows)
+
+    assert len(orders) == 1
+    assert orders[0].has_make
+    assert [p.title for p in orders[0].make_parts] == ["CD-001366"]
+
+
+def test_a_buy_only_supplier_has_no_manufacturing_stage():
+    rows = [_resolved("ISO 4762", "McMaster-Carr", wmt.KIND_BUY)]
+    orders = wmt.group_orders(rows)
+
+    assert not orders[0].has_make
+    assert [s for s in orders[0].stages] == [wmt.STAGE_PURCHASING,
+                                             wmt.STAGE_SHIPPING]
+
+
+def test_supplier_spellings_collapse_to_one_order():
+    rows = [_resolved("A", "Xometry"), _resolved("B", "xometry  ")]
+    orders = wmt.group_orders(rows)
+
+    assert len(orders) == 1
+    assert orders[0].supplier == "Xometry"    # the first row's spelling
+
+
+def test_excluded_and_unresolved_rows_contribute_to_no_order():
+    keep = _resolved("A", "Xometry")
+    dropped = _resolved("B", "Xometry")
+    dropped.excluded = True
+    blocked = wmt.ReconcileRow(part=wmt.OrderPart(title="C"),
+                               status=wmt.STATUS_MISMATCH)
+    orders = wmt.group_orders([keep, dropped, blocked])
+
+    assert [p.title for p in orders[0].parts] == ["A"]
+
+
+# --------------------------------------------------------------- scheduling
+
+def test_business_days_skip_the_weekend():
+    friday = date(2026, 8, 7)
+    assert wmt.add_business_days(friday, 1) == date(2026, 8, 10)
+    assert wmt.add_business_days(friday, 0) == friday
+
+
+def test_a_weekend_start_snaps_forward():
+    saturday = date(2026, 8, 8)
+    assert wmt.add_business_days(saturday, 0) == date(2026, 8, 10)
+
+
+def test_lead_time_drives_manufacturing_for_a_make_order():
+    rows = [_resolved("A", "Xometry", wmt.KIND_MAKE, lead=15),
+            _resolved("B", "Xometry", wmt.KIND_MAKE, lead=5)]
+    orders = wmt.schedule_orders(wmt.group_orders(rows),
+                                 start=date(2026, 8, 3),
+                                 durations=wmt.Durations())
+
+    stages = {s.stage: s for s in orders[0].schedule}
+    assert stages[wmt.STAGE_PURCHASING].start == date(2026, 8, 3)
+    assert stages[wmt.STAGE_PURCHASING].due == date(2026, 8, 4)
+    assert stages[wmt.STAGE_MANUFACTURING].start == date(2026, 8, 5)
+    assert stages[wmt.STAGE_MANUFACTURING].due == date(2026, 8, 25)
+    assert stages[wmt.STAGE_SHIPPING].start == date(2026, 8, 26)
+    assert stages[wmt.STAGE_SHIPPING].due == date(2026, 8, 28)
+
+
+def test_lead_time_drives_shipping_when_nothing_is_made():
+    """A McMaster order's lead time IS its ship time. Putting it on a stage
+    that does not exist would lose it."""
+    rows = [_resolved("ISO", "McMaster-Carr", wmt.KIND_BUY, lead=3)]
+    orders = wmt.schedule_orders(wmt.group_orders(rows),
+                                 start=date(2026, 8, 3),
+                                 durations=wmt.Durations())
+
+    stages = {s.stage: s for s in orders[0].schedule}
+    assert wmt.STAGE_MANUFACTURING not in stages
+    assert stages[wmt.STAGE_SHIPPING].start == date(2026, 8, 5)
+    assert stages[wmt.STAGE_SHIPPING].due == date(2026, 8, 7)
+
+
+def test_a_blank_lead_time_falls_back_to_the_default():
+    rows = [_resolved("A", "Xometry", wmt.KIND_MAKE, lead=None)]
+    durations = wmt.Durations(purchasing=2, manufacturing=10, shipping=3)
+    orders = wmt.schedule_orders(wmt.group_orders(rows),
+                                 start=date(2026, 8, 3), durations=durations)
+
+    stages = {s.stage: s for s in orders[0].schedule}
+    assert stages[wmt.STAGE_MANUFACTURING].start == date(2026, 8, 5)
+    assert stages[wmt.STAGE_MANUFACTURING].due == date(2026, 8, 18)
+
+
+def test_the_order_span_covers_every_stage():
+    rows = [_resolved("A", "Xometry", wmt.KIND_MAKE, lead=15)]
+    orders = wmt.schedule_orders(wmt.group_orders(rows),
+                                 start=date(2026, 8, 3),
+                                 durations=wmt.Durations())
+
+    assert orders[0].start == date(2026, 8, 3)
+    assert orders[0].due == date(2026, 8, 28)
