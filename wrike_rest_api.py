@@ -432,6 +432,35 @@ class WrikeRestAPI:
             "addParents": add_parents, "removeParents": remove_parents,
         })
 
+    # Confirmed against the live API by
+    # scripts/probes/probe_wrike_dependency.py — Wrike rejects other
+    # spellings of relationType outright.
+    DEPENDENCY_FINISH_TO_START = "FinishToStart"
+
+    async def add_dependency(
+        self,
+        task_id: str,
+        predecessor_id: str,
+        relation_type: str = DEPENDENCY_FINISH_TO_START,
+    ) -> Dict[str, Any]:
+        """Make ``task_id`` depend on ``predecessor_id``.
+
+        The POST goes to the *successor* — the task that waits. A
+        finish-to-start link is what makes a slip in one stage cascade to the
+        stages after it on the Wrike Gantt.
+
+        **Both tasks must already have dates.** Wrike rejects a dependency
+        between two undated tasks with ``400: Operation is not allowed due to
+        invalid task scheduling type``, which is a different failure from a
+        bad ``relation_type`` (``400: Parameter 'relationType' value is
+        invalid``). Create the tasks with their start and due dates first.
+        """
+        return await self._request(
+            "POST", f"/tasks/{task_id}/dependencies",
+            data={"predecessorId": predecessor_id,
+                  "relationType": relation_type},
+        )
+
     async def create_folder(
         self, parent_id: str, title: str, description: Optional[str] = None,
     ) -> Dict[str, Any]:

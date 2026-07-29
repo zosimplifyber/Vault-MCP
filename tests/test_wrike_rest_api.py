@@ -244,3 +244,31 @@ async def test_create_task_omits_super_tasks_when_not_given():
     await api.create_task("IEAF1", "Standalone")
 
     assert "superTasks" not in seen["body"]
+
+
+async def test_add_dependency_posts_to_the_successor():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["body"] = request.content.decode()
+        return httpx.Response(200, json={"data": [{"id": "IEAG1"}]})
+
+    api = make_api(handler)
+    result = await api.add_dependency("IEAASUCC", "IEAAPRED")
+
+    assert result["error"] is False
+    assert seen["url"].endswith("/tasks/IEAASUCC/dependencies")
+    assert "predecessorId=IEAAPRED" in seen["body"]
+    assert "relationType=FinishToStart" in seen["body"]
+
+
+async def test_add_dependency_surfaces_an_api_error():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"errorDescription": "bad relation"})
+
+    api = make_api(handler)
+    result = await api.add_dependency("IEAASUCC", "IEAAPRED")
+
+    assert result["error"] is True
+    assert "bad relation" in result["data"]
