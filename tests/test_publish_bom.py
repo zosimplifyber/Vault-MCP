@@ -177,15 +177,19 @@ class FakeAPI:
     """
 
     def __init__(self, search_map=None, search_errors=(), submit_errors=(),
-                 queue_enabled=True):
+                 queue_enabled=True, search_raises=(), queue_raises=False):
         self.search_map = search_map or {}
         self.search_errors = set(search_errors)
         self.submit_errors = set(submit_errors)
         self.queue_enabled = queue_enabled
+        self.search_raises = set(search_raises)
+        self.queue_raises = queue_raises
         self.submitted = []
         self._next_job_id = 1000
 
     async def search_files(self, vault_id, query, **kwargs):
+        if query in self.search_raises:
+            raise RuntimeError(f"search blew up for {query}")
         if query in self.search_errors:
             return {"error": True, "status_code": 500,
                     "data": {"message": "boom"}}
@@ -193,6 +197,8 @@ class FakeAPI:
                 "data": {"results": self.search_map.get(query, [])}}
 
     async def get_job_queue_enabled(self, vault_id):
+        if self.queue_raises:
+            raise RuntimeError("queue check blew up")
         return {"error": False, "status_code": 200,
                 "data": {"value": self.queue_enabled}}
 
@@ -306,6 +312,28 @@ async def test_scan_preserves_input_order():
         api, "1", [publish_bom.PublishRow(stem=s) for s in stems])
 
     assert [r.stem for r in rows] == stems
+
+
+@pytest.mark.asyncio
+async def test_a_raised_exception_degrades_only_its_own_row():
+    """asyncio.gather defaults to return_exceptions=False - one raise must not
+    discard every already-resolved row in a 200-row scan."""
+    api = FakeAPI(
+        {"CD-000002": [_hit("CD-000002.ipt", "111")],
+         "CD-000003": [_hit("CD-000003.ipt", "222")]},
+        search_raises=["CD-000001"],
+    )
+    rows = await publish_bom.scan_rows(api, "1", [
+        publish_bom.PublishRow(stem="CD-000001"),
+        publish_bom.PublishRow(stem="CD-000002"),
+        publish_bom.PublishRow(stem="CD-000003"),
+    ])
+
+    assert rows[0].status == publish_bom.STATUS_FAILED
+    assert rows[1].status == publish_bom.STATUS_MODEL_ONLY
+    assert rows[1].model_version_id == "111"
+    assert rows[2].status == publish_bom.STATUS_MODEL_ONLY
+    assert rows[2].model_version_id == "222"
 
 
 # --------------------------------------------------------------------------- submit
@@ -425,6 +453,17 @@ async def test_a_disabled_queue_warns_but_still_submits():
 
     assert any("disabled" in m.lower() for m in messages)
     assert result["submitted"] == 2
+
+
+@pytest.mark.asyncio
+async def test_a_raised_queue_check_does_not_block_submission():
+    """The queue check is advisory - an exception from it must never block
+    the jobs it was only meant to warn about."""
+    api = FakeAPI(queue_raises=True)
+    result = await publish_bom.submit_jobs(api, "1", [_scanned()])
+
+    assert result["submitted"] == 2
+    assert result["failed"] == 0
 
 
 # --------------------------------------------------------------------------- scan_bom

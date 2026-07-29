@@ -291,7 +291,13 @@ async def scan_rows(
 
     async def guarded(row: PublishRow) -> ScanRow:
         async with sem:
-            return await _scan_one(api, vault_id, row, progress)
+            try:
+                return await _scan_one(api, vault_id, row, progress)
+            except Exception as exc:  # noqa: BLE001 — one bad row must not sink the scan
+                logger.exception("Scan failed for %s", row.stem)
+                progress(f"  {row.stem}: lookup failed - {exc}")
+                return ScanRow(stem=row.stem, description=row.description,
+                               is_top=row.is_top, status=STATUS_FAILED)
 
     return list(await asyncio.gather(*(guarded(r) for r in rows)))
 
@@ -365,7 +371,11 @@ async def submit_jobs(
     """
     progress: ProgressFn = on_progress or (lambda _msg: None)
 
-    queue_resp = await api.get_job_queue_enabled(vault_id=vault_id)
+    try:
+        queue_resp = await api.get_job_queue_enabled(vault_id=vault_id)
+    except Exception as exc:  # noqa: BLE001 — advisory only, never block the work
+        logger.info("Job queue check failed: %s", exc)
+        queue_resp = {"error": True}
     if not queue_resp.get("error") and _queue_is_disabled(queue_resp.get("data")):
         progress(
             "WARNING: the Vault job queue is disabled. Jobs will be queued but "
