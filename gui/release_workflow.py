@@ -36,36 +36,14 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
-# ---------------------------------------------------------------------------
-# Simplifyber brand palette — kept in sync with bom_to_purchasing.py so the
-# whole engineering toolset has one consistent look. Dark blue is the primary
-# (headers, primary buttons), mid blue is the accent (hover, secondary text),
-# pale blue is for info cards / hover wells.
-# ---------------------------------------------------------------------------
-
-DARK_BLUE   = "#1F3864"
-MID_BLUE    = "#2E75B6"
-PALE_BLUE   = "#EAF3FB"
-LIGHT_GRAY  = "#F2F2F2"
-GRAY_BDR    = "#CCCCCC"
-DARK_GRAY   = "#888888"
-WHITE       = "#FFFFFF"
-OLIVE_GREEN = "#D8E4BC"   # used for pass / OK statuses to match the spreadsheet
-RUST_ORANGE = "#C0504D"   # for failures (legible on light backgrounds)
-WARN_AMBER  = "#B7791F"
-
-# Optional Pillow for the brand logo in the header / window icon. The GUI
-# still works without PIL — it just falls back to a text-only header.
-try:
-    from PIL import Image as PILImage, ImageTk  # noqa: F401
-    _pil_available = True
-except ImportError:
-    _pil_available = False
-
-
-def _resource_path(filename: str) -> str:
-    """Return the absolute path to a bundled brand asset (logo, icon)."""
-    return str(PROJECT_ROOT / filename)
+# The palette lives in gui/theme.py. These re-exports exist because eight
+# modules still import the names from here; do not remove them without
+# updating every importer.
+from gui.theme import (  # noqa: F401,E402
+    DARK_BLUE, MID_BLUE, PALE_BLUE, LIGHT_GRAY, GRAY_BDR, DARK_GRAY,
+    WHITE, OLIVE_GREEN, RUST_ORANGE, WARN_AMBER,
+    PROJECT_ROOT, _pil_available, _resource_path,
+)
 
 from check_item_properties import (  # noqa: E402
     DEFAULT_RULES_PATH,
