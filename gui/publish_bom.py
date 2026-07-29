@@ -251,6 +251,9 @@ class PublishBOMGUI:
         if self._busy or not self.scan_result:
             return
         self.scan_result = []
+        self.selected = set()
+        self._prev_stems = set()
+        self.queue_text.set("")
         for iid in self.tree.get_children():
             self.tree.delete(iid)
         self.submit_btn.configure(state="disabled")
@@ -413,12 +416,19 @@ class PublishBOMGUI:
         threading.Thread(target=runner, daemon=True, name="publish-bom-scan").start()
 
     def _render_scan(self, rows: list[publish_bom.ScanRow]) -> None:
+        new_stems = {r.stem for r in rows}
+        self.selected = publish_bom.merge_selection(
+            self.selected, self._prev_stems, new_stems)
+        self._prev_stems = new_stems
         self.scan_result = rows
+
         for row in rows:
             part = f"{row.stem} (top)" if row.is_top else row.stem
             tags = () if row.status == publish_bom.STATUS_BOTH else ("gap",)
-            self.tree.insert("", "end", values=(
-                part, row.description or "-",
+            # The stem is the row id: it is already unique per scan, so there
+            # is no separate iid-to-stem table to keep in sync.
+            self.tree.insert("", "end", iid=row.stem, values=(
+                UNCHECKED, part, row.description or "-",
                 row.model_name or "-", row.drawing_name or "-", row.status,
             ), tags=tags)
 
@@ -427,29 +437,39 @@ class PublishBOMGUI:
             f"{s['rows']} part(s)",
             f"{s['models']} model(s)",
             f"{s['drawings']} drawing(s)",
-            f"{s['jobs']} job(s) to queue",
+            f"{s['jobs']} job(s)",
             f"{s['missing_drawing']} missing a drawing",
             f"{s['not_found']} not in Vault",
         ]
-        # Only shown when non-zero: these are unknowns rather than answers,
-        # and every row must be accounted for somewhere on this line.
         for count, label in ((s["failed"], "lookup failed"),
                              (s["truncated"], "search truncated"),
                              (s["ambiguous"], "ambiguous")):
             if count:
                 parts.append(f"{count} {label}")
         self.summary_text.set(" - ".join(parts))
-        self._log(f"Scan complete: {s['jobs']} job(s) ready to queue.", "ok")
+
+        self._log(f"Scan complete: {s['jobs']} job(s) available to queue.", "ok")
+        # Clear busy before repainting: _update_queue_line consults _busy when
+        # deciding whether Submit may be enabled.
         self._set_busy(False)
-        self.submit_btn.configure(state="normal" if s["jobs"] else "disabled")
+        self._refresh_checks()
 
     def _on_submit(self) -> None:
         if self._busy or not self.scan_result or not self._require_session():
             return
-        s = publish_bom.summarize(self.scan_result)
+        rows = [r for r in self.scan_result if r.stem in self.selected]
+        counts = publish_bom.count_planned_jobs(
+            rows,
+            include_pdf=self.want_pdf.get(),
+            include_step=self.want_step.get(),
+        )
+        if not counts["total"]:
+            return
         if not messagebox.askyesno(
             "Queue jobs?",
-            f"Queue {s['jobs']} job(s) on the Vault job server?\n\n"
+            f"Queue {counts['total']} job(s) "
+            f"({counts['pdf']} PDF, {counts['step']} STEP) for "
+            f"{len(rows)} part(s) on the Vault job server?\n\n"
             "Jobs are submitted and not tracked from here — watch their "
             "progress in Vault Explorer.",
             parent=self.win,
@@ -458,15 +478,15 @@ class PublishBOMGUI:
 
         self._set_busy(True)
         self.submit_btn.configure(state="disabled")
-        self._log(f"Submitting {s['jobs']} job(s)...")
-
-        rows = list(self.scan_result)
+        self._log(f"Submitting {counts['total']} job(s)...")
 
         def runner() -> None:
             try:
                 result = asyncio.run(publish_bom.submit_jobs(
                     self.api, self.vault_id, rows,
                     on_progress=lambda m: self.q.put(("log", m)),
+                    include_pdf=self.want_pdf.get(),
+                    include_step=self.want_step.get(),
                 ))
                 self.q.put(("submit_done", result))
             except Exception as exc:  # noqa: BLE001
