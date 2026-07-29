@@ -123,6 +123,16 @@ VENDOR_COL_WIDTHS = {
     "Vendor Number": 20, "Total Qty": 12, "Unit Cost": 14, "Line Total": 14,
 }
 
+# The Purchasing tab's layout, shared by the writer and by
+# read_purchasing_sheet(). Row 1 is the assembly title bar, row 2 the
+# generated-on date, row 3 the column headers.
+PURCHASING_SHEET_NAME = "Purchasing"
+HDR_ROW = 3
+
+# The writer appends this note below the data table so a $0 line reads as "no
+# price found" rather than "free". The reader stops when it sees it.
+UNMATCHED_NOTE_PREFIX = "Unmatched ("
+
 
 # ---------------------------------------------------------------------------
 # Vault BOM field-name normalisation
@@ -475,7 +485,7 @@ def build_purchasing_sheet(
     df = df.reset_index(drop=True)
     wb = Workbook()
     ws = wb.active
-    ws.title = "Purchasing"
+    ws.title = PURCHASING_SHEET_NAME
     n_cols = len(SHEET_COLUMNS)
 
     # Title bar
@@ -498,7 +508,6 @@ def build_purchasing_sheet(
     ws.row_dimensions[2].height = 16
 
     # Column header row
-    HDR_ROW = 3
     hdr_font = Font(name="Arial", bold=True, color=WHITE, size=10)
     hdr_fill = PatternFill("solid", fgColor=DARK_BLUE)
     hdr_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
@@ -602,8 +611,8 @@ def build_purchasing_sheet(
         ws.merge_cells(start_row=note_row, start_column=1,
                        end_row=note_row, end_column=n_cols)
         nc = ws.cell(row=note_row, column=1)
-        nc.value = (f"Unmatched ({len(unmatched_nums)}) — no price in reference: "
-                    + ", ".join(unmatched_nums))
+        nc.value = (f"{UNMATCHED_NOTE_PREFIX}{len(unmatched_nums)}) — "
+                    f"no price in reference: " + ", ".join(unmatched_nums))
         nc.font = Font(name="Arial", size=9, italic=True, color=DARK_GRAY)
         nc.fill = PatternFill("solid", fgColor=UNMATCHED_FILL)
         nc.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
