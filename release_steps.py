@@ -384,6 +384,95 @@ def run_sync_properties(
     )
 
 
+def _sdk():
+    """Import the vault_sdk bridge lazily.
+
+    It shells out to PowerShell and the .NET SDK, so importing it at module
+    load would make every release_steps import pay for a bridge that most
+    steps never touch. A fixture replaces this in tests.
+    """
+    import vault_sdk
+    return vault_sdk
+
+
+def run_release_files(
+    api: Any, vault_id: str, compliance: dict[str, Any], *,
+    target_state: str, state_id: Optional[int] = None,
+) -> StepOutcome:
+    """Step 3 — promote every file to the target lifecycle state.
+
+    The state must be resolved inside the *file* lifecycle definition, not the
+    item one, so we look up the first file and search its own definition.
+    ``state_id`` short-circuits that when the user sets the override field.
+    """
+    masters = file_master_ids(compliance)
+    if not masters:
+        return StepOutcome(
+            ok=True, summary="No files to release.",
+            lines=[("  [warn] No CAD files found to release.", TAG_WARN)],
+        )
+
+    sdk = _sdk()
+    resolved = state_id
+    if resolved is None:
+        try:
+            first = sdk.lookup_file(masters[0])
+        except Exception as exc:  # noqa: BLE001
+            return StepOutcome(ok=False, summary=f"File lookup failed: {exc}",
+                               lines=[(f"  [fail] {exc}", TAG_FAIL)])
+        if not first.get("found"):
+            msg = f"Could not look up file masterId={masters[0]}"
+            return StepOutcome(ok=False, summary=msg,
+                               lines=[(f"  [fail] {msg}", TAG_FAIL)])
+        resolved = sdk.find_state_id_for_file(first, target_state)
+
+    if resolved is None:
+        msg = (f"Could not resolve a lifecycle state id for {target_state!r} "
+               f"in the file's lifecycle. Set 'State ID (override)'.")
+        return StepOutcome(ok=False, summary=msg,
+                           lines=[(f"  [fail] {msg}", TAG_FAIL)])
+
+    lines = [
+        (f"  {len(masters)} file(s) will move to '{target_state}' "
+         f"(state_id={resolved}).", TAG_INFO),
+        ("  This changes lifecycle state in Vault and cannot be undone "
+         "from here.", TAG_WARN),
+    ]
+
+    # Name every file this step will drop. Releasing 37 of 40 files and
+    # reporting "37 moved" is a partial release reported as success — the
+    # engineer has no baseline to compare 37 against. Report only what THIS
+    # step drops: a missing master ID is what excludes a file from the
+    # lifecycle batch.
+    for name, missing in unresolved_files(compliance):
+        if missing in ("master", "both"):
+            lines.append(
+                (f"      ! {name}: no file master ID — will NOT be released",
+                 TAG_WARN))
+
+    def apply() -> StepOutcome:
+        try:
+            result = sdk.update_file_lifecycle_states(
+                masters, resolved,
+                comment=f"Released via Release Workflow to {target_state}",
+            )
+        except Exception as exc:  # noqa: BLE001
+            return StepOutcome(ok=False, summary=f"Release failed: {exc}",
+                               lines=[(f"  [fail] {exc}", TAG_FAIL)])
+        moved = result.get("updated", len(masters))
+        return StepOutcome(
+            ok=True, summary=f"Released {moved} file(s) to '{target_state}'.",
+            lines=[(f"  [ok] Released {moved} file(s).", TAG_PASS)],
+        )
+
+    return StepOutcome(
+        ok=True,
+        summary=(f"{len(masters)} file(s) ready to move to '{target_state}' "
+                 f"(state_id={resolved}) — click Apply."),
+        lines=lines, pending_apply=apply,
+    )
+
+
 def _names_by_version_id(compliance: dict[str, Any]) -> dict[str, str]:
     """Map file-version id -> display name, for readable log lines."""
     names: dict[str, str] = {}

@@ -1,4 +1,6 @@
 # tests/test_release_steps.py
+import pytest
+
 import release_steps
 
 # Exact hex values, not just "starts with #" — a mistyped hex during a pure
@@ -530,4 +532,108 @@ def test_sync_preview_does_not_flag_a_file_missing_only_its_master_id():
     out = release_steps.run_sync_properties(NoWriteAPI(), "V1", c)
 
     assert not any("NoMaster.ipt" in text and tag == release_steps.TAG_WARN
+                   for text, tag in out.lines)
+
+
+# --- run_release_files (Task 7 — Step 3 engine) ---------------------------
+
+
+@pytest.fixture
+def fake_sdk(monkeypatch):
+    """Stub the vault_sdk bridge — the real one shells out to PowerShell."""
+    calls = {"updated": []}
+
+    def lookup_file(master_id):
+        return {"found": True, "masterId": master_id}
+
+    def find_state_id_for_file(record, name):
+        return 42 if name == "Released" else None
+
+    def update_file_lifecycle_states(masters, state_id, comment=""):
+        calls["updated"].append((list(masters), state_id, comment))
+        return {"updated": len(masters)}
+
+    class VaultSDKError(Exception):
+        pass
+
+    monkeypatch.setattr(release_steps, "_sdk", lambda: type("SDK", (), {
+        "lookup_file": staticmethod(lookup_file),
+        "find_state_id_for_file": staticmethod(find_state_id_for_file),
+        "update_file_lifecycle_states": staticmethod(update_file_lifecycle_states),
+        "VaultSDKError": VaultSDKError,
+    }))
+    return calls
+
+
+def test_release_preview_resolves_the_state_and_writes_nothing(fake_sdk):
+    c = _compliance(children=[("200", "20")])
+    out = release_steps.run_release_files(None, "V1", c, target_state="Released")
+
+    assert out.ok is True
+    assert out.pending_apply is not None
+    assert fake_sdk["updated"] == []           # nothing moved
+    assert "42" in out.summary                 # resolved state id is visible
+
+
+def test_release_apply_promotes_every_master_id(fake_sdk):
+    c = _compliance(children=[("200", "20")])
+    applied = release_steps.run_release_files(
+        None, "V1", c, target_state="Released").pending_apply()
+
+    assert applied.ok is True
+    masters, state_id, _comment = fake_sdk["updated"][0]
+    assert masters == [10, 20]
+    assert state_id == 42
+
+
+def test_release_honours_an_explicit_state_id_override(fake_sdk):
+    release_steps.run_release_files(
+        None, "V1", _compliance(), target_state="Anything", state_id=99,
+    ).pending_apply()
+
+    _masters, state_id, _comment = fake_sdk["updated"][0]
+    assert state_id == 99
+
+
+def test_release_fails_when_the_state_cannot_be_resolved(fake_sdk):
+    out = release_steps.run_release_files(
+        None, "V1", _compliance(), target_state="Nonexistent")
+
+    assert out.ok is False
+    assert out.pending_apply is None
+    assert fake_sdk["updated"] == []
+
+
+def test_release_with_no_files_is_ok_and_stages_nothing(fake_sdk):
+    out = release_steps.run_release_files(
+        None, "V1", {}, target_state="Released")
+    assert out.ok is True
+    assert out.pending_apply is None
+
+
+def test_release_preview_names_a_file_with_no_master_id_as_unreleasable(fake_sdk):
+    """unresolved_files reports both 'master' and 'version' drops; step 3
+    (release) only needs a master ID, so only 'master'/'both' drops are its
+    problem. A file merely missing a version ID synced fine in step 2 and is
+    not this step's concern — naming it here would make this preview lie."""
+    c = _compliance(children=[("200", "")])
+    c["children"][0]["file_name"] = "NoMaster.ipt"
+
+    out = release_steps.run_release_files(None, "V1", c, target_state="Released")
+
+    assert any("NoMaster.ipt" in text for text, _tag in out.lines)
+
+
+def test_release_preview_does_not_flag_a_file_missing_only_its_version_id(
+    fake_sdk,
+):
+    """This file has a master ID, so it releases fine — a missing version ID
+    only mattered to step 2 (sync), which already ran. Step 3 must not flag
+    it as a problem."""
+    c = _compliance(children=[("", "30")])
+    c["children"][0]["file_name"] = "NoVersion.ipt"
+
+    out = release_steps.run_release_files(None, "V1", c, target_state="Released")
+
+    assert not any("NoVersion.ipt" in text and tag == release_steps.TAG_WARN
                    for text, tag in out.lines)
