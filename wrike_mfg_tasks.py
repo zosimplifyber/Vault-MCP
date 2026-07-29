@@ -648,3 +648,142 @@ def render_description(order: SupplierOrder, stage: str, *,
             + f"<p>Expect {_qty(order.piece_count)} pcs across "
               f"{len(order.parts)} line items.</p>"
             + _table(["Part", "Description", "Qty"], rows))
+
+
+# ---------------------------------------------------------------------------
+# Stage 6: create the tasks
+# ---------------------------------------------------------------------------
+
+@dataclass
+class CreateResult:
+    orders_created: int = 0
+    orders_skipped: int = 0
+    task_ids: list[str] = field(default_factory=list)
+    skipped_titles: list[str] = field(default_factory=list)
+    failures: list[str] = field(default_factory=list)
+    dependency_failures: list[str] = field(default_factory=list)
+
+
+def _rows_of(resp: dict[str, Any]) -> list[dict[str, Any]]:
+    data = resp.get("data")
+    if isinstance(data, dict):
+        inner = data.get("data")
+        if isinstance(inner, list):
+            return [r for r in inner if isinstance(r, dict)]
+    if isinstance(data, list):
+        return [r for r in data if isinstance(r, dict)]
+    return []
+
+
+def _new_task_id(resp: dict[str, Any]) -> str:
+    rows = _rows_of(resp)
+    return _text(rows[0].get("id")) if rows else ""
+
+
+async def _title_exists(wrike, folder_id: str, title: str) -> bool:
+    """Whether the folder already holds a task with exactly this title.
+
+    No status filter is passed: a completed order filtered out of the result
+    would be recreated on the next run. Wrike's own title filter is a
+    substring match, so the exact comparison happens here.
+    """
+    resp = await wrike.search_tasks(title=title, folder_id=folder_id)
+    if resp.get("error"):
+        # An unreadable folder must not silently duplicate a board. Treat the
+        # order as existing and let the caller report the skip.
+        logger.warning("Existence check failed for %r: %s", title,
+                       resp.get("data"))
+        return True
+    return any(_text(r.get("title")) == title for r in _rows_of(resp))
+
+
+async def create_orders(
+    wrike,
+    *,
+    folder_id: str,
+    build: str,
+    orders: list[SupplierOrder],
+    owners: dict[str, str],
+    source_name: str,
+    on_progress: Optional[ProgressFn] = None,
+) -> CreateResult:
+    """Create one parent task plus its stage subtasks for every order.
+
+    Serial, both across orders and within one: creation is cheap, and serial
+    keeps the log readable and the API gentle.
+
+    There is no rollback — Wrike has no transaction. A trio that fails halfway
+    is reported with the ids that *were* created so it can be cleaned up by
+    hand, and the loop moves to the next supplier.
+    """
+    progress: ProgressFn = on_progress or (lambda _msg: None)
+    result = CreateResult()
+
+    for order in orders:
+        title = parent_title(build, order)
+
+        if await _title_exists(wrike, folder_id, title):
+            result.orders_skipped += 1
+            result.skipped_titles.append(title)
+            progress(f"  {title}: already exists - skipped")
+            continue
+
+        owner = owners.get(STAGE_PURCHASING)
+        parent_resp = await wrike.create_task(
+            folder_id, title,
+            description=render_description(order, STAGE_PARENT,
+                                           source_name=source_name),
+            start_date=order.start.isoformat() if order.start else None,
+            due_date=order.due.isoformat() if order.due else None,
+            responsibles=[owner] if owner else None,
+        )
+        parent_id = _new_task_id(parent_resp)
+        if parent_resp.get("error") or not parent_id:
+            result.failures.append(f"{title}: {parent_resp.get('data')}")
+            progress(f"  {title}: FAILED - {parent_resp.get('data')}")
+            continue
+
+        result.task_ids.append(parent_id)
+        progress(f"  {title}: created")
+
+        by_stage = {s.stage: s for s in order.schedule}
+        previous_id = ""
+        previous_dated = False
+        for stage in order.stages:
+            sched = by_stage.get(stage)
+            stage_owner = owners.get(stage)
+            sub_title = stage_title(build, order, stage)
+            resp = await wrike.create_task(
+                folder_id, sub_title,
+                description=render_description(order, stage,
+                                               source_name=source_name),
+                start_date=sched.start.isoformat() if sched else None,
+                due_date=sched.due.isoformat() if sched else None,
+                responsibles=[stage_owner] if stage_owner else None,
+                super_task_ids=[parent_id],
+            )
+            task_id = _new_task_id(resp)
+            if resp.get("error") or not task_id:
+                result.failures.append(f"{sub_title}: {resp.get('data')}")
+                progress(f"    {stage}: FAILED - {resp.get('data')}")
+                continue
+
+            result.task_ids.append(task_id)
+            progress(f"    {stage}: created")
+
+            # Wrike refuses a dependency between undated tasks, so linking an
+            # unscheduled stage would fail every time. Skip rather than
+            # generate a guaranteed error.
+            if previous_id and sched is not None and previous_dated:
+                dep = await wrike.add_dependency(task_id, previous_id)
+                if dep.get("error"):
+                    # The tasks are the product; the link is the garnish.
+                    result.dependency_failures.append(
+                        f"{sub_title}: {dep.get('data')}")
+                    progress(f"    {stage}: dependency not linked")
+            previous_id = task_id
+            previous_dated = sched is not None
+
+        result.orders_created += 1
+
+    return result

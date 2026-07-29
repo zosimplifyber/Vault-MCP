@@ -551,3 +551,251 @@ def test_values_are_escaped():
 
     assert "A&lt;b&gt;" in html
     assert "1 &lt; 2 &amp; 3" in html
+
+
+# ------------------------------------------------------------- fake wrike
+
+class FakeWrike:
+    """Records calls and hands back sequential task ids.
+
+    ``existing`` is the list of task dicts already in the folder.
+    ``fail_titles`` are titles whose create should fail.
+    """
+
+    def __init__(self, existing=(), fail_titles=(), dependency_fails=False):
+        self.existing = list(existing)
+        self.fail_titles = set(fail_titles)
+        self.dependency_fails = dependency_fails
+        self.created = []
+        self.dependencies = []
+        self.search_calls = []
+        self._next = 0
+
+    async def search_tasks(self, title=None, status=None, folder_id=None,
+                           page_size=100):
+        self.search_calls.append({"title": title, "status": status,
+                                  "folder_id": folder_id})
+        rows = self.existing
+        if title:
+            rows = [r for r in rows if title.lower() in r["title"].lower()]
+        return {"error": False, "status_code": 200,
+                "data": {"data": rows, "count": len(rows)}}
+
+    async def create_task(self, folder_id, title, description=None,
+                          start_date=None, due_date=None, responsibles=None,
+                          super_task_ids=None, **kwargs):
+        self.created.append({
+            "folder_id": folder_id, "title": title, "description": description,
+            "start_date": start_date, "due_date": due_date,
+            "responsibles": responsibles, "super_task_ids": super_task_ids,
+        })
+        if title in self.fail_titles:
+            return {"error": True, "status_code": 400, "data": "nope"}
+        self._next += 1
+        return {"error": False, "status_code": 200,
+                "data": {"data": [{"id": f"IEAA{self._next}"}]}}
+
+    async def add_dependency(self, task_id, predecessor_id,
+                             relation_type="FinishToStart"):
+        self.dependencies.append({"task_id": task_id,
+                                  "predecessor_id": predecessor_id,
+                                  "relation_type": relation_type})
+        if self.dependency_fails:
+            return {"error": True, "status_code": 400, "data": "no link"}
+        return {"error": False, "status_code": 200, "data": {"data": []}}
+
+
+OWNERS = {wmt.STAGE_PURCHASING: "KUAAP", wmt.STAGE_MANUFACTURING: "KUAAM",
+          wmt.STAGE_SHIPPING: "KUAAS"}
+
+
+async def _create(orders, wrike, build="CD-001608"):
+    return await wmt.create_orders(
+        wrike, folder_id="IEAF1", build=build, orders=orders,
+        owners=OWNERS, source_name="CD-001608 Purchasing Sheet.xlsx")
+
+
+# ----------------------------------------------------------------- creation
+
+async def test_a_make_order_creates_a_parent_and_three_subtasks():
+    order = _scheduled_order([wmt.OrderPart(title="CD-001200", lead_time_days=15)])
+    wrike = FakeWrike()
+    result = await _create([order], wrike)
+
+    assert result.orders_created == 1
+    assert [c["title"] for c in wrike.created] == [
+        "CD-001608 - Xometry",
+        "CD-001608 Xometry - 1. Purchasing",
+        "CD-001608 Xometry - 2. Manufacturing",
+        "CD-001608 Xometry - 3. Shipping",
+    ]
+    assert wrike.created[0]["super_task_ids"] is None
+    assert wrike.created[1]["super_task_ids"] == ["IEAA1"]
+
+
+async def test_a_buy_only_order_creates_two_subtasks():
+    order = _scheduled_order(
+        [wmt.OrderPart(title="ISO", kind=wmt.KIND_BUY, lead_time_days=3)],
+        supplier="McMaster-Carr")
+    wrike = FakeWrike()
+    await _create([order], wrike)
+
+    assert len(wrike.created) == 3          # parent + 2 stages
+    assert "Manufacturing" not in " ".join(c["title"] for c in wrike.created)
+
+
+async def test_stages_are_chained_finish_to_start():
+    order = _scheduled_order([wmt.OrderPart(title="CD-001200")])
+    wrike = FakeWrike()
+    await _create([order], wrike)
+
+    # subtasks are IEAA2, IEAA3, IEAA4 under parent IEAA1
+    assert wrike.dependencies == [
+        {"task_id": "IEAA3", "predecessor_id": "IEAA2",
+         "relation_type": "FinishToStart"},
+        {"task_id": "IEAA4", "predecessor_id": "IEAA3",
+         "relation_type": "FinishToStart"},
+    ]
+
+
+async def test_a_buy_only_order_chains_purchasing_straight_to_shipping():
+    order = _scheduled_order(
+        [wmt.OrderPart(title="ISO", kind=wmt.KIND_BUY)],
+        supplier="McMaster-Carr")
+    wrike = FakeWrike()
+    await _create([order], wrike)
+
+    assert len(wrike.dependencies) == 1
+    assert wrike.dependencies[0]["predecessor_id"] == "IEAA2"
+    assert wrike.dependencies[0]["task_id"] == "IEAA3"
+
+
+async def test_each_stage_carries_its_own_owner():
+    order = _scheduled_order([wmt.OrderPart(title="CD-001200")])
+    wrike = FakeWrike()
+    await _create([order], wrike)
+
+    assert wrike.created[1]["responsibles"] == ["KUAAP"]
+    assert wrike.created[2]["responsibles"] == ["KUAAM"]
+    assert wrike.created[3]["responsibles"] == ["KUAAS"]
+
+
+async def test_the_parent_spans_the_order_and_belongs_to_purchasing():
+    order = _scheduled_order([wmt.OrderPart(title="CD-001200",
+                                            lead_time_days=15)])
+    wrike = FakeWrike()
+    await _create([order], wrike)
+
+    parent = wrike.created[0]
+    assert parent["start_date"] == "2026-08-03"
+    assert parent["due_date"] == "2026-08-28"
+    assert parent["responsibles"] == ["KUAAP"]
+
+
+async def test_dates_are_sent_as_plain_iso_dates():
+    order = _scheduled_order([wmt.OrderPart(title="CD-001200")])
+    wrike = FakeWrike()
+    await _create([order], wrike)
+
+    assert wrike.created[1]["start_date"] == "2026-08-03"
+    assert wrike.created[1]["due_date"] == "2026-08-04"
+
+
+# ------------------------------------------------------------------ re-runs
+
+async def test_an_existing_order_is_skipped_and_reported():
+    order = _scheduled_order([wmt.OrderPart(title="CD-001200")])
+    wrike = FakeWrike(existing=[{"id": "OLD", "title": "CD-001608 - Xometry",
+                                 "status": "Active"}])
+    result = await _create([order], wrike)
+
+    assert result.orders_created == 0
+    assert result.orders_skipped == 1
+    assert wrike.created == []
+    assert "CD-001608 - Xometry" in result.skipped_titles
+
+
+async def test_a_completed_order_still_counts_as_existing():
+    """Wrike's folder listing can filter completed tasks out. Sending no
+    status param is what keeps a finished order from being recreated."""
+    order = _scheduled_order([wmt.OrderPart(title="CD-001200")])
+    wrike = FakeWrike(existing=[{"id": "OLD", "title": "CD-001608 - Xometry",
+                                 "status": "Completed"}])
+    result = await _create([order], wrike)
+
+    assert result.orders_skipped == 1
+    assert all(c["status"] is None for c in wrike.search_calls)
+
+
+async def test_a_substring_title_match_is_not_treated_as_existing():
+    """Wrike's title filter is a substring match; the comparison is exact."""
+    order = _scheduled_order([wmt.OrderPart(title="CD-001200")])
+    wrike = FakeWrike(existing=[{"id": "OLD",
+                                 "title": "CD-001608 - Xometry Rework",
+                                 "status": "Active"}])
+    result = await _create([order], wrike)
+
+    assert result.orders_created == 1
+
+
+async def test_a_new_supplier_is_created_while_an_existing_one_is_skipped():
+    made = _scheduled_order([wmt.OrderPart(title="CD-001200")])
+    bought = _scheduled_order([wmt.OrderPart(title="ISO", kind=wmt.KIND_BUY)],
+                              supplier="McMaster-Carr")
+    wrike = FakeWrike(existing=[{"id": "OLD", "title": "CD-001608 - Xometry",
+                                 "status": "Active"}])
+    result = await _create([made, bought], wrike)
+
+    assert result.orders_created == 1
+    assert result.orders_skipped == 1
+    assert wrike.created[0]["title"] == "CD-001608 - McMaster-Carr"
+
+
+# --------------------------------------------------------------- failures
+
+async def test_a_failed_subtask_reports_what_was_created_and_moves_on():
+    made = _scheduled_order([wmt.OrderPart(title="CD-001200")])
+    bought = _scheduled_order([wmt.OrderPart(title="ISO", kind=wmt.KIND_BUY)],
+                              supplier="McMaster-Carr")
+    wrike = FakeWrike(fail_titles=["CD-001608 Xometry - 2. Manufacturing"])
+    result = await _create([made, bought], wrike)
+
+    assert result.failures
+    assert any("Manufacturing" in f for f in result.failures)
+    # the next supplier still ran
+    assert any(c["title"] == "CD-001608 - McMaster-Carr" for c in wrike.created)
+
+
+async def test_a_failed_parent_skips_its_subtasks_entirely():
+    order = _scheduled_order([wmt.OrderPart(title="CD-001200")])
+    wrike = FakeWrike(fail_titles=["CD-001608 - Xometry"])
+    result = await _create([order], wrike)
+
+    assert len(wrike.created) == 1
+    assert result.orders_created == 0
+    assert result.failures
+
+
+async def test_an_unscheduled_order_is_never_linked():
+    """Wrike rejects a dependency between undated tasks outright, so calling
+    add_dependency for one would be a guaranteed error rather than a link."""
+    rows = [wmt.ReconcileRow(part=wmt.OrderPart(title="CD-001200"),
+                             status=wmt.STATUS_MATCHED, proposal="Xometry",
+                             chosen="Xometry")]
+    order = wmt.group_orders(rows)[0]      # grouped but never scheduled
+    wrike = FakeWrike()
+    result = await _create([order], wrike)
+
+    assert wrike.dependencies == []
+    assert result.dependency_failures == []
+
+
+async def test_a_dependency_failure_leaves_the_tasks_in_place():
+    """The tasks are the product; the link is the garnish."""
+    order = _scheduled_order([wmt.OrderPart(title="CD-001200")])
+    wrike = FakeWrike(dependency_fails=True)
+    result = await _create([order], wrike)
+
+    assert result.orders_created == 1
+    assert len(wrike.created) == 4
+    assert result.dependency_failures
