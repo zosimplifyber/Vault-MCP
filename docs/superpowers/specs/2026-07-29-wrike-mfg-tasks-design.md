@@ -144,6 +144,18 @@ Purchasing workbook (.xlsx)
 - **Never read `Sub Total`.** Line total is recomputed as
   `Cost Per × Item Qty + Shipping + Tax/Tariff`, all of which are literal
   values.
+- **Stop at the end of the data table.** The writer appends an
+  `"Unmatched (n) — no price in reference: ..."` note below the table, after
+  one blank row (`bom_purchasing.py:598-609`). Reading stops at the first
+  fully blank row, and also at any row whose first cell begins with the note
+  prefix — which becomes a shared constant, `UNMATCHED_NOTE_PREFIX`, used by
+  writer and reader alike. Without this the note arrives as a phantom part
+  with a name and no supplier.
+- **Duplicate titles are aggregated.** A sheet lists the same part once per
+  place it appears in the BOM. One line item per part per order: quantities
+  sum, lead time takes the longest, other fields come from the first
+  occurrence, and the merge is logged. This also makes the reconcile lookup
+  naturally one call per unique part.
 - Roll-ups are identified with the existing `build_children_map(df)`, which
   keys on `Row Order` — a column the sheet does carry. Any row with children is
   excluded and reported; its children are ordered individually.
@@ -264,6 +276,10 @@ due the last stage's due, and its responsible is the Purchasing owner, who
 initiates the order. Its dates are set explicitly rather than left to Wrike's
 roll-up, so the order still reads correctly if a subtask is later deleted.
 
+Descriptions are rendered as **HTML**, not plain text. Wrike renders a task
+description as HTML, so newlines in a plain string collapse and a part table
+arrives as one run-on line. Values are escaped before interpolation.
+
 Descriptions are tailored per stage:
 
 - **Parent** — source workbook name, supplier, part count, piece count, order
@@ -310,9 +326,11 @@ Before creating, query the target project for a parent task whose title equals
 `<build> - <supplier>` exactly. Wrike's title filter is a substring match, so
 the exact comparison happens locally on the returned set.
 
-The query must **not** filter by status. Wrike's task search returns active
-tasks by default, and a completed order filtered out of the result would be
-recreated on the next run.
+The query must **not** filter by status: a completed order that got filtered
+out of the result would be recreated on the next run. Whether Wrike's default
+already includes completed tasks is confirmed by the same live probe that
+pins down the dependency body — the unit test asserts only that our code sends
+no `status` param, which is the part we control.
 
 Matches are reported `already exists - skipped`; new suppliers are created.
 
@@ -410,6 +428,9 @@ Reading:
 - `Sub Total` is never read; line totals match `cost × qty + shipping + tax`
 - `CD-001613.iam` is excluded as a roll-up and its children survive
 - Blank `Title` dropped; non-numeric `Item Qty` counts as 1
+- The trailing `Unmatched (n)` note never becomes a part
+- Two rows of the same title collapse to one part with summed qty and the
+  longer lead time
 
 Reconcile:
 - Each status in the table above
