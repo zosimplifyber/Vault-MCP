@@ -1,4 +1,5 @@
 # tests/test_release_steps.py
+import release_steps
 
 # Exact hex values, not just "starts with #" — a mistyped hex during a pure
 # copy/paste move is the single most likely defect here, and the palette is
@@ -46,3 +47,48 @@ def test_release_workflow_still_exposes_the_pil_names():
     from gui import release_workflow
     for name in ("PILImage", "ImageTk", "_pil_available"):
         assert hasattr(release_workflow, name), f"release_workflow lost {name}"
+
+
+def test_outcome_defaults_to_no_pending_apply():
+    out = release_steps.StepOutcome(ok=True, summary="done")
+    assert out.pending_apply is None
+    assert out.lines == []
+    assert out.result is None
+
+
+def test_gate_blocks_when_step_one_has_not_run():
+    assert release_steps.property_check_blocked(None, force=False) is not None
+
+
+def test_gate_blocks_missing_result_even_with_force():
+    """Force overrides bad properties, not absent data. Steps 2 and 3 have no
+    file list at all without step 1, so there is nothing to force past."""
+    assert release_steps.property_check_blocked(None, force=True) is not None
+
+
+def test_gate_clear_when_everything_passes():
+    compliance = {"report": {"failed": 0}, "children": []}
+    assert release_steps.property_check_blocked(compliance, force=False) is None
+
+
+def test_gate_blocks_on_top_level_failure():
+    compliance = {"report": {"failed": 2}, "children": []}
+    assert release_steps.property_check_blocked(compliance, force=False) is not None
+
+
+def test_gate_blocks_on_child_failure():
+    compliance = {"report": {"failed": 0},
+                  "children": [{"report": {"failed": 1}}]}
+    assert release_steps.property_check_blocked(compliance, force=False) is not None
+
+
+def test_gate_blocks_on_child_error():
+    compliance = {"report": {"failed": 0},
+                  "children": [{"error": "lookup failed", "report": {}}]}
+    assert release_steps.property_check_blocked(compliance, force=False) is not None
+
+
+def test_gate_force_overrides_failures():
+    compliance = {"report": {"failed": 2},
+                  "children": [{"report": {"failed": 3}}]}
+    assert release_steps.property_check_blocked(compliance, force=True) is None
