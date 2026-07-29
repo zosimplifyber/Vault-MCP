@@ -578,12 +578,12 @@ class LauncherGUI:
         self._tool_row(
             body,
             "Release Workflow",
-            "Walk through compliance, sync properties, get files local, "
-            "rebuild in Inventor, and release CAD + items.",
+            "Walk one assembly through release: property check, sync "
+            "properties, release the files, then BOM → purchased parts, "
+            "published deliverables, and purchasing sheet.",
             "Open Workflow",
             self._on_open_workflow,
             primary=True,
-            broken=True,
         )
         self._tool_row(
             body,

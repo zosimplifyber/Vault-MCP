@@ -29,12 +29,22 @@ def _make_gui():
     return root, gui
 
 
-def test_item_master_tools_are_flagged_broken():
+def test_mfg_package_is_still_flagged_broken():
+    """MFG Order Package still resolves parts through Vault items."""
     root, gui = _make_gui()
     try:
-        for title in ("Release Workflow", "MFG Order Package"):
-            btn = gui.tool_buttons[title]
-            assert str(btn["state"]) == "disabled", f"{title} should be disabled"
+        btn = gui.tool_buttons["MFG Order Package"]
+        assert str(btn["state"]) == "disabled"
+    finally:
+        root.destroy()
+
+
+def test_release_workflow_is_enabled_again():
+    """The wizard was rewritten onto files, so it is off the broken list."""
+    root, gui = _make_gui()
+    try:
+        btn = gui.tool_buttons["Release Workflow"]
+        assert str(btn["state"]) != "disabled"
     finally:
         root.destroy()
 
