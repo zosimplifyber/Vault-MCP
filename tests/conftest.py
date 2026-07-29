@@ -15,6 +15,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
+# The shared Tk bootstrap lives in tests/tk_helpers.py — see its docstring for
+# why the naive skip-on-TclError pattern silently hides assertions.
+
 
 @pytest.fixture(autouse=True)
 def _no_live_vault_lookups(monkeypatch):

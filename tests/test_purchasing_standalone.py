@@ -79,10 +79,15 @@ def test_standalone_gui_constructs(monkeypatch):
     tk = pytest.importorskip("tkinter")
     monkeypatch.setattr(bp, "find_purchased_items_file", lambda: None)
     import purchasing_standalone as ps
+    # Prime Tcl/Tk's library paths before constructing the app — ps.App() builds
+    # its own root, and a transient TclError here would skip past every
+    # assertion below while the suite still reported green.
+    from tests.tk_helpers import make_tk_root
+    make_tk_root().destroy()
     try:
         app = ps.App()
-    except tk.TclError:
-        pytest.skip("no display available")
+    except tk.TclError as exc:
+        pytest.skip(f"no display available: {exc}")
     app.withdraw()
     app.update_idletasks()
     assert "Simplifyber" in app.title()

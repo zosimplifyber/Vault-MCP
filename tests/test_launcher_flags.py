@@ -13,13 +13,17 @@ tk = pytest.importorskip("tkinter")
 
 
 def _make_gui():
+    from tests.tk_helpers import make_tk_root
     from gui.launcher import LauncherGUI
-    cfg = json.load(open(os.path.join(ROOT, "config.json"), encoding="utf-8"))
-    try:
-        root = tk.Tk()
-    except tk.TclError:
-        pytest.skip("no display available")
-    root.withdraw()
+    # config.json is gitignored, so it is absent in a fresh checkout and in CI.
+    # Skipping says that plainly; reading it unguarded raised FileNotFoundError
+    # and read as a real failure.
+    cfg_path = os.path.join(ROOT, "config.json")
+    if not os.path.isfile(cfg_path):
+        pytest.skip("config.json not present (it is gitignored)")
+    with open(cfg_path, encoding="utf-8") as fh:
+        cfg = json.load(fh)
+    root = make_tk_root()
     gui = LauncherGUI(root, cfg=cfg, auto_start_mcp=False)
     root.update_idletasks()
     return root, gui

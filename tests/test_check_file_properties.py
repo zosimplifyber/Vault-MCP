@@ -782,11 +782,8 @@ def test_markdown_escapes_pipes_so_tables_do_not_break():
 def test_gui_renders_a_report_without_blowing_up(properties, rules):
     """The GUI's render path is only exercised at runtime — pin it here."""
     tk = pytest.importorskip("tkinter")
-    try:
-        root = tk.Tk()
-    except tk.TclError:
-        pytest.skip("no display available")
-    root.withdraw()
+    from tests.tk_helpers import make_tk_root
+    root = make_tk_root()
     try:
         from gui.file_property_check import run_gui
         run_gui(parent=root)
@@ -1023,11 +1020,8 @@ def test_export_creates_the_target_directory(checked_result, tmp_path):
 def test_gui_export_button_unlocks_only_after_a_successful_check(checked_result):
     tk = pytest.importorskip("tkinter")
     pytest.importorskip("openpyxl")
-    try:
-        root = tk.Tk()
-    except tk.TclError:
-        pytest.skip("no display available")
-    root.withdraw()
+    from tests.tk_helpers import make_tk_root
+    root = make_tk_root()
     try:
         from gui.file_property_check import run_gui
         run_gui(parent=root)
