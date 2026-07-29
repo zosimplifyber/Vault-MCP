@@ -662,6 +662,7 @@ class CreateResult:
     skipped_titles: list[str] = field(default_factory=list)
     failures: list[str] = field(default_factory=list)
     dependency_failures: list[str] = field(default_factory=list)
+    check_errors: list[str] = field(default_factory=list)
 
 
 def _rows_of(resp: dict[str, Any]) -> list[dict[str, Any]]:
@@ -680,12 +681,20 @@ def _new_task_id(resp: dict[str, Any]) -> str:
     return _text(rows[0].get("id")) if rows else ""
 
 
-async def _title_exists(wrike, folder_id: str, title: str) -> bool:
+async def _title_exists(wrike, folder_id: str, title: str) -> tuple[bool, Optional[str]]:
     """Whether the folder already holds a task with exactly this title.
 
     No status filter is passed: a completed order filtered out of the result
     would be recreated on the next run. Wrike's own title filter is a
     substring match, so the exact comparison happens here.
+
+    Returns ``(exists, error)``. When the search itself errors, this fails
+    closed — ``exists`` comes back True so the caller skips rather than risks
+    a duplicate board, since Wrike has no rollback. ``error`` carries the
+    failure detail (None on a real search) so the caller can tell that forced
+    skip apart from a genuine match: both must skip, but only one of them is
+    evidence the order is already there, and a report that conflated them
+    would call a failed check a success.
     """
     resp = await wrike.search_tasks(title=title, folder_id=folder_id)
     if resp.get("error"):
@@ -693,8 +702,8 @@ async def _title_exists(wrike, folder_id: str, title: str) -> bool:
         # order as existing and let the caller report the skip.
         logger.warning("Existence check failed for %r: %s", title,
                        resp.get("data"))
-        return True
-    return any(_text(r.get("title")) == title for r in _rows_of(resp))
+        return True, _text(resp.get("data")) or "search failed"
+    return any(_text(r.get("title")) == title for r in _rows_of(resp)), None
 
 
 async def create_orders(
@@ -722,10 +731,19 @@ async def create_orders(
     for order in orders:
         title = parent_title(build, order)
 
-        if await _title_exists(wrike, folder_id, title):
+        exists, check_error = await _title_exists(wrike, folder_id, title)
+        if exists:
             result.orders_skipped += 1
-            result.skipped_titles.append(title)
-            progress(f"  {title}: already exists - skipped")
+            if check_error:
+                # Fail-closed skipped it, but nothing was actually checked or
+                # created — reporting this as "already exists" would tell the
+                # user a failed run was a clean no-op.
+                result.check_errors.append(f"{title}: {check_error}")
+                progress(f"  {title}: existence check failed - skipped as a "
+                        f"precaution")
+            else:
+                result.skipped_titles.append(title)
+                progress(f"  {title}: already exists - skipped")
             continue
 
         owner = owners.get(STAGE_PURCHASING)

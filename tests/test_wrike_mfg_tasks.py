@@ -751,6 +751,38 @@ async def test_a_new_supplier_is_created_while_an_existing_one_is_skipped():
     assert wrike.created[0]["title"] == "CD-001608 - McMaster-Carr"
 
 
+async def test_a_failed_existence_check_is_reported_as_a_check_failure():
+    """Fail-closed is right — a duplicate board is worse than a skip. But
+    reporting it as "already exists" would tell the user everything was
+    fine when in fact nothing was checked and nothing was created."""
+    order = _scheduled_order([wmt.OrderPart(title="CD-001200")])
+    wrike = FakeWrike()
+
+    async def failing_search(title=None, status=None, folder_id=None,
+                             page_size=100):
+        return {"error": True, "status_code": 500, "data": "search exploded"}
+
+    wrike.search_tasks = failing_search
+    result = await _create([order], wrike)
+
+    assert wrike.created == []
+    assert result.orders_created == 0
+    assert result.orders_skipped == 1
+    assert result.check_errors           # the distinction that matters
+    assert result.skipped_titles == []   # not conflated with a real skip
+    assert any("CD-001200" in c or "Xometry" in c for c in result.check_errors)
+
+
+async def test_a_genuine_skip_is_still_reported_as_a_skip():
+    order = _scheduled_order([wmt.OrderPart(title="CD-001200")])
+    wrike = FakeWrike(existing=[{"id": "OLD", "title": "CD-001608 - Xometry",
+                                 "status": "Active"}])
+    result = await _create([order], wrike)
+
+    assert result.skipped_titles == ["CD-001608 - Xometry"]
+    assert result.check_errors == []
+
+
 # --------------------------------------------------------------- failures
 
 async def test_a_failed_subtask_reports_what_was_created_and_moves_on():
