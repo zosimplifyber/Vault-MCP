@@ -13,10 +13,10 @@ import glob
 import os
 import sys
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 
 import pandas as pd
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.drawing.image import Image as XLImage
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
@@ -645,6 +645,119 @@ def build_purchasing_sheet(
     _build_assembly_costs_tab(wb, df, children_map, FIRST_DATA_ROW)
     wb.save(output_path)
     return output_path
+
+
+# ---------------------------------------------------------------------------
+# Reading a generated workbook back in — the inverse of build_purchasing_sheet
+# ---------------------------------------------------------------------------
+
+# How far down to hunt for the header row when it is not at HDR_ROW. A sheet
+# generated before a future layout change still reads.
+_HEADER_SCAN_ROWS = 10
+
+NO_PURCHASING_TAB_ERROR = (
+    "This workbook has no 'Purchasing' tab, so it is not a generated "
+    "purchasing sheet. Run BOM → Purchasing Sheet first, fill in the "
+    "suppliers for the parts you are ordering, and load the workbook it "
+    "produces."
+)
+NO_HEADER_ROW_ERROR = (
+    "Could not find the column header row on the 'Purchasing' tab — no row "
+    "in the first 10 carries both a 'Source' and a 'Vendor' column."
+)
+
+
+def _sheet_label_to_column() -> dict[str, str]:
+    """Header cell text (lower-cased) -> canonical column name.
+
+    Inverts HEADER_LABELS: the sheet heads Title as "Name" and
+    Description (Item,CO) as "Description".
+    """
+    out = {c.lower(): c for c in SHEET_COLUMNS}
+    for canonical, label in HEADER_LABELS.items():
+        out[label.lower()] = canonical
+    return out
+
+
+def _cell_text(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def _locate_header_row(ws) -> Optional[int]:
+    """Row number of the column headers, or None.
+
+    Tries HDR_ROW first, then scans. Source and Vendor are the two columns
+    nothing downstream can work without, so their presence identifies the row.
+    """
+    labels = _sheet_label_to_column()
+    order = [HDR_ROW] + [r for r in range(1, _HEADER_SCAN_ROWS + 1) if r != HDR_ROW]
+    for row in order:
+        if row > ws.max_row:
+            continue
+        found = {labels[_cell_text(c.value).lower()]
+                 for c in ws[row] if _cell_text(c.value).lower() in labels}
+        if {"Source", "Vendor"} <= found:
+            return row
+    return None
+
+
+def read_purchasing_sheet(
+    path: str,
+) -> tuple[pd.DataFrame, str, Optional[str]]:
+    """Read a workbook written by build_purchasing_sheet back into a DataFrame.
+
+    Returns ``(df, assembly_number, error)``. ``error`` is None on success; on
+    failure it is a message meant to be shown to the user verbatim, and the
+    DataFrame is empty.
+
+    Columns come back under their canonical names (Title, not "Name"). Cell A1
+    carries the assembly number. Formula cells — Sub Total everywhere, Cost Per
+    on assembly rows — read as None, because openpyxl only surfaces a cached
+    formula result if Excel has opened and re-saved the file. Callers recompute
+    rather than read them.
+    """
+    if not os.path.isfile(path):
+        return pd.DataFrame(), "", f"Workbook not found: {path}"
+
+    try:
+        wb = load_workbook(path, data_only=True)
+    except Exception as exc:  # noqa: BLE001 — corrupt file, wrong format
+        name = os.path.basename(path)
+        return pd.DataFrame(), "", f"Could not read {name}: {exc}"
+
+    try:
+        if PURCHASING_SHEET_NAME not in wb.sheetnames:
+            return pd.DataFrame(), "", NO_PURCHASING_TAB_ERROR
+        ws = wb[PURCHASING_SHEET_NAME]
+
+        assembly = _cell_text(ws.cell(row=1, column=1).value)
+
+        hdr_row = _locate_header_row(ws)
+        if hdr_row is None:
+            return pd.DataFrame(), "", NO_HEADER_ROW_ERROR
+
+        labels = _sheet_label_to_column()
+        columns = [labels.get(_cell_text(c.value).lower(), _cell_text(c.value))
+                   for c in ws[hdr_row]]
+
+        records: list[dict[str, Any]] = []
+        for row in ws.iter_rows(min_row=hdr_row + 1):
+            values = [c.value for c in row]
+            first = _cell_text(values[0]) if values else ""
+            # The trailing "Unmatched (n)" note is a merged full-width cell.
+            # Without this it would arrive as a phantom part with a name and
+            # no supplier.
+            if first.startswith(UNMATCHED_NOTE_PREFIX):
+                break
+            if not any(_cell_text(v) for v in values):
+                break
+            records.append({col: val for col, val in zip(columns, values) if col})
+
+        return pd.DataFrame(records, columns=[c for c in columns if c]), assembly, None
+    finally:
+        wb.close()
 
 
 def _build_vendor_tab(wb: Workbook, df: pd.DataFrame) -> None:
