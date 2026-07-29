@@ -10,7 +10,15 @@
 
 **Spec:** `docs/superpowers/specs/2026-07-29-release-workflow-file-driven-design.md`
 
-**Baseline:** `python -m pytest -q` → 377 passed, 1 skipped. Keep it green.
+**Baseline:** `python -m pytest -q` → **381 passed, 2 skipped** in this worktree.
+Keep it green. The per-task "expected N passed" counts below are estimates from
+an earlier baseline — treat **zero failures** as the bar, not the exact number.
+
+**Workspace:** this worktree, `.worktrees/release-workflow-file-driven` on branch
+`feat/release-workflow-file-driven`, cut from `feat/file-property-check`. It is
+NOT cut from `main` — main lacks `scripts/check_file_properties.py` and
+`publish_bom.py`, which steps 1 and 5 are built on. `config.json` is gitignored
+and was copied in by hand; three launcher tests fail without it.
 
 ---
 
