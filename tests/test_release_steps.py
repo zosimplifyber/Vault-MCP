@@ -300,3 +300,127 @@ def test_derivation_handles_an_empty_result():
     assert release_steps.file_version_ids({}) == []
     assert release_steps.file_master_ids({}) == []
     assert release_steps.unresolved_files({}) == []
+
+
+# --- run_property_check (Task 5 — Step 1 engine) --------------------------
+
+
+def test_property_check_reports_a_clean_assembly(monkeypatch):
+    clean = {
+        "file_name": "CD-001659.iam",
+        "info": {"file_version_id": "100", "file_id": "10",
+                 "properties": {"Revision": "A", "State": "Work in Progress"}},
+        "report": {"total": 5, "passed": 5, "failed": 0, "results": []},
+        "children": [], "children_error": None,
+        "category_resolved": "Assembly",
+    }
+    monkeypatch.setattr(release_steps, "_check_file_name", lambda **kw: clean)
+
+    out = release_steps.run_property_check("CD-001659.iam")
+
+    assert out.ok is True
+    assert out.pending_apply is None
+    assert out.result is clean
+    assert "5/5" in out.summary
+
+
+def test_property_check_is_not_ok_when_rules_fail(monkeypatch):
+    dirty = {
+        "file_name": "CD-001659.iam",
+        "info": {"file_version_id": "100", "file_id": "10", "properties": {}},
+        "report": {"total": 5, "passed": 3, "failed": 2, "results": [
+            {"property": "Revision", "passed": False, "value": "",
+             "failures": ["must not be empty"]},
+        ]},
+        "children": [], "children_error": None,
+        "category_resolved": "Assembly",
+    }
+    monkeypatch.setattr(release_steps, "_check_file_name", lambda **kw: dirty)
+
+    out = release_steps.run_property_check("CD-001659.iam")
+
+    assert out.ok is False
+    # The failing property must be named, not just counted.
+    assert any("Revision" in text for text, _tag in out.lines)
+    # The result is still carried so steps 2/3 can run under Force.
+    assert out.result is dirty
+
+
+def test_property_check_surfaces_a_vault_error(monkeypatch):
+    def boom(**_kw):
+        raise RuntimeError("file 'CD-001659.iam' not found in Vault")
+    monkeypatch.setattr(release_steps, "_check_file_name", boom)
+
+    out = release_steps.run_property_check("CD-001659.iam")
+
+    assert out.ok is False
+    assert out.result is None
+    assert "not found" in out.summary
+
+
+def test_property_check_converts_a_raised_value_error_to_a_failed_outcome(
+    monkeypatch,
+):
+    """check_file_name raises ValueError when exactly one of api/vault_id is
+    supplied (a half-supplied session). run_property_check must convert that
+    — like any other exception — into a failed outcome rather than letting
+    it propagate out of the step."""
+    def boom(**_kw):
+        raise ValueError(
+            "check_file_name: api and vault_id must be supplied together — "
+            "got api=set, vault_id=''"
+        )
+    monkeypatch.setattr(release_steps, "_check_file_name", boom)
+
+    out = release_steps.run_property_check("CD-001659.iam")
+
+    assert out.ok is False
+    assert out.result is None
+    assert "must be supplied together" in out.summary
+
+
+def test_property_check_counts_failing_children(monkeypatch):
+    result = {
+        "file_name": "CD-001659.iam",
+        "info": {"file_version_id": "100", "file_id": "10", "properties": {}},
+        "report": {"total": 5, "passed": 5, "failed": 0, "results": []},
+        "children": [
+            {"file_name": "A.ipt", "file_version_id": "200", "file_id": "20",
+             "category_resolved": "Part",
+             "report": {"failed": 1, "results": [
+                 {"property": "Material", "passed": False, "value": "",
+                  "failures": ["must not be empty"]}]}},
+            {"file_name": "B.ipt", "file_version_id": "300", "file_id": "30",
+             "category_resolved": "Part", "report": {"failed": 0, "results": []}},
+        ],
+        "children_error": None, "category_resolved": "Assembly",
+    }
+    monkeypatch.setattr(release_steps, "_check_file_name", lambda **kw: result)
+
+    out = release_steps.run_property_check("CD-001659.iam")
+
+    assert out.ok is False
+    assert any("A.ipt" in text for text, _tag in out.lines)
+
+
+def test_property_check_is_not_ok_when_children_error_is_set(monkeypatch):
+    """A failed CAD BOM walk means the child list is incomplete. Reporting a
+    pass on a partial walk is the same 'absent data reads as success' bug
+    already fixed once in property_check_blocked — this pins the same fix in
+    the step engine itself, since the top file and every named child can pass
+    while an unseen child (the walk never reached it) is hiding a failure."""
+    result = {
+        "file_name": "CD-001659.iam",
+        "info": {"file_version_id": "100", "file_id": "10", "properties": {}},
+        "report": {"total": 5, "passed": 5, "failed": 0, "results": []},
+        "children": [], "children_error": "Cannot walk the CAD BOM",
+        "category_resolved": "Assembly",
+    }
+    monkeypatch.setattr(release_steps, "_check_file_name", lambda **kw: result)
+
+    out = release_steps.run_property_check("CD-001659.iam")
+
+    assert out.ok is False
+    # The result is still carried — this is forceable (property_check_blocked
+    # governs whether steps 2/3 may proceed), so step 1 itself must not hide it.
+    assert out.result is result

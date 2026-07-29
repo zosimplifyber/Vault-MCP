@@ -227,3 +227,87 @@ def unresolved_files(compliance: dict[str, Any]) -> list[tuple[str, str]]:
             missing = "master"
         out.append((str(entry.get("file_name") or "(unnamed)"), missing))
     return out
+
+
+def _check_file_name(**kwargs: Any) -> dict[str, Any]:
+    """Thin seam over check_file_properties.check_file_name.
+
+    Imported lazily and wrapped so tests can substitute it without a live
+    Vault, and so a missing scripts/ path fails at the step rather than at
+    module import.
+    """
+    import asyncio
+
+    from check_file_properties import check_file_name
+    return asyncio.run(check_file_name(**kwargs))
+
+
+def run_property_check(
+    file_name: str, *, api: Any = None, vault_id: str = "",
+) -> StepOutcome:
+    """Step 1 — run the file property rules over the assembly and its CAD BOM.
+
+    Read-only: there is no ``pending_apply``. The result dict is carried on
+    ``StepOutcome.result`` because steps 2 and 3 take their file list from it.
+    """
+    try:
+        result = _check_file_name(
+            file_name=file_name, recursive=True, api=api, vault_id=vault_id,
+        )
+    except Exception as exc:  # noqa: BLE001 — surfaced to the user verbatim
+        return StepOutcome(ok=False, summary=str(exc),
+                           lines=[(f"  [fail] {exc}", TAG_FAIL)])
+
+    lines: list[tuple[str, str]] = []
+    report = result.get("report") or {}
+    total = report.get("total", 0)
+    passed = report.get("passed", 0)
+    failed = report.get("failed", 0)
+    category = (result.get("category_resolved")
+                or result.get("category_raw") or "(no rule set)")
+    props = (result.get("info") or {}).get("properties") or {}
+
+    lines.append((f"  Top file — {file_name}  [{category}]", TAG_H2))
+    lines.append((f"    revision={props.get('Revision', '?')!r}  "
+                  f"state={props.get('State', '?')!r}", TAG_DIM))
+    lines.append((f"    {'PASS' if not failed else 'FAIL'}  "
+                  f"({passed}/{total} checks pass)",
+                  TAG_PASS if not failed else TAG_FAIL))
+
+    for r in report.get("results") or []:
+        if r.get("passed"):
+            continue
+        value = r.get("value")
+        shown = "(empty)" if value in (None, "") else str(value)[:40]
+        lines.append((f"      • {r['property']:24s} = {shown}", TAG_FAIL))
+        for reason in r.get("failures") or []:
+            lines.append((f"          → {reason}", TAG_FAIL))
+
+    children = result.get("children") or []
+    bad_children = [c for c in children if _child_failed(c)]
+    if result.get("children_error"):
+        lines.append((f"  [warn] CAD BOM: {result['children_error']}", TAG_WARN))
+    if children:
+        lines.append(("", TAG_DIM))
+        lines.append((f"  CAD BOM — {len(children)} file(s), "
+                      f"{len(bad_children)} with problems",
+                      TAG_PASS if not bad_children else TAG_FAIL))
+    for child in bad_children:
+        name = child.get("file_name") or "?"
+        if child.get("error"):
+            lines.append((f"      • {name:20s} ERROR: {child['error']}", TAG_FAIL))
+            continue
+        bad = [r for r in ((child.get("report") or {}).get("results") or [])
+               if not r.get("passed")]
+        names = ", ".join(b["property"] for b in bad)
+        lines.append((f"      • {name:20s} {len(bad)} fail · {names}", TAG_FAIL))
+
+    # A failed CAD BOM walk (children_error) means the child list is
+    # incomplete — an unseen child could be failing rules the walk never
+    # reached. Reporting a pass on a partial walk is exactly the "absent data
+    # reads as success" bug already fixed once in property_check_blocked;
+    # this closes the same hole in the step engine itself.
+    ok = not failed and not bad_children and not result.get("children_error")
+    summary = (f"Property Check: {passed}/{total} on the top file, "
+               f"{len(bad_children)} of {len(children)} child file(s) failing.")
+    return StepOutcome(ok=ok, summary=summary, lines=lines, result=result)
