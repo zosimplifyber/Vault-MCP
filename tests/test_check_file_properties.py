@@ -4,6 +4,7 @@
 Runs against responses recorded from the live vault (``tests/fixtures/
 vault_file_cd001659*.json``), so nothing here touches the network.
 """
+import asyncio
 import json
 import os
 import re
@@ -1060,3 +1061,111 @@ def test_markdown_report_says_pass_when_clean(properties, rules):
         **evaluated,
     })
     assert "**PASS**" in md
+
+
+# --------------------------------------------------------------------------- session reuse
+
+def test_check_file_name_reuses_a_supplied_session(monkeypatch):
+    """With api and vault_id supplied, no sign-in happens."""
+    import check_file_properties as cfp
+
+    class BoomAPI:
+        async def create_session(self, **_kw):
+            raise AssertionError("must not sign in when a session is supplied")
+
+    async def fake_fetch_file(api, vault_id, name):
+        assert vault_id == "V1"
+        return {"record": {}, "file_version_id": "9", "file_id": "8",
+                "properties": {"Category Name": "Part"}, "note": ""}
+
+    monkeypatch.setattr(cfp, "fetch_file", fake_fetch_file)
+
+    result = asyncio.run(cfp.check_file_name(
+        "CD-001659.ipt", api=BoomAPI(), vault_id="V1", recursive=False))
+
+    assert result["file_name"] == "CD-001659.ipt"
+    assert result["info"]["file_version_id"] == "9"
+
+
+def _write_config(tmp_path):
+    cfg = tmp_path / "config.json"
+    cfg.write_text(json.dumps({"vault": {
+        "servername": "s", "username": "u", "password": "p", "database": "d",
+    }}), encoding="utf-8")
+    return cfg
+
+
+class _SigningAPI:
+    """Records whether create_session was called and hands back a vault id."""
+
+    def __init__(self):
+        self.signed_in = False
+
+    async def create_session(self, **_kw):
+        self.signed_in = True
+        return {"error": False, "data": {"vaultInformation": {"id": "V-SIGNED-IN"}}}
+
+
+def test_check_file_name_signs_in_when_no_session_supplied(monkeypatch, tmp_path):
+    """The default path (no api/vault_id) must still sign in from config.json."""
+    fake_api = _SigningAPI()
+    monkeypatch.setattr(cfp, "VaultRestAPI", lambda **_kw: fake_api)
+
+    seen_vault_id = {}
+
+    async def fake_fetch_file(api, vault_id, name):
+        seen_vault_id["value"] = vault_id
+        return {"record": {}, "file_version_id": "1", "file_id": "1",
+                "properties": {"Category Name": "Part"}, "note": ""}
+
+    monkeypatch.setattr(cfp, "fetch_file", fake_fetch_file)
+
+    asyncio.run(cfp.check_file_name(
+        "CD-001659.ipt", config_path=_write_config(tmp_path), recursive=False))
+
+    assert fake_api.signed_in, "omitting api/vault_id must sign in as before"
+    assert seen_vault_id["value"] == "V-SIGNED-IN"
+
+
+def test_check_file_name_signs_in_when_vault_id_is_blank_despite_an_api(
+        monkeypatch, tmp_path):
+    """A supplied api with no vault_id must not be half-used — fall through."""
+    class BoomAPI:
+        async def create_session(self, **_kw):
+            raise AssertionError("the supplied api must never be used here")
+
+    fake_api = _SigningAPI()
+    monkeypatch.setattr(cfp, "VaultRestAPI", lambda **_kw: fake_api)
+
+    async def fake_fetch_file(api, vault_id, name):
+        assert api is fake_api, "must use the freshly signed-in api, not the caller's"
+        return {"record": {}, "file_version_id": "1", "file_id": "1",
+                "properties": {"Category Name": "Part"}, "note": ""}
+
+    monkeypatch.setattr(cfp, "fetch_file", fake_fetch_file)
+
+    asyncio.run(cfp.check_file_name(
+        "CD-001659.ipt", config_path=_write_config(tmp_path),
+        api=BoomAPI(), vault_id="", recursive=False))
+
+    assert fake_api.signed_in
+
+
+def test_check_file_name_signs_in_when_api_is_none_despite_a_vault_id(
+        monkeypatch, tmp_path):
+    """A vault_id with no api must also fall through to a full sign-in."""
+    fake_api = _SigningAPI()
+    monkeypatch.setattr(cfp, "VaultRestAPI", lambda **_kw: fake_api)
+
+    async def fake_fetch_file(api, vault_id, name):
+        assert api is fake_api
+        return {"record": {}, "file_version_id": "1", "file_id": "1",
+                "properties": {"Category Name": "Part"}, "note": ""}
+
+    monkeypatch.setattr(cfp, "fetch_file", fake_fetch_file)
+
+    asyncio.run(cfp.check_file_name(
+        "CD-001659.ipt", config_path=_write_config(tmp_path),
+        api=None, vault_id="V1", recursive=False))
+
+    assert fake_api.signed_in

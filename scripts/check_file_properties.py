@@ -441,6 +441,8 @@ async def check_file_name(
     category_override: str = "",
     recursive: bool = False,
     bom_limit: int = 500,
+    api: Any = None,
+    vault_id: str = "",
 ) -> dict[str, Any]:
     """Sign in, look up the file, run the rules. Returns a result dict.
 
@@ -448,29 +450,37 @@ async def check_file_name(
     ``category_resolved``, ``report``, ``children``, ``children_error``,
     ``recursive``. Raises ``RuntimeError`` for any fatal Vault / config error
     so the caller can surface the message.
+
+    Pass ``api`` and ``vault_id`` together to reuse an already-authenticated
+    session (the GUI has one); omit both to sign in from ``config_path`` as
+    before.
     """
-    cfg = load_json(config_path)
     rules = load_json(rules_path)
 
-    vault_cfg = cfg.get("vault") or {}
-    for key in ("servername", "username", "password", "database"):
-        if not vault_cfg.get(key):
-            raise RuntimeError(f"config.json is missing vault.{key}")
+    if api is not None and vault_id:
+        # Caller handed us a live session — don't sign in a second time.
+        pass
+    else:
+        cfg = load_json(config_path)
+        vault_cfg = cfg.get("vault") or {}
+        for key in ("servername", "username", "password", "database"):
+            if not vault_cfg.get(key):
+                raise RuntimeError(f"config.json is missing vault.{key}")
 
-    api = VaultRestAPI(servername=vault_cfg["servername"])
-    sign_in = await api.create_session(
-        database=vault_cfg["database"],
-        username=vault_cfg["username"],
-        password=vault_cfg["password"],
-    )
-    if sign_in["error"]:
-        raise RuntimeError(f"Vault sign-in failed: {sign_in['data']}")
+        api = VaultRestAPI(servername=vault_cfg["servername"])
+        sign_in = await api.create_session(
+            database=vault_cfg["database"],
+            username=vault_cfg["username"],
+            password=vault_cfg["password"],
+        )
+        if sign_in["error"]:
+            raise RuntimeError(f"Vault sign-in failed: {sign_in['data']}")
 
-    vault_id = str(
-        (sign_in["data"].get("vaultInformation") or {}).get("id", "")
-        or sign_in["data"].get("vaultId", "")
-        or ""
-    )
+        vault_id = str(
+            (sign_in["data"].get("vaultInformation") or {}).get("id", "")
+            or sign_in["data"].get("vaultId", "")
+            or ""
+        )
 
     info = await fetch_file(api, vault_id, file_name)
 
