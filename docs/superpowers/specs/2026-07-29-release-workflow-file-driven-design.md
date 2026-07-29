@@ -217,12 +217,22 @@ runnable from the moment a BOM path is set.
 
 ## Search dialog
 
-`SearchDialog` re-points from `api.search_items` to `api.search_files`.
-Columns become File Name / Revision / State / Category / Folder. Selecting a
-result fills the **Top file name** field rather than the part number field.
+The wizard gets a **new** `FileSearchDialog`: `api.search_files`, columns File
+Name / Revision / State / Category / Folder, and selecting a result fills the
+**Top file name** field.
+
+The existing item-based `SearchDialog` is **not** re-pointed. It is moved
+verbatim to `gui/search_dialog.py`, because `gui/mfg_package.py` imports it and
+satisfies a six-member duck-typed contract for it — `root`, `api`, `vault_id`,
+`_brand_button`, `_ensure_signed_in`, `set_part_number`. MFG Order Package is
+out of scope for this rewrite and genuinely wants item search, so mutating the
+shared dialog would silently change a tool we said we were not touching.
+
+This also means the wizard's `set_part_number` hook is deleted rather than
+renamed; `set_top_file` is a new hook belonging to the new dialog.
 
 The threading structure — worker thread, `queue.Queue`, Tk-thread drain — is
-correct as written and carries over unchanged.
+correct as written and `FileSearchDialog` copies its shape.
 
 ## Launcher
 

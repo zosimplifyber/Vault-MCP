@@ -26,7 +26,8 @@ and was copied in by hand; three launcher tests fail without it.
 
 | File | Responsibility |
 | --- | --- |
-| `gui/theme.py` | **New.** Brand palette constants and the shared widget factories. No logic. |
+| `gui/theme.py` | **New.** Brand palette constants and the brand-asset helpers. No logic. |
+| `gui/search_dialog.py` | **New.** The existing item-based `SearchDialog`, moved verbatim. Its consumer is `gui/mfg_package.py`, which is out of scope — it must not change behaviour. |
 | `release_steps.py` | **New.** Six step engines + the file-list and gate helpers. No Tk import anywhere. |
 | `gui/release_workflow.py` | **Rewritten.** Wizard shell only — inputs, step list, output panel, dispatch, apply gate. Re-exports the palette. |
 | `scripts/check_file_properties.py` | **Modified.** Optional `api`/`vault_id` params so step 1 reuses the wizard's session. |
@@ -1634,14 +1635,85 @@ git commit -m "feat(release-steps): add the Purchasing Sheet step"
 
 ---
 
-## Task 11: Wizard shell — inputs, step list, REVIEW status
+## Task 11: Extract SearchDialog, then rewrite the wizard shell
 
-Rewrite `ReleaseWorkflowGUI`. Keep the existing header, output panel, status bar
-and `_brand_button` code as-is; replace the inputs, `STEPS`, and status handling.
+**Read this first — it is a correction to the original plan.**
+
+`gui/release_workflow.py` owns a second piece of shared surface besides the
+palette: `SearchDialog` (~330 lines). `gui/mfg_package.py:33` imports it, and
+`gui/mfg_package.py:440-475` satisfies a six-member duck-typed contract for it:
+
+```
+parent.root, parent.api, parent.vault_id,
+parent._brand_button, parent._ensure_signed_in, parent.set_part_number
+```
+
+`SearchDialog` searches **items** and hands back a **part number** — which is
+exactly what MFG Order Package wants, and exactly what the rewritten wizard does
+not. The spec puts MFG Order Package out of scope, so `SearchDialog` must keep
+working unchanged for it.
+
+Therefore: **extract `SearchDialog` verbatim before rewriting the wizard**, and
+give the wizard its own file-based dialog in Task 13. Do not mutate the shared
+one. Doing this first also drops ~330 lines out of the file the rest of this
+task rewrites.
 
 **Files:**
+- Create: `gui/search_dialog.py`
+- Modify: `gui/mfg_package.py:33` (import path only)
 - Modify: `gui/release_workflow.py`
 - Test: `tests/test_release_workflow_gui.py`
+
+- [ ] **Step 0a: Move `SearchDialog` to `gui/search_dialog.py`**
+
+Move the `SearchDialog` class and its helper `_summarise_item_for_search`
+verbatim into a new `gui/search_dialog.py`. Import the palette from `gui.theme`
+(not from `gui.release_workflow` — that would reintroduce the coupling this is
+removing). Keep the item-based behaviour exactly as-is: `api.search_items`, the
+existing `COLUMNS`, and the `parent.set_part_number` call.
+
+Head the module with a docstring stating that its consumer is
+`gui/mfg_package.py`, that it is deliberately item-based, and that the release
+wizard uses `FileSearchDialog` instead.
+
+- [ ] **Step 0b: Update the one importer**
+
+Change `gui/mfg_package.py:33` to import `SearchDialog` from
+`gui.search_dialog`. Leave a re-export in `gui/release_workflow.py` only if
+something still needs it — check first; prefer no shim.
+
+- [ ] **Step 0c: Prove MFG Order Package still works**
+
+Add to `tests/test_release_workflow_gui.py`:
+
+```python
+def test_mfg_package_keeps_the_item_based_search_dialog():
+    """MFG Order Package is out of scope for this rewrite. Its SearchDialog
+    must stay item-based and keep calling parent.set_part_number."""
+    from gui.search_dialog import SearchDialog
+    from gui.mfg_package import MFGPackageGUI
+
+    ids = [c[0] for c in SearchDialog.COLUMNS]
+    assert "number" in ids, "MFG's dialog still searches items"
+    # The duck-typed contract mfg_package implements for the dialog.
+    for hook in ("_brand_button", "_ensure_signed_in", "set_part_number"):
+        assert hasattr(MFGPackageGUI, hook), f"mfg_package lost {hook}"
+```
+
+Run the full suite and confirm zero failures before continuing to Step 1.
+
+- [ ] **Step 0d: Commit the extraction separately**
+
+```bash
+git add gui/search_dialog.py gui/mfg_package.py gui/release_workflow.py tests/test_release_workflow_gui.py
+git commit -m "refactor(gui): extract SearchDialog so the wizard rewrite cannot break MFG"
+```
+
+---
+
+Now rewrite `ReleaseWorkflowGUI`. Keep the existing header, output panel, status
+bar and `_brand_button` code as-is; replace the inputs, `STEPS`, and status
+handling.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -2230,9 +2302,25 @@ Add `_ensure_signed_in_ui`, a Tk-thread wrapper that warns instead of logging:
         return False
 ```
 
-Also update `_on_reset` and `set_part_number`: replace `self.downloads = []`
-with `self._clear_pending()`, and rename `set_part_number` to `set_top_file`,
-setting `self.top_file_var`.
+Also update `_on_reset`: replace `self.downloads = []` with
+`self._clear_pending()`.
+
+`set_part_number` is **deleted**, not renamed. It existed to serve the item
+`SearchDialog`, which moved to `gui/search_dialog.py` in Task 11 and belongs to
+MFG Order Package now. The wizard gets a fresh `set_top_file` in Task 13, wired
+to its own file dialog:
+
+```python
+    def set_top_file(self, file_name: str) -> None:
+        """Hook FileSearchDialog calls when the user picks a file."""
+        self._on_reset()
+        self.top_file_var.set(file_name)
+        self.status_var.set(
+            f"Top file set to {file_name}. Click 'Run next step' to begin.")
+```
+
+Order matters: `_on_reset` first, then set the var — resetting afterwards would
+clear the value that was just chosen.
 
 - [ ] **Step 6: Run to verify it passes**
 
@@ -2248,13 +2336,28 @@ git commit -m "feat(release-workflow): dispatch through release_steps with an ap
 
 ---
 
-## Task 13: Search dialog — items to files
+## Task 13: Add FileSearchDialog for the wizard
 
-`SearchDialog` calls `api.search_items` (line 1670). The input is a file name
-now, so it must call `api.search_files` (`vault_rest_api.py:513`).
+**Read this first — it is a correction to the original plan.**
+
+The original plan said to repoint `SearchDialog` from `api.search_items` to
+`api.search_files`. That is wrong: `SearchDialog` moved to
+`gui/search_dialog.py` in Task 11 and its consumer is now `gui/mfg_package.py`,
+which is out of scope and genuinely wants item search. Mutating it would
+silently change MFG Order Package's behaviour.
+
+Instead, **add a new `FileSearchDialog`** in `gui/release_workflow.py` for the
+wizard. Do not modify `gui/search_dialog.py`.
+
+`FileSearchDialog` is close in shape to `SearchDialog` — a query bar, a
+Treeview, a worker thread, a `queue.Queue` drained on the Tk thread. That
+threading structure is correct as written; copy its shape rather than inventing
+a new one. The differences are: it calls `api.search_files`
+(`vault_rest_api.py:513`), its columns are file-shaped, and it hands back a file
+name via `parent.set_top_file`.
 
 **Files:**
-- Modify: `gui/release_workflow.py:1469-1829`
+- Modify: `gui/release_workflow.py`
 - Test: `tests/test_release_workflow_gui.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -2280,11 +2383,19 @@ def test_search_falls_back_to_flat_fields():
     assert row["state"] == "Released"
 
 
-def test_search_columns_are_file_shaped():
-    from gui.release_workflow import SearchDialog
-    ids = [c[0] for c in SearchDialog.COLUMNS]
+def test_file_search_columns_are_file_shaped():
+    from gui.release_workflow import FileSearchDialog
+    ids = [c[0] for c in FileSearchDialog.COLUMNS]
     assert ids[0] == "file_name"
     assert "number" not in ids
+
+
+def test_the_item_search_dialog_is_untouched():
+    """Task 11 moved SearchDialog out for MFG Order Package. Adding the
+    wizard's file dialog must not change it."""
+    from gui.search_dialog import SearchDialog
+    ids = [c[0] for c in SearchDialog.COLUMNS]
+    assert "number" in ids
 ```
 
 - [ ] **Step 2: Run to verify it fails**
@@ -2294,7 +2405,9 @@ Expected: FAIL — no `_summarise_file_for_search`
 
 - [ ] **Step 3: Implement**
 
-Replace `SearchDialog.COLUMNS`:
+Create `FileSearchDialog` in `gui/release_workflow.py`, modelled on
+`gui/search_dialog.py`'s `SearchDialog` — same worker-thread + `queue.Queue` +
+Tk-thread-drain structure, same Treeview styling. Its columns:
 
 ```python
     COLUMNS = [
@@ -2306,7 +2419,7 @@ Replace `SearchDialog.COLUMNS`:
     ]
 ```
 
-Replace the `search_items` call at line 1670 with:
+Its search call:
 
 ```python
                 resp = asyncio.run(self.parent.api.search_files(
@@ -2316,7 +2429,8 @@ Replace the `search_items` call at line 1670 with:
                 ))
 ```
 
-Replace `_summarise_item_for_search` with:
+Its row summariser — a module-level function, not a method, so it is testable
+without building a window:
 
 ```python
 def _summarise_file_for_search(record: dict[str, Any]) -> dict[str, str]:
@@ -2345,11 +2459,12 @@ def _summarise_file_for_search(record: dict[str, Any]) -> dict[str, str]:
     }
 ```
 
-Update `_extract_rows` to call `_summarise_file_for_search`, and its key list
-from `("results", "items", "itemVersions", ...)` to
-`("results", "files", "fileVersions", "data", "value", "records")`.
+`FileSearchDialog._extract_rows` calls `_summarise_file_for_search`, and its
+response-key list is
+`("results", "files", "fileVersions", "data", "value", "records")` — the file
+equivalents of the item keys `SearchDialog` uses.
 
-In `_on_use_selected`, replace the `number` lookup with:
+In `FileSearchDialog._on_use_selected`:
 
 ```python
         name = str(row.get("file_name") or "").strip()
@@ -2362,18 +2477,27 @@ In `_on_use_selected`, replace the `number` lookup with:
         self.parent.set_top_file(name)
 ```
 
-Update the dialog's prefill at line 1497 to read `parent_gui.top_file_var`.
+`FileSearchDialog` prefills its query box from `parent_gui.top_file_var`.
+
+Wire `ReleaseWorkflowGUI._open_search_dialog` to open `FileSearchDialog`, and
+add the `set_top_file` hook given in Task 12.
 
 - [ ] **Step 4: Run to verify it passes**
 
 Run: `python -m pytest tests/test_release_workflow_gui.py -q`
-Expected: PASS (14 tests)
+Expected: PASS — including `test_the_item_search_dialog_is_untouched`.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Confirm MFG Order Package is unaffected**
+
+Run: `git diff --name-only HEAD~1` and confirm `gui/search_dialog.py` and
+`gui/mfg_package.py` are NOT in the list. If either appears, the wizard's
+dialog leaked into the shared one — back it out.
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add gui/release_workflow.py tests/test_release_workflow_gui.py
-git commit -m "feat(release-workflow): search files instead of retired items"
+git commit -m "feat(release-workflow): add FileSearchDialog for file-driven input"
 ```
 
 ---
