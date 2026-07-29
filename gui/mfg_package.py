@@ -30,8 +30,8 @@ from gui.release_workflow import (  # noqa: E402
     DARK_BLUE, MID_BLUE, PALE_BLUE, LIGHT_GRAY, GRAY_BDR, DARK_GRAY,
     WHITE, RUST_ORANGE, OLIVE_GREEN,
     _pil_available, _resource_path,
-    SearchDialog,
 )
+from gui.search_dialog import SearchDialog  # noqa: E402
 
 # NOTE: this is the root-level engine module (``mfg_package.py``), not this
 # GUI file. Python resolves the unqualified import via ``PROJECT_ROOT`` on
@@ -66,7 +66,7 @@ class MFGPackageGUI:
         self.win.geometry("780x640")
         self.win.minsize(640, 540)
         self.win.configure(bg=LIGHT_GRAY)
-        # ``SearchDialog`` (reused from gui.release_workflow) reaches into its
+        # ``SearchDialog`` (gui.search_dialog) reaches into its
         # parent for ``parent.root`` to anchor its modal Toplevel and after()
         # callbacks. Aliasing keeps that contract without renaming our window.
         self.root = self.win
