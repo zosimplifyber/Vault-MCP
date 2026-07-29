@@ -16,6 +16,7 @@ See ``docs/superpowers/specs/2026-07-29-wrike-mfg-tasks-design.md``.
 from __future__ import annotations
 
 import asyncio
+import html as html_lib
 import logging
 import os
 from dataclasses import dataclass, field
@@ -556,3 +557,94 @@ def schedule_orders(orders: list[SupplierOrder], *, start: date,
                 StageSchedule(stage=stage, start=stage_start, due=stage_due))
             cursor = add_business_days(stage_due, 1)
     return orders
+
+
+# ---------------------------------------------------------------------------
+# Stage 5: titles and descriptions
+# ---------------------------------------------------------------------------
+
+STAGE_PARENT = "Parent"
+
+# A plain hyphen with single spaces, not an em dash: the re-run guard compares
+# parent titles literally, so the separator has to survive a round trip
+# through the API unchanged.
+TITLE_SEP = " - "
+
+
+def parent_title(build: str, order: SupplierOrder) -> str:
+    return f"{_text(build)}{TITLE_SEP}{order.supplier}"
+
+
+def stage_title(build: str, order: SupplierOrder, stage: str) -> str:
+    """Carries the build and supplier: a subtask appears detached from its
+    parent in list views and in an assignee's My Work queue."""
+    number = order.stages.index(stage) + 1
+    return f"{_text(build)} {order.supplier}{TITLE_SEP}{number}. {stage}"
+
+
+def _esc(value: Any) -> str:
+    return html_lib.escape(_text(value))
+
+
+def _money(value: float) -> str:
+    return f"{value:,.2f}"
+
+
+def _qty(value: float) -> str:
+    return f"{value:g}"
+
+
+def _table(headers: list[str], rows: list[list[str]]) -> str:
+    head = "".join(f"<th align='left'>{_esc(h)}</th>" for h in headers)
+    body = "".join(
+        "<tr>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>"
+        for row in rows
+    )
+    return (f"<table border='1' cellpadding='4' cellspacing='0'>"
+            f"<tr>{head}</tr>{body}</table>")
+
+
+def render_description(order: SupplierOrder, stage: str, *,
+                       source_name: str) -> str:
+    """The task body for one stage, as HTML.
+
+    Wrike renders a description as HTML, so a plain string's newlines collapse
+    and a part table arrives as one run-on line.
+    """
+    header = (f"<p><b>Supplier:</b> {_esc(order.supplier)}<br/>"
+              f"<b>From:</b> {_esc(source_name)}</p>")
+
+    if stage == STAGE_PARENT:
+        rows = [[_esc(p.title), _esc(p.description), _qty(p.qty),
+                 _esc(p.kind), _money(p.line_total)] for p in order.parts]
+        return (header
+                + f"<p>{len(order.parts)} line items, "
+                  f"{_qty(order.piece_count)} pcs, "
+                  f"{_money(order.total)} estimated.</p>"
+                + _table(["Part", "Description", "Qty", "Kind", "Line total"],
+                         rows))
+
+    if stage == STAGE_PURCHASING:
+        rows = [[_esc(p.title), _esc(p.description), _qty(p.qty),
+                 _money(p.unit_cost), _money(p.line_total)]
+                for p in order.parts]
+        return (header
+                + _table(["Part", "Description", "Qty", "Unit", "Line total"],
+                         rows)
+                + f"<p><b>Order total:</b> {_money(order.total)}</p>"
+                + "<p>[ ] PO issued<br/>[ ] Acknowledgement received</p>")
+
+    if stage == STAGE_MANUFACTURING:
+        rows = [[_esc(p.title), _esc(p.description), _qty(p.qty),
+                 _esc(p.revision), _esc(p.material)]
+                for p in order.make_parts]
+        return (header
+                + _table(["Part", "Description", "Qty", "Rev", "Material"],
+                         rows))
+
+    rows = [[_esc(p.title), _esc(p.description), _qty(p.qty)]
+            for p in order.parts]
+    return (header
+            + f"<p>Expect {_qty(order.piece_count)} pcs across "
+              f"{len(order.parts)} line items.</p>"
+            + _table(["Part", "Description", "Qty"], rows))

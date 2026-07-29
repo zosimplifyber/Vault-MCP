@@ -461,3 +461,93 @@ def test_the_order_span_covers_every_stage():
 
     assert orders[0].start == date(2026, 8, 3)
     assert orders[0].due == date(2026, 8, 28)
+
+
+# ---------------------------------------------------------------- rendering
+
+def _scheduled_order(parts, supplier="Xometry"):
+    rows = [wmt.ReconcileRow(part=p, status=wmt.STATUS_MATCHED,
+                             proposal=supplier, chosen=supplier)
+            for p in parts]
+    return wmt.schedule_orders(wmt.group_orders(rows),
+                               start=date(2026, 8, 3),
+                               durations=wmt.Durations())[0]
+
+
+def test_the_parent_title_names_the_build_and_supplier():
+    order = _scheduled_order([wmt.OrderPart(title="CD-001200")])
+    assert wmt.parent_title("CD-001608", order) == "CD-001608 - Xometry"
+
+
+def test_a_stage_title_still_reads_alone_in_a_my_work_queue():
+    """Subtasks show detached from their parent in list views."""
+    order = _scheduled_order([wmt.OrderPart(title="CD-001200")])
+    assert (wmt.stage_title("CD-001608", order, wmt.STAGE_MANUFACTURING)
+            == "CD-001608 Xometry - 2. Manufacturing")
+    assert (wmt.stage_title("CD-001608", order, wmt.STAGE_PURCHASING)
+            == "CD-001608 Xometry - 1. Purchasing")
+
+
+def test_a_buy_only_order_numbers_shipping_second():
+    order = _scheduled_order([wmt.OrderPart(title="ISO", kind=wmt.KIND_BUY)],
+                             supplier="McMaster-Carr")
+    assert (wmt.stage_title("CD-001608", order, wmt.STAGE_SHIPPING)
+            == "CD-001608 McMaster-Carr - 2. Shipping")
+
+
+def test_the_parent_description_carries_every_part_and_the_total():
+    order = _scheduled_order([
+        wmt.OrderPart(title="CD-001200", description="adapter plate",
+                      qty=2, unit_cost=40.0),
+        wmt.OrderPart(title="CD-001201", description="bracket",
+                      qty=1, unit_cost=10.0),
+    ])
+    html = wmt.render_description(order, wmt.STAGE_PARENT,
+                                  source_name="CD-001608 Purchasing Sheet.xlsx")
+
+    assert "CD-001200" in html and "CD-001201" in html
+    assert "adapter plate" in html
+    assert "CD-001608 Purchasing Sheet.xlsx" in html
+    assert "90.00" in html                 # 2*40 + 1*10
+
+
+def test_the_manufacturing_description_lists_only_the_made_parts():
+    order = _scheduled_order([
+        wmt.OrderPart(title="CD-001200", kind=wmt.KIND_MAKE,
+                      material="6061-T6", revision="R3"),
+        wmt.OrderPart(title="ISO 4762", kind=wmt.KIND_BUY),
+    ])
+    html = wmt.render_description(order, wmt.STAGE_MANUFACTURING,
+                                  source_name="sheet.xlsx")
+
+    assert "CD-001200" in html
+    assert "6061-T6" in html
+    assert "ISO 4762" not in html
+
+
+def test_the_purchasing_description_has_costs_and_a_checklist():
+    order = _scheduled_order([wmt.OrderPart(title="CD-001200", qty=2,
+                                            unit_cost=40.0)])
+    html = wmt.render_description(order, wmt.STAGE_PURCHASING,
+                                  source_name="sheet.xlsx")
+
+    assert "80.00" in html
+    assert "PO issued" in html
+
+
+def test_descriptions_are_html_because_wrike_collapses_newlines():
+    order = _scheduled_order([wmt.OrderPart(title="CD-001200")])
+    html = wmt.render_description(order, wmt.STAGE_SHIPPING,
+                                  source_name="sheet.xlsx")
+
+    assert "<table" in html or "<br" in html
+
+
+def test_values_are_escaped():
+    order = _scheduled_order([wmt.OrderPart(title="A<b>",
+                                            description="1 < 2 & 3")])
+    html = wmt.render_description(order, wmt.STAGE_PARENT,
+                                  source_name="sheet.xlsx")
+
+    assert "A&lt;b&gt;" in html
+    assert "1 &lt; 2 &amp; 3" in html
