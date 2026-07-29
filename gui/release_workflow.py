@@ -1,21 +1,27 @@
 """
 Tkinter GUI for the Vault release workflow.
 
-Wraps `release_workflow.py` in a single-window wizard:
+A single-window wizard over the six file- and BOM-driven step engines in
+``release_steps.py``:
 
-    [ Part number / config / workfolder / target state ]
-    [ Step list with live status: Pending / Running / OK / Skipped / Failed ]
-    [ Output log (Markdown report + per-step messages) ]
-    [ Action buttons: Run Step | Skip Step | Run All Remaining | Stop ]
+    [ Top File (steps 1-3) / target state · BOM Export (steps 4-6) ]
+    [ Step list with live status: Pending / Running / Review / OK / … ]
+    [ Output log (per-step engine lines) ]
+    [ Action buttons: Run next step | Skip step | Run all remaining | Reset ]
 
-Each step runs on a worker thread so the UI never freezes. Confirmations are
-replaced by explicit per-step buttons — the user *clicks* "Run Step 3" rather
-than typing `y` at a console prompt. Compliance failures hard-stop the wizard
-unless the user explicitly clicks "Force continue".
+Two inputs, two halves. Steps 1-3 (Property Check, Sync Properties, Release
+Files) work from a top file name; steps 4-6 (Purchased Parts List, Publish
+Deliverables, Purchasing Sheet) work from an exported BOM. Changing one input
+invalidates only the steps that read it — see ``_invalidate``.
+
+Each step runs on a worker thread so the UI never freezes. A step that would
+write to Vault or SharePoint returns a staged ``pending_apply`` instead of
+writing: the wizard shows the preview, parks the step in REVIEW, and performs
+the write only when the user clicks Apply.
 
 Launch:
     python scripts/release_workflow.py --gui
-    python scripts/release_workflow.py SF-001702 --gui      # pre-fill PN
+    python scripts/release_workflow.py CD-001659.iam --gui   # pre-fill top file
 """
 
 from __future__ import annotations
@@ -49,11 +55,9 @@ from gui.theme import (  # noqa: F401,E402
     PILImage, ImageTk,
 )
 
-# The item-based search dialog now lives in gui/search_dialog.py — it belongs
-# to gui.mfg_package, which is out of scope for the file-driven rewrite. This
-# import is a real use (the Search… button below), not a re-export shim: import
-# it from gui.search_dialog, never from here.
-from gui.search_dialog import SearchDialog  # noqa: E402
+# The item-based SearchDialog lives in gui/search_dialog.py and belongs to
+# gui.mfg_package now. This wizard works from file names, so it does not import
+# it — it gets its own FileSearchDialog. Do not add a re-export here.
 
 from check_item_properties import (  # noqa: E402
     DEFAULT_RULES_PATH,
@@ -81,17 +85,28 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 STEPS = [
-    ("1", "Compliance check",   "Walk BOM and run property rules"),
-    ("2", "Readiness report",   "Render the markdown gate report"),
-    ("3", "Sync properties",    "Submit Autodesk.Vault.SyncProperties for every CAD file"),
-    ("4", "Download local",     "REST-download every referenced file to the workfolder"),
-    ("5", "Inventor rebuild",   "Open .iam in Inventor, Update2(), Save"),
-    ("6", "Release CAD",        "SOAP UpdateFileLifeCycleStates"),
-    ("7", "Release items",      "SOAP UpdateItemLifeCycleStates"),
+    ("1", "Property Check",
+     "Run the file property rules over the assembly and its CAD BOM"),
+    ("2", "Sync Properties",
+     "Submit Autodesk.Vault.SyncProperties for every file"),
+    ("3", "Release Files",
+     "Promote every file to the target lifecycle state"),
+    ("4", "BOM → Purchased Parts List",
+     "Add parts missing from the Engineering Purchased Parts list"),
+    ("5", "BOM → Publish Deliverables",
+     "Queue PDF and STEP publish jobs for every Make part"),
+    ("6", "BOM → Purchasing Sheet",
+     "Build the branded purchasing workbook"),
 ]
+
+# Steps 1-3 work from the top file name; 4-6 work from the BOM export. Changing
+# one input must only invalidate the steps that read it.
+VAULT_STEPS = ("1", "2", "3")
+BOM_STEPS = ("4", "5", "6")
 
 STATUS_PENDING  = "PENDING"
 STATUS_RUNNING  = "RUNNING"
+STATUS_REVIEW   = "REVIEW"
 STATUS_OK       = "OK"
 STATUS_SKIPPED  = "SKIPPED"
 STATUS_FAILED   = "FAILED"
@@ -100,10 +115,32 @@ STATUS_BLOCKED  = "BLOCKED"
 STATUS_TAGS = {
     STATUS_PENDING: (DARK_GRAY,    PALE_BLUE,   "·"),
     STATUS_RUNNING: (WHITE,        MID_BLUE,    "▶"),
+    # Amber, not blue: a step waiting on a human must not read as one still
+    # talking to Vault.
+    STATUS_REVIEW:  (WHITE,        WARN_AMBER,  "?"),
     STATUS_OK:      (DARK_BLUE,    OLIVE_GREEN, "✓"),
     STATUS_SKIPPED: (DARK_GRAY,    LIGHT_GRAY,  "—"),
     STATUS_FAILED:  (WHITE,        RUST_ORANGE, "✗"),
     STATUS_BLOCKED: (WHITE,        RUST_ORANGE, "■"),
+}
+
+# Every tag release_steps emits, plus the wizard's own chrome. Built as a dict
+# so a test can assert it covers release_steps.ALL_TAGS — Tk silently renders
+# unstyled text for an unconfigured tag, so a dropped entry has no other
+# symptom.
+TAG_STYLES: dict[str, dict[str, Any]] = {
+    "h1":   {"foreground": DARK_BLUE, "font": ("Arial", 12, "bold"),
+             "spacing1": 8, "spacing3": 4},
+    "h2":   {"foreground": DARK_BLUE, "font": ("Arial", 10, "bold"),
+             "spacing1": 6, "spacing3": 2},
+    "dim":  {"foreground": DARK_GRAY},
+    "pass": {"foreground": "#1F6B2E", "font": ("Consolas", 10, "bold")},
+    "fail": {"foreground": RUST_ORANGE, "font": ("Consolas", 10, "bold")},
+    "warn": {"foreground": WARN_AMBER},
+    "info": {"foreground": MID_BLUE},
+    "step_banner": {"foreground": WHITE, "background": DARK_BLUE,
+                    "font": ("Arial", 10, "bold"),
+                    "spacing1": 10, "spacing3": 4},
 }
 
 
@@ -163,7 +200,9 @@ class ReleaseWorkflowGUI:
         self.access_token: str = access_token or ""
         self.user_id: str = user_id or ""
         self.cfg: dict[str, Any] = cfg or {}
-        self.downloads: list[dict[str, Any]] = []
+        # A step that staged a write parks it here until the user clicks Apply.
+        self.pending_apply: Optional[Callable[[], Any]] = None
+        self.pending_step: Optional[str] = None
         self.statuses: dict[str, str] = {n: STATUS_PENDING for n, *_ in STEPS}
 
         # Pre-auth provenance — keep the human-readable connection summary
@@ -182,8 +221,13 @@ class ReleaseWorkflowGUI:
         self._build_ui()
         self._set_step_statuses_initial()
 
-        if prefill_part_number:
-            self.pn_var.set(prefill_part_number)
+        # ``prefill_part_number`` is the pre-rewrite entry point (app.py --gui,
+        # scripts/release_workflow.py, the launcher). The wizard now keys off a
+        # top *file* name, and a bare part number is not one — dropping it into
+        # the Top File box would send step 1 looking for a file that cannot
+        # exist. Accept it only when it actually names a file.
+        if prefill_part_number and Path(prefill_part_number).suffix:
+            self.top_file_var.set(prefill_part_number)
 
         if self._preauth:
             vault_cfg = (self.cfg.get("vault") or {})
@@ -269,18 +313,18 @@ class ReleaseWorkflowGUI:
                 highlightcolor=MID_BLUE,
             )
 
-        # Row 0 — part number / target state / state id / soap version
-        label(inputs, "Part Number").grid(row=0, column=0, sticky="w", padx=(0, 6))
-        self.pn_var = tk.StringVar()
+        # Row 0 — top file name (drives steps 1-3)
+        label(inputs, "Top File").grid(row=0, column=0, sticky="w", padx=(0, 6))
+        self.top_file_var = tk.StringVar()
         # Wrap entry + Search button in a sub-frame so the surrounding column
-        # grid (target state / state id / soap) doesn't have to shift.
-        pn_frame = tk.Frame(inputs, bg=LIGHT_GRAY)
-        pn_frame.grid(row=0, column=1, sticky="ew", padx=(0, 14))
-        entry(pn_frame, self.pn_var, width=18).pack(
+        # grid (target state / state id) doesn't have to shift.
+        tf_frame = tk.Frame(inputs, bg=LIGHT_GRAY)
+        tf_frame.grid(row=0, column=1, sticky="ew", padx=(0, 14))
+        entry(tf_frame, self.top_file_var, width=18).pack(
             side="left", fill="x", expand=True
         )
         self._brand_button(
-            pn_frame, "Search…", self._open_search_dialog, primary=False,
+            tf_frame, "Search…", self._open_search_dialog, primary=False,
         ).pack(side="left", padx=(6, 0))
 
         label(inputs, "Target State").grid(row=0, column=2, sticky="w", padx=(0, 6))
@@ -306,33 +350,20 @@ class ReleaseWorkflowGUI:
             row=0, column=5, sticky="ew", padx=(0, 14)
         )
 
-        label(inputs, "SOAP").grid(row=0, column=6, sticky="w", padx=(0, 6))
-        self.soap_version_var = tk.StringVar(value="v26")
-        entry(inputs, self.soap_version_var, width=6).grid(row=0, column=7, sticky="w")
-
-        # Row 1 — workfolder
-        label(inputs, "Workfolder").grid(row=1, column=0, sticky="w", pady=(10, 0))
-        self.workfolder_var = tk.StringVar(value=str(DEFAULT_WORKFOLDER))
-        wf_entry = entry(inputs, self.workfolder_var, width=10)
-        wf_entry.grid(row=1, column=1, columnspan=6, sticky="ew",
-                      padx=(0, 6), pady=(10, 0))
+        # Row 1 — BOM export (drives steps 4-6)
+        label(inputs, "BOM Export").grid(row=1, column=0, sticky="w", pady=(10, 0))
+        self.bom_path_var = tk.StringVar()
+        entry(inputs, self.bom_path_var, width=10).grid(
+            row=1, column=1, columnspan=5, sticky="ew",
+            padx=(0, 6), pady=(10, 0),
+        )
         self._brand_button(
-            inputs, "Browse…", self._browse_workfolder, primary=False,
-        ).grid(row=1, column=7, sticky="w", pady=(10, 0))
+            inputs, "Browse…", self._browse_bom, primary=False,
+        ).grid(row=1, column=6, sticky="w", pady=(10, 0))
 
-        # Row 2 — top assembly
-        label(inputs, "Top .iam").grid(row=2, column=0, sticky="w", pady=(6, 0))
-        self.top_iam_var = tk.StringVar()
-        iam_entry = entry(inputs, self.top_iam_var, width=10)
-        iam_entry.grid(row=2, column=1, columnspan=6, sticky="ew",
-                       padx=(0, 6), pady=(6, 0))
-        self._brand_button(
-            inputs, "Browse…", self._browse_top_iam, primary=False,
-        ).grid(row=2, column=7, sticky="w", pady=(6, 0))
-
-        # Row 3 — toggles
+        # Row 2 — toggles
         toggles = tk.Frame(inputs, bg=LIGHT_GRAY)
-        toggles.grid(row=3, column=0, columnspan=8, sticky="w", pady=(10, 0))
+        toggles.grid(row=2, column=0, columnspan=8, sticky="w", pady=(10, 0))
 
         self.force_var = tk.BooleanVar(value=False)
         tk.Checkbutton(
@@ -343,14 +374,22 @@ class ReleaseWorkflowGUI:
             selectcolor=WHITE, font=("Arial", 9),
         ).pack(side="left", padx=(0, 16))
 
-        self.visible_inventor_var = tk.BooleanVar(value=True)
+        self.buy_only_var = tk.BooleanVar(value=True)
         tk.Checkbutton(
-            toggles, text="Show Inventor window",
-            variable=self.visible_inventor_var,
+            toggles, text="Buy/Other rows only (list sync)",
+            variable=self.buy_only_var,
             bg=LIGHT_GRAY, fg=DARK_BLUE,
             activebackground=LIGHT_GRAY, activeforeground=DARK_BLUE,
             selectcolor=WHITE, font=("Arial", 9),
         ).pack(side="left", padx=(0, 16))
+
+        # A stale step 1 result must never feed steps 2-3 after the file name
+        # changes, and a stale scan must never feed a submit after the BOM
+        # changes. Mirrors publish_bom's _invalidate_scan.
+        self.top_file_var.trace_add(
+            "write", lambda *_a: self._invalidate(VAULT_STEPS))
+        self.bom_path_var.trace_add(
+            "write", lambda *_a: self._invalidate(BOM_STEPS))
 
     # -- Body (steps + output) ----------------------------------------------
 
@@ -437,24 +476,11 @@ class ReleaseWorkflowGUI:
         self.text.pack(side="left", fill="both", expand=True)
         ys.pack(side="right", fill="y")
 
-        # Light-theme color tags — same naming as before, new palette
-        self.text.tag_configure("h1",   foreground=DARK_BLUE,
-                                font=("Arial", 12, "bold"),
-                                spacing1=8, spacing3=4)
-        self.text.tag_configure("h2",   foreground=DARK_BLUE,
-                                font=("Arial", 10, "bold"),
-                                spacing1=6, spacing3=2)
-        self.text.tag_configure("dim",  foreground=DARK_GRAY)
-        self.text.tag_configure("pass", foreground="#1F6B2E",
-                                font=("Consolas", 10, "bold"))
-        self.text.tag_configure("fail", foreground=RUST_ORANGE,
-                                font=("Consolas", 10, "bold"))
-        self.text.tag_configure("warn", foreground=WARN_AMBER)
-        self.text.tag_configure("info", foreground=MID_BLUE)
-        self.text.tag_configure("step_banner",
-                                foreground=WHITE, background=DARK_BLUE,
-                                font=("Arial", 10, "bold"),
-                                spacing1=10, spacing3=4)
+        # Light-theme colour tags. Driven from the module-level TAG_STYLES so
+        # a test can check it against release_steps.ALL_TAGS — Tk accepts an
+        # unconfigured tag name silently and just renders plain text.
+        for tag, style in TAG_STYLES.items():
+            self.text.tag_configure(tag, **style)
 
     # -- Action bar ----------------------------------------------------------
 
@@ -492,7 +518,8 @@ class ReleaseWorkflowGUI:
 
     def _build_status_bar(self) -> None:
         self.status_var = tk.StringVar(
-            value="Ready. Enter a part number and click 'Run next step'."
+            value="Ready. Enter a top file name or browse to a BOM export, "
+                  "then click 'Run next step'."
         )
         bar = tk.Frame(self.root, bg=PALE_BLUE,
                        highlightthickness=1, highlightbackground=GRAY_BDR)
@@ -651,18 +678,34 @@ class ReleaseWorkflowGUI:
 
     # ----- Browse helpers ---------------------------------------------------
 
-    def _browse_workfolder(self) -> None:
-        d = filedialog.askdirectory(initialdir=self.workfolder_var.get() or str(Path.home()))
-        if d:
-            self.workfolder_var.set(d)
-
-    def _browse_top_iam(self) -> None:
+    def _browse_bom(self) -> None:
         f = filedialog.askopenfilename(
-            initialdir=self.workfolder_var.get() or str(Path.home()),
-            filetypes=[("Inventor assembly", "*.iam"), ("All files", "*.*")],
+            title="Pick an exported BOM",
+            filetypes=[("BOM export", "*.xlsx *.xls *.csv *.txt"),
+                       ("All files", "*.*")],
         )
         if f:
-            self.top_iam_var.set(f)
+            self.bom_path_var.set(f)
+
+    # ----- Input invalidation ----------------------------------------------
+
+    def _invalidate(self, nums: tuple[str, ...]) -> None:
+        """Reset the given steps to PENDING and drop anything they staged."""
+        if self.busy:
+            return
+        for num in nums:
+            if self.statuses.get(num) != STATUS_PENDING:
+                self._update_step_label(num, STATUS_PENDING)
+        if self.pending_step in nums:
+            self._clear_pending()
+        if "1" in nums:
+            self.compliance = None
+
+    def _clear_pending(self) -> None:
+        """Drop a staged write without performing it, and restore the button."""
+        self.pending_apply = None
+        self.pending_step = None
+        self.btn_run.configure(text="  Run next step  ")
 
     # ----- Action-bar handlers ---------------------------------------------
 
@@ -700,7 +743,8 @@ class ReleaseWorkflowGUI:
         f = filedialog.asksaveasfilename(
             defaultextension=".md",
             filetypes=[("Markdown", "*.md"), ("All files", "*.*")],
-            initialfile=f"release_readiness_{self.pn_var.get().strip() or 'report'}.md",
+            initialfile=(f"release_readiness_"
+                         f"{self.top_file_var.get().strip() or 'report'}.md"),
         )
         if not f:
             return
@@ -716,7 +760,7 @@ class ReleaseWorkflowGUI:
         self.vault_id = ""
         self.access_token = ""
         self.cfg = {}
-        self.downloads = []
+        self._clear_pending()
         for num in self.statuses:
             self._update_step_label(num, STATUS_PENDING)
         self._clear_output()
@@ -1430,20 +1474,28 @@ class ReleaseWorkflowGUI:
     # ----- Vault search dialog ---------------------------------------------
 
     def _open_search_dialog(self) -> None:
+        """Placeholder until ``FileSearchDialog`` lands.
+
+        The old item-based ``SearchDialog`` (now gui/search_dialog.py, owned by
+        gui.mfg_package) returns a *part number*; this field wants a *file
+        name*. Wiring the two together would silently put a value in the box
+        that step 1 can never resolve, so say so instead of guessing.
+        """
         if self.busy:
             messagebox.showwarning(
                 "Busy", "Wait for the current step to finish before searching.")
             return
-        SearchDialog(self)
+        messagebox.showinfo(
+            "File search not wired up yet",
+            "Type the top file name — e.g. CD-001659.iam — into the Top File "
+            "box for now. The Vault file search dialog is not connected yet.",
+        )
 
-    def set_part_number(self, number: str) -> None:
-        """Public hook the SearchDialog calls when the user picks a result."""
-        self.pn_var.set(number)
-        # Reset workflow state when the part number changes — stale compliance
-        # / downloads from the previous part number would silently leak in.
-        self._on_reset()
-        self.pn_var.set(number)
-        self.status_var.set(f"Part number set to {number}. Click 'Run next step' to begin.")
+    # NOTE: the old ``set_part_number`` hook is deliberately gone. It existed
+    # only to serve the item ``SearchDialog``, which moved out to
+    # gui/search_dialog.py and belongs to gui.mfg_package (which has its own
+    # copy of the hook). The wizard's replacement, ``set_top_file``, arrives
+    # with FileSearchDialog. Nothing in the repo calls this class's version.
 
 
 # ---------------------------------------------------------------------------
