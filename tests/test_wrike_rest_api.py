@@ -218,3 +218,29 @@ async def test_get_subtasks_reads_subtask_ids_then_batches():
     assert result["error"] is False
     ids = [r["id"] for r in result["data"]["data"]]
     assert ids == ["S1", "S2"]
+
+
+async def test_create_task_sends_super_tasks_when_given_a_parent():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = request.content.decode()
+        return httpx.Response(200, json={"data": [{"id": "IEAASUB"}]})
+
+    api = make_api(handler)
+    await api.create_task("IEAF1", "1. Purchasing", super_task_ids=["IEAAPARENT"])
+
+    assert "superTasks=%5B%22IEAAPARENT%22%5D" in seen["body"]
+
+
+async def test_create_task_omits_super_tasks_when_not_given():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = request.content.decode()
+        return httpx.Response(200, json={"data": [{"id": "IEAA1"}]})
+
+    api = make_api(handler)
+    await api.create_task("IEAF1", "Standalone")
+
+    assert "superTasks" not in seen["body"]

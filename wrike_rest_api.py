@@ -309,7 +309,12 @@ class WrikeRestAPI:
         responsibles: Optional[List[str]] = None,
         custom_fields: Optional[List[Dict[str, str]]] = None,
         effort_hours: Optional[float] = None,
+        super_task_ids: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
+        """Create a task in ``folder_id``. Pass ``super_task_ids`` to create it
+        as a subtask of those existing tasks — Wrike has no separate
+        "create subtask" endpoint; parentage is set at creation via
+        ``superTasks``."""
         fields: Dict[str, Any] = {
             "title": title, "description": description,
             "status": status, "importance": importance,
@@ -327,6 +332,10 @@ class WrikeRestAPI:
         ea = self._effort_allocation(effort_hours)
         if ea is not None:
             fields["effortAllocation"] = ea
+        if super_task_ids:
+            # Makes the new task a subtask of each id. Wrike has no separate
+            # "create subtask" endpoint — parentage is set at creation.
+            fields["superTasks"] = list(super_task_ids)
         return await self._request("POST", f"/folders/{folder_id}/tasks", data=fields)
 
     async def update_task(
