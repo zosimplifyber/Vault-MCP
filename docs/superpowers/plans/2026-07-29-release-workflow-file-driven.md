@@ -55,6 +55,53 @@ STATUS_REVIEW = "REVIEW"
 
 ---
 
+## Engine rules — read before writing any `run_*` function
+
+Seven bugs were found and fixed in Tasks 2-7, and **every one was the same bug**:
+missing, empty or `None` data resolving to the success answer. Each produced a
+green test suite and a wrong outcome. These rules exist so the remaining engines
+do not reproduce it. Follow them; they are not style preferences.
+
+**R1 — Never let absent data mean "passed".** `(x or {}).get("failed", 0)`
+turns `None` into `0` into "clear". Before writing any check like that, ask what
+the producer emits when it did not evaluate anything, and treat that case
+separately. "Checked and clean" and "never checked" are different outcomes and
+must render differently.
+
+**R2 — Report against a denominator.** Never say "37 moved" or "queued 12".
+Say "37 of 40" and "12 of 12". A bare count gives the engineer no baseline to
+notice a shortfall against, and `ok` must be `reported == requested`, not `True`.
+If the underlying call does not tell you how many it handled, that is a failure —
+you cannot claim what you cannot verify.
+
+**R3 — "Nothing to do" and "everything was dropped" are different outcomes.**
+An early return on an empty work list must first check whether the list is empty
+because there was no work, or because every item was dropped. The second is
+`ok=False` and must name what was dropped. Put this check *before* any early
+return, not after.
+
+**R4 — An apply body never lets an exception escape.** Steps that write
+serially can be half-applied. Wrap the per-item call, count the failure,
+continue, and always return the accumulated lines. A raise that loses the record
+of what was already written is worse than the failure itself. Use
+`resp.get("error")`, never `resp["error"]`.
+
+**R5 — Name every file the step will drop, before Apply.** Filter
+`unresolved_files` to the kind of ID *this* step needs. The preview is the human
+checkpoint; a file silently missing from a batch is a partial write reported as
+success, and a preview that cries wolf about files it actually handles trains
+people to click through it.
+
+**R6 — The closure reads only what the preview computed.** Capture the resolved
+list and any resolved IDs in the preview and let `pending_apply` read from those
+captured values, never re-derive. This is what makes the approved set provably
+the written set. Tasks 5-7 got this right; keep it.
+
+**R7 — Use the `TAG_*` constants, never bare tag strings.** A test asserts
+emitted tags are a subset of `ALL_TAGS`.
+
+---
+
 ## Task 1: Extract the theme module
 
 Eight modules import the palette from `gui/release_workflow.py`: `app.py`, `gui/launcher.py`, `gui/file_property_check.py`, `gui/mfg_package.py`, `gui/publish_bom.py`, `gui/purchasing.py`, `gui/purchasing_list_sync.py`, `scripts/release_workflow.py`. Move it first so the rewrite in Task 11 cannot break them.
