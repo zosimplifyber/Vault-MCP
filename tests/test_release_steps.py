@@ -1169,6 +1169,179 @@ def test_purchased_parts_stages_nothing_when_list_is_current(monkeypatch):
     assert "0" in out.summary or "up to date" in out.summary.lower()
 
 
+# --- C1: checked==0 must never read as "up to date" ------------------------
+#
+# buy_only=True is the wizard's default. add_missing_bom_rows filters
+# Source in {"Buy", "Other"}; a BOM exported with no Source column gives
+# every row source="", which matches nothing, so every real purchased part
+# is dropped before it can even be checked. Before this fix that landed on
+# `if not missing:` -> ok=True "0 of 0 missing" — a green "up to date" for a
+# list that never got looked at. R3: checked==0 must be caught before that
+# early return, and distinctly from a genuinely current list (checked>0,
+# missing==[]), which stays ok=True via the test just above.
+
+
+def test_purchased_parts_fails_when_the_bom_has_no_source_column(monkeypatch):
+    """Shape 1: no Source column -> every row's source is "" -> every row is
+    skipped_source under the buy_only default. checked stays 0; this must
+    not render as 'up to date'."""
+    _install_list_sync(monkeypatch, report={
+        "missing": [], "checked": 0, "already_present": 0,
+        "skipped_no_name": 0, "skipped_source": 3})
+    out = release_steps.run_purchased_parts_list("C:/bom.xlsx")
+
+    assert out.ok is False
+    assert out.pending_apply is None
+    assert "up to date" not in out.summary.lower()
+    assert "Source" in out.summary
+
+
+def test_purchased_parts_fails_when_every_row_has_no_file_name(monkeypatch):
+    """Shape 2: a BOM with no file-name column -> every row -> skipped_no_name.
+    Distinct wording from the Source-filter shape: it's a different, equally
+    actionable problem with the export."""
+    _install_list_sync(monkeypatch, report={
+        "missing": [], "checked": 0, "already_present": 0,
+        "skipped_no_name": 4, "skipped_source": 0})
+    out = release_steps.run_purchased_parts_list("C:/bom.xlsx")
+
+    assert out.ok is False
+    assert out.pending_apply is None
+    assert "no file name" in out.summary
+
+
+def test_purchased_parts_fails_for_a_genuinely_make_only_bom(monkeypatch):
+    """Shape 3: a BOM whose every row is legitimately Source='Make' also
+    lands on skipped_source (Make is not in {Buy, Other}) — same category as
+    shape 1, and must get the same non-green treatment rather than a special
+    case that reads as success."""
+    _install_list_sync(monkeypatch, report={
+        "missing": [], "checked": 0, "already_present": 0,
+        "skipped_no_name": 0, "skipped_source": 5})
+    out = release_steps.run_purchased_parts_list("C:/bom.xlsx")
+
+    assert out.ok is False
+    assert out.pending_apply is None
+
+
+def test_purchased_parts_still_reports_up_to_date_when_rows_were_checked(
+    monkeypatch,
+):
+    """The checked==0 gate must not swallow the genuine 'current list' case
+    from the test above it — checked>0 with missing==[] stays ok=True."""
+    _install_list_sync(monkeypatch, report={
+        "missing": [], "checked": 5, "already_present": 5,
+        "skipped_no_name": 0, "skipped_source": 0})
+    out = release_steps.run_purchased_parts_list("C:/bom.xlsx")
+
+    assert out.ok is True
+    assert out.pending_apply is None
+
+
+def test_purchased_parts_preview_guards_against_a_blank_report(monkeypatch):
+    """Step 5 guards against a None/blank result; step 4 was missing the
+    same guard and would raise AttributeError out of report.get(...)."""
+    monkeypatch.setattr(
+        release_steps, "_list_sync_deps",
+        lambda: (lambda: object(), lambda *a, **k: None,
+                 lambda _p: ("DF", None)))
+    out = release_steps.run_purchased_parts_list("C:/bom.xlsx")
+
+    assert out.ok is False
+    assert out.pending_apply is None
+
+
+def test_purchased_parts_apply_guards_against_a_blank_write_result(
+    monkeypatch,
+):
+    """Same guard, the write half: a None/blank result from the real apply
+    call must not raise out of apply() either."""
+    def fake_add(client, df, *, dry_run=True, sources=None,
+                 update_existing=False):
+        if dry_run:
+            return {"missing": ["SF-001902"], "checked": 1,
+                    "already_present": 0, "existing_count": 0, "created": 0,
+                    "updated": 0, "errors": [], "by_source": {"Buy": 1},
+                    "rows": [], "dry_run": True}
+        return None
+
+    monkeypatch.setattr(release_steps, "_list_sync_deps",
+                        lambda: (lambda: object(), fake_add,
+                                 lambda _p: ("DF", None)))
+    applied = release_steps.run_purchased_parts_list("C:/bom.xlsx").pending_apply()
+
+    assert applied.ok is False
+
+
+def test_purchased_parts_preview_names_rows_skipped_for_no_file_name(
+    monkeypatch,
+):
+    """I5: dropping this line was a live mutant — it is the only trace those
+    rows vanished, and becomes load-bearing once the checked==0 gate above
+    exists (a partial skip must stay visible even when some rows DID check)."""
+    _install_list_sync(monkeypatch, report={"skipped_no_name": 3})
+    out = release_steps.run_purchased_parts_list("C:/bom.xlsx")
+
+    assert any("3" in text and "no file name" in text
+               for text, _tag in out.lines)
+
+
+def test_purchased_parts_apply_names_each_failed_row(monkeypatch):
+    """I5: dropping the per-part failure lines from apply is a live mutant —
+    this is the one place a partial write's record survives for the user to
+    read."""
+    def fake_add(client, df, *, dry_run=True, sources=None,
+                 update_existing=False):
+        if dry_run:
+            return {"missing": ["SF-001902", "SF-001905"], "checked": 2,
+                    "already_present": 0, "existing_count": 0, "created": 0,
+                    "updated": 0, "errors": [], "by_source": {"Buy": 2},
+                    "rows": [], "dry_run": True}
+        return {"missing": ["SF-001902", "SF-001905"], "checked": 2,
+                "already_present": 0, "existing_count": 0, "created": 1,
+                "updated": 0,
+                "errors": [{"name": "SF-001905", "error": "list is full"}],
+                "by_source": {"Buy": 2}, "rows": [], "dry_run": False}
+
+    monkeypatch.setattr(release_steps, "_list_sync_deps",
+                        lambda: (lambda: object(), fake_add,
+                                 lambda _p: ("DF", None)))
+    applied = release_steps.run_purchased_parts_list("C:/bom.xlsx").pending_apply()
+
+    assert applied.ok is False
+    assert any("SF-001905" in text and "list is full" in text
+               for text, _tag in applied.lines)
+
+
+def test_purchased_parts_preview_names_rows_that_would_be_updated(
+    monkeypatch,
+):
+    """Minor: update_existing PATCHes existing rows, but the preview used to
+    name only new (`missing`) rows — an ungated write with no preview trace
+    of its own. Name the status == 'would_update' rows too."""
+    def fake_add(client, df, *, dry_run=True, sources=None,
+                 update_existing=False):
+        base = {"missing": ["SF-001902"], "checked": 2, "already_present": 1,
+                "existing_count": 1, "errors": [], "by_source": {"Buy": 2},
+                "rows": [{"name": "SF-001905", "status": "would_update"}],
+                "dry_run": dry_run}
+        base["created"] = 0 if dry_run else 1
+        base["updated"] = 0 if dry_run else 1
+        return base
+
+    monkeypatch.setattr(release_steps, "_list_sync_deps",
+                        lambda: (lambda: object(), fake_add,
+                                 lambda _p: ("DF", None)))
+    out = release_steps.run_purchased_parts_list(
+        "C:/bom.xlsx", update_existing=True)
+
+    assert any("SF-001905" in text for text, _tag in out.lines)
+
+    applied = out.pending_apply()
+    assert applied.ok is True
+    assert any("Updated 1" in text for text, _tag in applied.lines)
+
+
 def test_purchased_parts_explains_a_sharepoint_auth_failure(monkeypatch):
     _install_list_sync(monkeypatch, connect_error="not signed in")
     out = release_steps.run_purchased_parts_list("C:/bom.xlsx")

@@ -677,17 +677,63 @@ def run_purchased_parts_list(
         return StepOutcome(ok=False, summary=msg,
                            lines=[(f"  [fail] {msg}", TAG_FAIL)])
 
+    # A None/blank result from the dry run is absent data, not a clean
+    # answer (R1) — report.get(...) below would otherwise raise
+    # AttributeError and escape the step entirely.
+    if not report:
+        msg = "Purchased Parts List: the dry run returned no result."
+        return StepOutcome(ok=False, summary=msg,
+                           lines=[(f"  [fail] {msg}", TAG_FAIL)])
+
     missing = report.get("missing") or []
     checked = report.get("checked", 0)
     present = report.get("already_present", 0)
+    skipped_no_name = report.get("skipped_no_name", 0)
+    skipped_source = report.get("skipped_source", 0)
+    rows_out = report.get("rows") or []
+    would_update = [r.get("name") for r in rows_out
+                    if r.get("status") == "would_update"]
 
     lines = [(f"  Dry run — {checked} BOM part(s) checked, {present} already "
               f"listed, {len(missing)} new.", TAG_INFO)]
     for name in missing:
         lines.append((f"      + {name}", TAG_WARN))
-    if report.get("skipped_no_name"):
-        lines.append((f"  [warn] {report['skipped_no_name']} row(s) had no "
+    for name in would_update:
+        lines.append((f"      ~ {name}  (existing row will be updated)",
+                      TAG_WARN))
+    if skipped_no_name:
+        lines.append((f"  [warn] {skipped_no_name} row(s) had no "
                       f"file name and were skipped.", TAG_WARN))
+    if skipped_source:
+        lines.append((f"  [warn] {skipped_source} row(s) were skipped by "
+                      f"the Buy-only source filter — their Source was not "
+                      f"in {{'Buy', 'Other'}}.", TAG_WARN))
+
+    # R3: zero rows CHECKED is a different outcome from zero rows MISSING.
+    # A genuinely current list gets here with checked>0 and missing==[] —
+    # that stays ok=True below. This branch is for BOMs where every row was
+    # filtered out before it could even be compared against the list, which
+    # must never render as "up to date". buy_only=True is the wizard's
+    # default, and add_missing_bom_rows filters Source in {"Buy", "Other"};
+    # a BOM exported with no Source column gives every row source="", which
+    # matches nothing, so every real purchased part is dropped silently —
+    # this is the concrete shape that must not go green.
+    if checked == 0:
+        reasons = []
+        if skipped_no_name:
+            reasons.append(f"{skipped_no_name} row(s) had no file name")
+        if skipped_source:
+            reasons.append(
+                f"{skipped_source} row(s) had no Source in "
+                f"{{'Buy', 'Other'}} — check that the BOM export has a "
+                f"Source column, and that the Buy-only filter is what you "
+                f"intended")
+        if not reasons:
+            reasons.append("the BOM had no rows to check")
+        summary = ("Purchased Parts List: 0 part(s) checked — nothing "
+                   "could be verified against the list ("
+                   + "; ".join(reasons) + ").")
+        return StepOutcome(ok=False, summary=summary, lines=lines)
 
     if not missing:
         return StepOutcome(
@@ -716,14 +762,27 @@ def run_purchased_parts_list(
         try:
             applied = sync(dry_run=False)
         except Exception as exc:  # noqa: BLE001 — a raise mid-write must not
-            # erase the record of how many rows the preview said were coming.
-            msg = (f"Purchased Parts List: the write failed before "
-                   f"confirming any result (expected {expected} of "
-                   f"{expected} new part(s)): {exc}")
+            # erase the record of how many rows the preview said were
+            # coming, and must not overclaim how many landed before it.
+            msg = (f"Purchased Parts List: the write failed partway "
+                   f"through (expected {expected} new part(s)): {exc}. It "
+                   f"may have added some of those {expected} part(s) "
+                   f"before failing — re-run the preview to see the "
+                   f"current state.")
             return StepOutcome(ok=False, summary=msg,
                                lines=[(f"  [fail] {exc}", TAG_FAIL)])
 
+        # A None/blank result here is the same absent-data problem as the
+        # dry run above — applied.get(...) would otherwise raise.
+        if not applied:
+            msg = (f"Purchased Parts List: the write returned no result "
+                   f"(expected {expected} of {expected} new part(s)) — "
+                   f"treating as failed since it cannot be confirmed.")
+            return StepOutcome(ok=False, summary=msg,
+                               lines=[(f"  [fail] {msg}", TAG_FAIL)])
+
         created = applied.get("created", 0)
+        updated = applied.get("updated", 0)
         errors = applied.get("errors") or []
         # R2: 'created' is judged against 'expected', not against itself —
         # a partial write (fewer created than the preview promised) must
@@ -731,15 +790,17 @@ def run_purchased_parts_list(
         ok = created == expected and not errors
         out = [(f"  [{'ok' if ok else 'fail'}] Added {created} of {expected} "
                 f"part(s) to the list.", TAG_PASS if ok else TAG_FAIL)]
+        if updated:
+            out.append((f"  [ok] Updated {updated} existing part(s).",
+                        TAG_PASS))
         for e in errors:
             out.append((f"    [fail] {e.get('name')}: {e.get('error')}",
                         TAG_FAIL))
-        return StepOutcome(
-            ok=ok,
-            summary=(f"Purchased Parts List: added {created} of {expected}, "
-                     f"{len(errors)} failed."),
-            lines=out,
-        )
+        summary = (f"Purchased Parts List: added {created} of {expected}, "
+                   f"{len(errors)} failed.")
+        if updated:
+            summary += f" {updated} updated."
+        return StepOutcome(ok=ok, summary=summary, lines=out)
 
     return StepOutcome(
         ok=True,
