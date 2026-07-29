@@ -441,7 +441,7 @@ async def check_file_name(
     category_override: str = "",
     recursive: bool = False,
     bom_limit: int = 500,
-    api: Any = None,
+    api: VaultRestAPI | None = None,
     vault_id: str = "",
 ) -> dict[str, Any]:
     """Sign in, look up the file, run the rules. Returns a result dict.
@@ -452,15 +452,22 @@ async def check_file_name(
     so the caller can surface the message.
 
     Pass ``api`` and ``vault_id`` together to reuse an already-authenticated
-    session (the GUI has one); omit both to sign in from ``config_path`` as
-    before.
+    session (the GUI has one, and re-signing in on every call wastes a round
+    trip to the Vault server) — omit both to sign in from ``config_path`` as
+    before. Supplying only one is an error: a caller's ``api`` must never be
+    paired with a ``vault_id`` it did not itself issue, since that pairing
+    can arise from a sign-in that reported success but returned a payload
+    this module didn't recognise.
     """
     rules = load_json(rules_path)
 
-    if api is not None and vault_id:
-        # Caller handed us a live session — don't sign in a second time.
-        pass
-    else:
+    if (api is not None) != bool(vault_id):
+        raise ValueError(
+            "check_file_name: api and vault_id must be supplied together — got "
+            f"api={'set' if api is not None else 'None'}, vault_id={vault_id!r}"
+        )
+
+    if api is None:
         cfg = load_json(config_path)
         vault_cfg = cfg.get("vault") or {}
         for key in ("servername", "username", "password", "database"):

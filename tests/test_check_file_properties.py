@@ -1065,13 +1065,22 @@ def test_markdown_report_says_pass_when_clean(properties, rules):
 
 # --------------------------------------------------------------------------- session reuse
 
-def test_check_file_name_reuses_a_supplied_session(monkeypatch):
-    """With api and vault_id supplied, no sign-in happens."""
-    import check_file_properties as cfp
-
+def test_check_file_name_reuses_a_supplied_session(monkeypatch, tmp_path):
+    """With api and vault_id supplied, no sign-in happens — proven two ways:
+    VaultRestAPI is replaced with a constructor that raises if called, and
+    config_path points at a file that does not exist, so falling through to
+    the sign-in branch fails loudly (an assertion) rather than quietly
+    reaching the real Vault server.
+    """
     class BoomAPI:
         async def create_session(self, **_kw):
             raise AssertionError("must not sign in when a session is supplied")
+
+    def boom_vault_rest_api(**_kw):
+        raise AssertionError(
+            "must not construct a new VaultRestAPI when a session is supplied")
+
+    monkeypatch.setattr(cfp, "VaultRestAPI", boom_vault_rest_api)
 
     async def fake_fetch_file(api, vault_id, name):
         assert vault_id == "V1"
@@ -1081,10 +1090,59 @@ def test_check_file_name_reuses_a_supplied_session(monkeypatch):
     monkeypatch.setattr(cfp, "fetch_file", fake_fetch_file)
 
     result = asyncio.run(cfp.check_file_name(
-        "CD-001659.ipt", api=BoomAPI(), vault_id="V1", recursive=False))
+        "CD-001659.ipt", api=BoomAPI(), vault_id="V1", recursive=False,
+        config_path=tmp_path / "does-not-exist.json"))
 
     assert result["file_name"] == "CD-001659.ipt"
     assert result["info"]["file_version_id"] == "9"
+
+
+def test_check_file_name_reuse_forwards_the_session_into_the_recursive_walk(
+        monkeypatch, tmp_path):
+    """Task 5's engine calls this with recursive=True and a reused session —
+    the CAD BOM walk must reuse the same api/vault_id too, not just the
+    top-level file lookup.
+    """
+    class BoomAPI:
+        async def create_session(self, **_kw):
+            raise AssertionError("must not sign in when a session is supplied")
+
+    def boom_vault_rest_api(**_kw):
+        raise AssertionError(
+            "must not construct a new VaultRestAPI when a session is supplied")
+
+    monkeypatch.setattr(cfp, "VaultRestAPI", boom_vault_rest_api)
+
+    reuse_api = BoomAPI()
+
+    async def fake_fetch_file(api, vault_id, name):
+        assert api is reuse_api
+        assert vault_id == "V1"
+        return {"record": {}, "file_version_id": "9", "file_id": "8",
+                "properties": {"Category Name": "Assembly - Engineering"},
+                "note": ""}
+
+    seen = {}
+
+    async def fake_fetch_cad_children(api, vault_id, file_version_id, *,
+                                       limit=500, **_kw):
+        seen["api"] = api
+        seen["vault_id"] = vault_id
+        seen["file_version_id"] = file_version_id
+        return []
+
+    monkeypatch.setattr(cfp, "fetch_file", fake_fetch_file)
+    monkeypatch.setattr(cfp, "fetch_cad_children", fake_fetch_cad_children)
+
+    result = asyncio.run(cfp.check_file_name(
+        "CD-001659.iam", api=reuse_api, vault_id="V1", recursive=True,
+        config_path=tmp_path / "does-not-exist.json"))
+
+    assert seen["api"] is reuse_api
+    assert seen["vault_id"] == "V1"
+    assert seen["file_version_id"] == "9"
+    assert result["children"] == []
+    assert result["children_error"] is None
 
 
 def _write_config(tmp_path):
@@ -1127,45 +1185,26 @@ def test_check_file_name_signs_in_when_no_session_supplied(monkeypatch, tmp_path
     assert seen_vault_id["value"] == "V-SIGNED-IN"
 
 
-def test_check_file_name_signs_in_when_vault_id_is_blank_despite_an_api(
-        monkeypatch, tmp_path):
-    """A supplied api with no vault_id must not be half-used — fall through."""
+def test_check_file_name_raises_when_vault_id_is_blank_despite_an_api():
+    """api set, vault_id blank is not a hypothetical slip — it is reachable
+    from a sign-in that reported success but returned a payload this module
+    didn't recognise. Silently re-authenticating would hide that bug behind
+    a quiet no-op, so this must raise instead of falling through to a sign-in.
+    """
     class BoomAPI:
         async def create_session(self, **_kw):
-            raise AssertionError("the supplied api must never be used here")
+            raise AssertionError("must raise before ever touching the api")
 
-    fake_api = _SigningAPI()
-    monkeypatch.setattr(cfp, "VaultRestAPI", lambda **_kw: fake_api)
-
-    async def fake_fetch_file(api, vault_id, name):
-        assert api is fake_api, "must use the freshly signed-in api, not the caller's"
-        return {"record": {}, "file_version_id": "1", "file_id": "1",
-                "properties": {"Category Name": "Part"}, "note": ""}
-
-    monkeypatch.setattr(cfp, "fetch_file", fake_fetch_file)
-
-    asyncio.run(cfp.check_file_name(
-        "CD-001659.ipt", config_path=_write_config(tmp_path),
-        api=BoomAPI(), vault_id="", recursive=False))
-
-    assert fake_api.signed_in
+    with pytest.raises(ValueError,
+                       match="api and vault_id must be supplied together"):
+        asyncio.run(cfp.check_file_name(
+            "CD-001659.ipt", api=BoomAPI(), vault_id="", recursive=False))
 
 
-def test_check_file_name_signs_in_when_api_is_none_despite_a_vault_id(
-        monkeypatch, tmp_path):
-    """A vault_id with no api must also fall through to a full sign-in."""
-    fake_api = _SigningAPI()
-    monkeypatch.setattr(cfp, "VaultRestAPI", lambda **_kw: fake_api)
-
-    async def fake_fetch_file(api, vault_id, name):
-        assert api is fake_api
-        return {"record": {}, "file_version_id": "1", "file_id": "1",
-                "properties": {"Category Name": "Part"}, "note": ""}
-
-    monkeypatch.setattr(cfp, "fetch_file", fake_fetch_file)
-
-    asyncio.run(cfp.check_file_name(
-        "CD-001659.ipt", config_path=_write_config(tmp_path),
-        api=None, vault_id="V1", recursive=False))
-
-    assert fake_api.signed_in
+def test_check_file_name_raises_when_api_is_none_despite_a_vault_id():
+    """vault_id set, api blank must also raise rather than sign in — half a
+    session is an error, not a hint to authenticate a fresh one."""
+    with pytest.raises(ValueError,
+                       match="api and vault_id must be supplied together"):
+        asyncio.run(cfp.check_file_name(
+            "CD-001659.ipt", api=None, vault_id="V1", recursive=False))
