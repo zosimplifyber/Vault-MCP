@@ -839,3 +839,40 @@ async def test_the_predicted_count_matches_what_is_actually_submitted(
     actual_step = sum(1 for j in api.submitted if "STEP" in j["job_type"])
     assert actual_pdf == predicted["pdf"]
     assert actual_step == predicted["step"]
+
+
+def test_merge_selection_keeps_a_ticked_part_ticked():
+    result = publish_bom.merge_selection(
+        previous={"CD-1"}, previous_stems={"CD-1", "CD-2"},
+        new_stems={"CD-1", "CD-2"})
+    assert result == {"CD-1"}
+
+
+def test_merge_selection_keeps_an_unticked_part_unticked():
+    result = publish_bom.merge_selection(
+        previous={"CD-1"}, previous_stems={"CD-1", "CD-2"},
+        new_stems={"CD-1", "CD-2"})
+    assert "CD-2" not in result
+
+
+def test_merge_selection_ticks_a_part_that_is_new_this_scan():
+    """A part that just appeared must not be silently excluded."""
+    result = publish_bom.merge_selection(
+        previous={"CD-1"}, previous_stems={"CD-1", "CD-2"},
+        new_stems={"CD-1", "CD-2", "CD-3"})
+    assert "CD-3" in result
+
+
+def test_merge_selection_drops_a_part_that_is_gone():
+    result = publish_bom.merge_selection(
+        previous={"CD-1", "CD-2"}, previous_stems={"CD-1", "CD-2"},
+        new_stems={"CD-1"})
+    assert result == {"CD-1"}
+
+
+def test_merge_selection_ticks_everything_on_a_first_scan():
+    """No previous scan means no prior intent to respect."""
+    result = publish_bom.merge_selection(
+        previous=set(), previous_stems=set(),
+        new_stems={"CD-1", "CD-2"})
+    assert result == {"CD-1", "CD-2"}

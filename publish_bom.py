@@ -410,6 +410,25 @@ def count_planned_jobs(
     return counts
 
 
+def merge_selection(
+    previous: set[str],
+    previous_stems: set[str],
+    new_stems: set[str],
+) -> set[str]:
+    """Carry a user's part selection across a re-scan.
+
+    A stem the user already saw keeps whatever state they left it in. A stem
+    that is new this scan arrives selected, because a part that just appeared
+    should not be silently excluded from the run. A stem that has gone is
+    dropped.
+
+    Pure set logic over stems, kept here rather than in a widget callback so
+    it can be tested without Tk. A first scan has no prior intent to respect,
+    so everything comes back selected.
+    """
+    return {s for s in new_stems if s not in previous_stems or s in previous}
+
+
 def _job_spec(kind: str, name: str, fvid: str) -> Optional[tuple[str, dict[str, str]]]:
     """JobType and Params for one job, or None if the extension doesn't fit.
 
