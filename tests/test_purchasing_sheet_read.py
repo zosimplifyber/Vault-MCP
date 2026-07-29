@@ -9,6 +9,7 @@ moves.
 import os
 import sys
 
+import openpyxl
 import pandas as pd
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -70,3 +71,74 @@ def test_the_canonical_column_names_come_back(tmp_path):
     assert "Title" in df.columns
     assert "Description (Item,CO)" in df.columns
     assert "Name" not in df.columns
+
+
+def test_a_workbook_with_no_purchasing_tab_is_refused(tmp_path):
+    """A raw Inventor export looks exactly like this. The message has to name
+    the tab, so the remedy is obvious without reading the code."""
+    path = tmp_path / "CD-001608 BOM.xlsx"
+    pd.DataFrame([{"Item": "1", "Filename": "CD-001612.ipt"}]).to_excel(
+        path, index=False)
+
+    df, assembly, error = bp.read_purchasing_sheet(str(path))
+
+    assert error is not None
+    assert "Purchasing" in error
+    assert df.empty
+    assert assembly == ""
+
+
+def test_a_missing_file_is_refused_not_raised(tmp_path):
+    df, _assembly, error = bp.read_purchasing_sheet(str(tmp_path / "nope.xlsx"))
+    assert error is not None
+    assert "not found" in error.lower()
+    assert df.empty
+
+
+def test_the_header_row_is_found_when_it_is_not_at_hdr_row(tmp_path):
+    """A sheet generated before a future layout change still reads."""
+    path = tmp_path / "shifted.xlsx"
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = bp.PURCHASING_SHEET_NAME
+    ws["A1"] = "CD-009999"
+    headers = [bp.HEADER_LABELS.get(c, c) for c in bp.SHEET_COLUMNS]
+    ws.append([])                      # push the header down one extra row
+    for offset, name in enumerate(headers, 1):
+        ws.cell(row=bp.HDR_ROW + 1, column=offset, value=name)
+    row = {"Title": "CD-001200", "Source": "Make", "Vendor": "Acme"}
+    for offset, col in enumerate(bp.SHEET_COLUMNS, 1):
+        ws.cell(row=bp.HDR_ROW + 2, column=offset, value=row.get(col))
+    wb.save(path)
+
+    df, assembly, error = bp.read_purchasing_sheet(str(path))
+
+    assert error is None
+    assert assembly == "CD-009999"
+    assert list(df["Title"]) == ["CD-001200"]
+
+
+def test_the_unmatched_note_never_becomes_a_row(tmp_path):
+    """An unpriced Buy row makes the writer append an "Unmatched (n)" note
+    below the table. It is a merged full-width cell, so it would otherwise
+    read as a part with a name and nothing else."""
+    unpriced = dict(BUY, Vendor=None, **{"Cost Per": None})
+    path = _sheet(tmp_path, [unpriced, MAKE])
+
+    df, _assembly, error = bp.read_purchasing_sheet(path)
+
+    assert error is None
+    assert len(df) == 2
+    assert not any(str(t).startswith(bp.UNMATCHED_NOTE_PREFIX)
+                   for t in df["Title"])
+
+
+def test_sub_total_is_not_readable_and_that_is_expected(tmp_path):
+    """Sub Total is an Excel formula. openpyxl with data_only=True returns
+    None unless Excel has opened and re-saved the file, so callers recompute
+    the line total rather than read this column."""
+    path = _sheet(tmp_path, [MAKE])
+    df, _assembly, error = bp.read_purchasing_sheet(path)
+
+    assert error is None
+    assert df.loc[0, "Sub Total"] is None
