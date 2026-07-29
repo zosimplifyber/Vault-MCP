@@ -290,6 +290,43 @@ async def test_scan_ignores_non_file_version_hits():
 
 
 @pytest.mark.asyncio
+async def test_scan_picks_deterministically_when_a_stem_has_duplicate_files():
+    """An archived copy or a library duplicate must not let server response
+    order decide which file gets published. Assemblies outrank parts."""
+    hit_iam = _hit("CD-001578.iam", "111")
+    hit_ipt = _hit("CD-001578.ipt", "222")
+
+    api_forward = FakeAPI({"CD-001578": [hit_iam, hit_ipt]})
+    api_reversed = FakeAPI({"CD-001578": [hit_ipt, hit_iam]})
+
+    rows_forward = await publish_bom.scan_rows(
+        api_forward, "1", [publish_bom.PublishRow(stem="CD-001578")])
+    rows_reversed = await publish_bom.scan_rows(
+        api_reversed, "1", [publish_bom.PublishRow(stem="CD-001578")])
+
+    assert rows_forward[0].model_version_id == "111"
+    assert rows_reversed[0].model_version_id == "111"
+    assert rows_forward[0].ambiguous is True
+    assert rows_reversed[0].ambiguous is True
+    assert "multiple matches" in rows_forward[0].status
+
+
+@pytest.mark.asyncio
+async def test_scan_reports_truncation_instead_of_a_false_missing():
+    """A full page of noise hits that don't include the stem's own files
+    looks identical to a genuine miss unless the scan says otherwise - and a
+    false miss sends someone to redraw a part that already exists."""
+    noise = [_hit(f"CD-999999-{n}.ipt", str(n))
+             for n in range(publish_bom.SEARCH_LIMIT)]
+    api = FakeAPI({"CD-001578": noise})
+    rows = await publish_bom.scan_rows(
+        api, "1", [publish_bom.PublishRow(stem="CD-001578")])
+
+    assert rows[0].status == publish_bom.STATUS_TRUNCATED
+    assert rows[0].job_count == 0
+
+
+@pytest.mark.asyncio
 async def test_a_search_failure_degrades_only_its_own_row():
     api = FakeAPI(
         {"CD-000002": [_hit("CD-000002.ipt", "111")]},

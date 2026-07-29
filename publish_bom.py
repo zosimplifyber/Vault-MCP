@@ -38,6 +38,12 @@ MAX_CONCURRENCY = 8
 MODEL_EXTS = ("ipt", "iam")
 DRAWING_EXTS = ("idw", "dwg")
 
+# When more than one file shares a stem — an archived copy, a library
+# duplicate — rank deterministically instead of trusting server response
+# order. Assemblies outrank parts, Inventor drawings outrank AutoCAD ones.
+# Mirrors vault_state._EXT_PRIORITY.
+_EXT_RANK = {"iam": 0, "ipt": 1, "idw": 0, "dwg": 1}
+
 # BOM Structure values that are not manufactured in house. Everything else —
 # Normal, Phantom, Inseparable, and anything unrecognized — is treated as Make,
 # because an unexpected deliverable is a visible row in the scan table whereas
@@ -47,11 +53,23 @@ NON_MAKE_STRUCTURES = frozenset({"purchased", "reference"})
 # Spellings an Inventor export might use for the BOM Structure column.
 STRUCTURE_HEADERS = ("bom structure", "bomstructure", "structure")
 
+# Where the raw BOM Structure value is stashed so it survives coercion on its
+# own row. coerce_bom_dataframe maps Reference onto Make, so the raw value has
+# to be captured first — carrying it as a column instead of a positional list
+# means the parse cannot silently misalign if coercion ever drops a row.
+STRUCTURE_STASH_COL = "__bom_structure__"
+
 STATUS_BOTH = "2 jobs"
 STATUS_MODEL_ONLY = "STEP only - no drawing"
 STATUS_DRAWING_ONLY = "PDF only - no model"
 STATUS_MISSING = "not in Vault"
 STATUS_FAILED = "lookup failed"
+STATUS_TRUNCATED = "search truncated - refine"
+
+# A stem's keyword search also matches its .pdf/.stp/.dwf siblings, its item,
+# and anything with the stem in a property, so the hit list is much longer
+# than the two files we want.
+SEARCH_LIMIT = 50
 
 MISSING_FILENAME_ERROR = (
     "This BOM has no file-name column, so there is no way to tell which CAD "
@@ -84,6 +102,7 @@ class ScanRow:
     drawing_name: str = ""
     drawing_version_id: str = ""
     status: str = ""
+    ambiguous: bool = False
 
     @property
     def job_count(self) -> int:
@@ -136,10 +155,9 @@ def load_publish_rows(
         return [], f"Could not read {name}: {exc}"
 
     structure_col = _find_column(raw.columns, STRUCTURE_HEADERS)
-    structures = (
-        [_norm(v).lower() for v in raw[structure_col]]
-        if structure_col is not None else None
-    )
+    if structure_col is not None:
+        raw = raw.copy()
+        raw[STRUCTURE_STASH_COL] = [_norm(v).lower() for v in raw[structure_col]]
 
     df, error = bom_purchasing.coerce_bom_dataframe(raw)
     if error:
@@ -151,12 +169,11 @@ def load_publish_rows(
 
     rows: list[PublishRow] = []
     seen: set[str] = set()
+    has_structure = STRUCTURE_STASH_COL in df.columns
 
-    # coerce_bom_dataframe renames and reindexes but never drops rows, so
-    # positions still line up with the structures list read off the raw frame.
-    for pos, (_idx, rec) in enumerate(df.iterrows()):
-        if structures is not None:
-            if structures[pos] in NON_MAKE_STRUCTURES:
+    for _idx, rec in df.iterrows():
+        if has_structure:
+            if _norm(rec.get(STRUCTURE_STASH_COL)) in NON_MAKE_STRUCTURES:
                 continue
         elif _norm(rec.get("Source")).lower() != "make":
             continue
@@ -245,15 +262,22 @@ async def _scan_one(api, vault_id: str, row: PublishRow,
 
     resp = await api.search_files(
         vault_id=vault_id, query=row.stem,
-        search_sub_folders=True, latest_only=True, limit=20,
+        search_sub_folders=True, latest_only=True, limit=SEARCH_LIMIT,
     )
     if resp.get("error"):
         out.status = STATUS_FAILED
         progress(f"  {row.stem}: lookup failed - {_error_text(resp)}")
         return out
 
-    for rec in _search_results(resp.get("data")):
-        if rec.get("entityType") != "FileVersion":
+    hits = _search_results(resp.get("data"))
+    models: list[tuple[int, str, str]] = []
+    drawings: list[tuple[int, str, str]] = []
+
+    for rec in hits:
+        # Case-tolerant, but still strictly the *version* entity: we submit
+        # this id as a FileVersionId, and a master id would publish the wrong
+        # thing. (vault_state can be looser — it only reads state.)
+        if _norm(rec.get("entityType")).lower() != "fileversion":
             continue
         name = _norm(rec.get("name"))
         # Require the basename to EQUAL the stem. A loose containment check
@@ -264,12 +288,28 @@ async def _scan_one(api, vault_id: str, row: PublishRow,
         if not fvid:
             continue
         ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
-        if ext in MODEL_EXTS and not out.model_version_id:
-            out.model_name, out.model_version_id = name, fvid
-        elif ext in DRAWING_EXTS and not out.drawing_version_id:
-            out.drawing_name, out.drawing_version_id = name, fvid
+        rank = _EXT_RANK.get(ext, 9)
+        if ext in MODEL_EXTS:
+            models.append((rank, name, fvid))
+        elif ext in DRAWING_EXTS:
+            drawings.append((rank, name, fvid))
+
+    # Sort by extension rank then name so the same vault state always yields
+    # the same job.
+    models.sort(key=lambda t: (t[0], t[1].lower()))
+    drawings.sort(key=lambda t: (t[0], t[1].lower()))
+    if models:
+        _, out.model_name, out.model_version_id = models[0]
+    if drawings:
+        _, out.drawing_name, out.drawing_version_id = drawings[0]
+    out.ambiguous = len(models) > 1 or len(drawings) > 1
 
     out.status = _status_for(out)
+    if out.status == STATUS_MISSING and len(hits) >= SEARCH_LIMIT:
+        out.status = STATUS_TRUNCATED
+    if out.ambiguous:
+        # Worth a human's eye during Scan — that is what the Scan step is for.
+        out.status += " (multiple matches)"
     progress(f"  {row.stem}: {out.status}")
     return out
 
