@@ -186,23 +186,28 @@ def file_master_ids(compliance: dict[str, Any]) -> list[int]:
     return ids
 
 
-def unresolved_files(compliance: dict[str, Any]) -> list[str]:
-    """Files carrying no usable Vault ID — dropped from a derived list.
+def unresolved_files(compliance: dict[str, Any]) -> list[tuple[str, str]]:
+    """Files carrying an unusable Vault ID, and which one is unusable.
 
     ``file_version_ids`` and ``file_master_ids`` both drop bad entries
     silently, by design (a bad ID would fail the whole batch). Steps 2 and 3
-    must surface what got dropped in their preview: a file silently missing
-    from a lifecycle batch is a partial release reported as success.
+    must surface what got dropped in their own preview — but only the kind of
+    drop that actually affects them.
 
-    Flags an entry if EITHER its version ID or its master ID is unusable —
-    a file can be fine for Sync (has a version ID) and still vanish from
-    Release (no master ID), and that half-visibility is exactly what this
-    exists to catch. Returns ``[]`` for a falsy ``compliance`` — with no
-    step 1 result there is nothing to report as dropped.
+    Returns ``(name, missing)`` where ``missing`` is ``"version"``,
+    ``"master"`` or ``"both"``. A file with a version ID but no master ID
+    syncs fine and is only step 3's problem; reporting it as skipped in
+    step 2's preview would make that preview lie, which trains people to
+    click through it — the exact failure mode this visibility fix exists to
+    prevent. Steps 2 and 3 each filter to the kind they actually drop.
+
+    Returns ``[]`` for a falsy ``compliance`` — unreachable in practice,
+    since the gate (:func:`property_check_blocked`) blocks a missing step 1
+    result un-forceably. This is therefore not a standalone health check.
     """
     if not compliance:
         return []
-    names: list[str] = []
+    out: list[tuple[str, str]] = []
     for entry in _entries(compliance):
         vid = str(entry.get("file_version_id") or "").strip()
         raw_mid = entry.get("file_id")
@@ -214,5 +219,11 @@ def unresolved_files(compliance: dict[str, Any]) -> list[str]:
                 mid_ok = False
         if vid and mid_ok:
             continue
-        names.append(str(entry.get("file_name") or "(unnamed)"))
-    return names
+        if not vid and not mid_ok:
+            missing = "both"
+        elif not vid:
+            missing = "version"
+        else:
+            missing = "master"
+        out.append((str(entry.get("file_name") or "(unnamed)"), missing))
+    return out

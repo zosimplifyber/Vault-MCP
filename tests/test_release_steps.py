@@ -66,7 +66,8 @@ def test_outcome_needs_review_is_true_with_a_pending_apply():
     5 previewing drawing gaps is exactly that, so needs_review must take
     precedence over ok rather than derive from it."""
     out = release_steps.StepOutcome(
-        ok=False, summary="preview", pending_apply=lambda: None
+        ok=False, summary="preview",
+        pending_apply=lambda: release_steps.StepOutcome(ok=True, summary="applied"),
     )
     assert out.needs_review is True
 
@@ -82,15 +83,19 @@ def test_all_tags_covers_the_named_constants_and_excludes_wizard_chrome():
 
 
 def _compliance(top=("100", "10"), children=(), failed=0, children_error=None,
-                 category="Part"):
+                 category="Part", file_name="CD-001659.iam"):
     """Build a compliance result shaped like check_file_name's return value.
 
     ``category=None`` mimics an unresolved category: ``evaluate_against_rules``
     (check_file_properties.py) leaves ``report`` as ``None`` in that case,
     never as an empty dict — that None-vs-empty-dict distinction is exactly
     what the gate's critical bug was about.
+
+    ``file_name`` mirrors the real result's top-level key
+    (check_file_properties.py:526), which Task 6's name lookup reads.
     """
     return {
+        "file_name": file_name,
         "info": {"file_version_id": top[0], "file_id": top[1]},
         "category_raw": category or "Unrecognized",
         "category_resolved": category,
@@ -249,28 +254,41 @@ def test_master_ids_dedupe_a_child_that_shares_the_top_files_master_id():
 
 
 # --- unresolved_files -------------------------------------------------
+#
+# Returns (name, missing) so steps 2 and 3 can each filter to the kind of
+# drop that actually affects them, rather than both crying wolf about a file
+# that's only broken for one of them.
 
 
-def test_unresolved_files_flags_a_child_that_failed_to_resolve():
+def test_unresolved_files_flags_a_child_missing_both_ids_as_both():
     c = _compliance(children=[("200", "20")])
     c["children"].append({"file_version_id": "", "file_id": "",
                           "file_name": "Bad.ipt", "error": "not found"})
-    assert release_steps.unresolved_files(c) == ["Bad.ipt"]
+    assert release_steps.unresolved_files(c) == [("Bad.ipt", "both")]
 
 
 def test_unresolved_files_falls_back_to_unnamed():
     c = _compliance(children=[("200", "20")])
     c["children"].append({"file_version_id": "", "file_id": ""})
-    assert release_steps.unresolved_files(c) == ["(unnamed)"]
+    assert release_steps.unresolved_files(c) == [("(unnamed)", "both")]
 
 
 def test_unresolved_files_flags_a_child_missing_only_its_master_id():
-    """Present in file_version_ids, absent from file_master_ids — still
-    unresolved, because step 3 (Release) would silently drop it while step 2
-    (Sync) would not."""
+    """Present in file_version_ids, absent from file_master_ids — step 2
+    (Sync) handles this file fine, so only step 3 (Release) should treat it
+    as skipped. Reporting "both" or a bare name here would make step 2's
+    preview lie about a file it syncs correctly."""
     c = _compliance(children=[("200", "")])
     c["children"][0]["file_name"] = "NoMaster.ipt"
-    assert release_steps.unresolved_files(c) == ["NoMaster.ipt"]
+    assert release_steps.unresolved_files(c) == [("NoMaster.ipt", "master")]
+
+
+def test_unresolved_files_flags_a_child_missing_only_its_version_id():
+    """Mirror case: present in file_master_ids, absent from
+    file_version_ids — only step 2 (Sync) should treat this as skipped."""
+    c = _compliance(children=[("", "30")])
+    c["children"][0]["file_name"] = "NoVersion.ipt"
+    assert release_steps.unresolved_files(c) == [("NoVersion.ipt", "version")]
 
 
 def test_unresolved_files_empty_when_everything_resolved():
