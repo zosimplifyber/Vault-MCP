@@ -404,13 +404,35 @@ CD-001612.ipt: STEP queued (job 25207)  Autodesk.Vault.STEP.Create.ipt
 submitted=2 failed=0
 ```
 
-Both were accepted with no param error and are visible in the queue. Both sat
-at status `Ready`: the queue reports enabled, but no Job Processor was online
-to consume them. **The publish step itself was therefore not observed
-end-to-end** — only that the jobs are correctly formed, accepted, and queued.
-The params are byte-identical to the already-working tools in
-`mcp_server.py:998-1069`, so the residual risk is low, but it is not zero and
-was not retired by this run.
+Both were accepted with no param error. They sat at status `Ready` overnight
+while no Job Processor was online, then were consumed once one started.
+
+**Confirmed the following morning: the publish worked end-to-end.** Both jobs
+left the queue and two new files appeared in Vault:
+
+```
+CD-001612-R3.pdf   verId 124909
+CD-001612-R3.stp   verId 124912
+```
+
+Attribution is unambiguous. `CD-001620` and `CD-001608` both have drawings
+too, and neither has a published `.pdf` or `.stp` — because no job was
+submitted for them. Only the one part that was submitted gained outputs.
+
+### Published outputs carry a revision suffix
+
+Note the names: `CD-001612-R3.pdf`, not `CD-001612.pdf`. Vault names a
+published deliverable `<stem>-R<rev>.<ext>`.
+
+This tool is unaffected — it scans *source* files (`.ipt`/`.iam`/`.idw`/
+`.dwg`) and never looks for published outputs. But it is a trap for anything
+downstream that assumes a deliverable is a same-stem sibling of its source.
+`mfg_package.py:271-284` (`_basename_matches`) requires the basename to
+*equal* the part number, so it would not match `CD-001612-R3.pdf` when
+collecting deliverables for `CD-001612`. That module is already disabled for
+unrelated reasons (retired Item Master), but the naming assumption should be
+fixed whenever it is revived — and any future "skip if already published"
+option here would need to match `<stem>-R*.pdf` rather than `<stem>.pdf`.
 
 ## Open questions
 
