@@ -124,6 +124,15 @@ class PublishBOMGUI:
 
         actions = tk.Frame(self.win, bg=LIGHT_GRAY, padx=16)
         actions.pack(fill="x")
+        tk.Label(actions, text="Generate:", bg=LIGHT_GRAY, fg=DARK_BLUE,
+                 font=("Arial", 9, "bold")).pack(side="left", padx=(0, 6))
+        for text, var in (("PDF drawings", self.want_pdf),
+                          ("STEP files", self.want_step)):
+            tk.Checkbutton(
+                actions, text=text, variable=var, bg=LIGHT_GRAY,
+                fg=DARK_GRAY, font=("Arial", 9), activebackground=LIGHT_GRAY,
+                selectcolor=WHITE, command=self._update_queue_line,
+            ).pack(side="left", padx=(0, 10))
         self.scan_btn = tk.Button(
             actions, text="  Scan  ", command=self._on_scan,
             bg=DARK_BLUE, fg=WHITE, font=("Arial", 10, "bold"),
@@ -137,6 +146,21 @@ class PublishBOMGUI:
             state="disabled",
         )
         self.submit_btn.pack(side="left", padx=(10, 0))
+
+        bulk = tk.Frame(self.win, bg=LIGHT_GRAY, padx=16, pady=(6, 0))
+        bulk.pack(fill="x")
+        tk.Label(bulk, text="Select:", bg=LIGHT_GRAY, fg=DARK_BLUE,
+                 font=("Arial", 9, "bold")).pack(side="left", padx=(0, 6))
+        for text, command in (
+            ("All", self._select_all),
+            ("None", self._select_none),
+            ("Invert", self._select_invert),
+            ("Missing drawing", self._select_missing_drawing),
+            ("Both files", self._select_both_files),
+        ):
+            tk.Button(bulk, text=text, command=command, font=("Arial", 8),
+                      relief="groove", padx=6, pady=1,
+                      cursor="hand2").pack(side="left", padx=(0, 4))
 
         table_frame = tk.Frame(self.win, bg=WHITE, padx=16, pady=10)
         table_frame.pack(fill="both", expand=True)
@@ -165,6 +189,10 @@ class PublishBOMGUI:
         tk.Label(self.win, textvariable=self.summary_text, bg=PALE_BLUE,
                  fg=DARK_BLUE, font=("Arial", 9, "bold"), anchor="w",
                  padx=16, pady=5).pack(fill="x")
+
+        tk.Label(self.win, textvariable=self.queue_text, bg=PALE_BLUE,
+                 fg=OLIVE_GREEN, font=("Arial", 9, "bold"), anchor="w",
+                 padx=16, pady=(0, 4)).pack(fill="x")
 
         log_frame = tk.Frame(self.win, bg=LIGHT_GRAY)
         log_frame.pack(fill="both", padx=16, pady=(8, 12))
@@ -288,6 +316,38 @@ class PublishBOMGUI:
         self.submit_btn.configure(
             state="normal" if counts["total"] and not self._busy else "disabled"
         )
+
+    def _set_selection(self, stems: set[str]) -> None:
+        self.selected = stems
+        self._refresh_checks()
+
+    def _select_all(self) -> None:
+        self._set_selection({r.stem for r in self.scan_result})
+
+    def _select_none(self) -> None:
+        self._set_selection(set())
+
+    def _select_invert(self) -> None:
+        self._set_selection({r.stem for r in self.scan_result
+                             if r.stem not in self.selected})
+
+    def _select_missing_drawing(self) -> None:
+        """Exactly the parts that need a drawing made — the gap report.
+
+        Prefix match: an ambiguous stem carries a '(multiple matches)' suffix,
+        and comparing the whole string would skip those rows silently.
+        """
+        self._set_selection({
+            r.stem for r in self.scan_result
+            if r.status.startswith(publish_bom.STATUS_MODEL_ONLY)
+        })
+
+    def _select_both_files(self) -> None:
+        """Exactly the parts that can produce a PDF and a STEP."""
+        self._set_selection({
+            r.stem for r in self.scan_result
+            if r.model_version_id and r.drawing_version_id
+        })
 
     # ----- Actions ----------------------------------------------------------
 
