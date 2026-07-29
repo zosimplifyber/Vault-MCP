@@ -137,7 +137,13 @@ BOM file
    string-dtype guards that keep `"2.10"` from collapsing to `2.1`.
 2. Capture the raw `BOM Structure` column **before** coercion.
    `coerce_bom_dataframe` maps `Reference` to `Make` via `SOURCE_VALUE_MAP`,
-   so the distinction is unrecoverable afterwards.
+   so the distinction is unrecoverable afterwards. The captured value is
+   stashed as an extra column (`__bom_structure__`) rather than held as a
+   positional list: `coerce_bom_dataframe` passes unknown columns through
+   untouched, so the value travels with its own row. Indexing a separate list
+   by row position would work today but would silently misassign every
+   structure after any row coercion ever dropped — landing a `Purchased` flag
+   on a `Make` part with nothing raising.
 3. `bom_purchasing.coerce_bom_dataframe()` — header mapping and `Source`
    translation.
 4. Locate the filename column using `bom_purchasing.FILE_NAME_HEADERS`
@@ -164,12 +170,16 @@ noticing rather than swallowing.
 `scan_rows(api, vault_id, rows, on_progress) -> ScanRow[]`
 
 One `api.search_files(query=stem, latest_only=True, search_sub_folders=True,
-limit=20)` per unique stem, at most 8 in flight behind an
+limit=SEARCH_LIMIT)` per unique stem, at most 8 in flight behind an
 `asyncio.Semaphore` — the cap `vault_state.MAX_CONCURRENCY` already uses.
 
 Filtering each response:
 
-- Keep only `entityType == "FileVersion"`.
+- Keep only `entityType == "FileVersion"`, compared case-insensitively but
+  still as an exact match. The looser `startswith("file")` that
+  `vault_state.py` uses would be wrong here: that module only reads lifecycle
+  state, whereas this one submits the id as a `FileVersionId`, and a master
+  id would publish the wrong thing.
 - Require the basename to **equal** the stem, case-insensitively. A substring
   match pulls in every assembly that references the part; this is the
   `_basename_matches` guard from `mfg_package.py:271-284`.
@@ -180,19 +190,33 @@ Classification by extension:
 - `.idw`, `.dwg` → drawing (PDF source)
 - anything else → ignored
 
-When several files of one kind match a stem, take the first hit; Vault returns
-latest-only, and a stem should not have two models.
+When several files of one kind match a stem — an archived copy, a library
+duplicate — ranking is deterministic rather than first-hit: assemblies outrank
+parts, Inventor drawings outrank AutoCAD ones, then name breaks the tie. This
+mirrors `vault_state._EXT_PRIORITY`. Taking whichever file the server happened
+to list first would make the published deliverable non-reproducible. When more
+than one candidate existed, `ScanRow.ambiguous` is set and the status carries a
+`(multiple matches)` suffix, because the Scan step exists precisely so a human
+can catch this before jobs are queued.
 
-Each `ScanRow` carries: stem, model name + file-version id, drawing name +
-file-version id, and a status string:
+Each `ScanRow` carries: stem, description, model name + file-version id,
+drawing name + file-version id, an `ambiguous` flag, and a status string:
 
 | Status | Meaning |
 | --- | --- |
 | `2 jobs` | Model and drawing both found |
-| `STEP only — no drawing` | Model found, no drawing. **The reported gap.** |
-| `PDF only — no model` | Drawing found, no model |
+| `STEP only - no drawing` | Model found, no drawing. **The reported gap.** |
+| `PDF only - no model` | Drawing found, no model |
 | `not in Vault` | Stem matched nothing |
-| `lookup failed` | The search errored for this stem |
+| `lookup failed` | The search errored, or raised, for this stem |
+| `search truncated - refine` | A full page of hits came back without the stem's own files |
+
+That last status matters more than it looks. A stem's keyword search also
+matches its `.pdf`/`.stp`/`.dwf` siblings, its item, and anything carrying the
+stem in a property, so the hit list is far longer than the two files wanted.
+Search is capped at `SEARCH_LIMIT` (50). If the cap is hit and the files were
+not among the results, saying `not in Vault` would be a lie that sends someone
+to redraw a part that already exists — so truncation reports itself instead.
 
 The top assembly is scanned the same way and appended as its own row. Its stem
 comes from the editable field, prefilled by pulling the leading `CD-######`
@@ -208,7 +232,14 @@ the log readable and the queue ordered.
 
 Before the loop, call `api.get_job_queue_enabled()`. If the queue is off,
 warn that jobs will sit unprocessed until a Job Processor agent comes online —
-then submit anyway, since queuing ahead of the processor is valid.
+then submit anyway, since queuing ahead of the processor is valid. That check
+is advisory, so a failure or exception from it must never block the submission
+it was only meant to annotate.
+
+Note that "queue enabled" and "a processor is running" are different things:
+the queue can report enabled while no Job Processor is online, in which case
+jobs sit at status `Ready` until one starts. That is normal and outside this
+tool's control.
 
 Param shapes, reused verbatim from the working MCP tools in
 `mcp_server.py:998-1069`:
@@ -245,10 +276,10 @@ attached, palette imported from `gui.release_workflow` — the arrangement
 | Top assembly  [ CD-001608                 ]  blank=skip |
 |                                     [ Scan ]  [ Submit ]|
 +---------------------------------------------------------+
-| Part        Model          Drawing        Status        |
-| CD-001578   CD-001578.ipt  CD-001578.idw  2 jobs        |
-| CD-001601   CD-001601.iam  --             STEP only     |
-| CD-001644   --             --             not in Vault  |
+| Part      Description        Model        Drawing    Status  |
+| CD-001578 bmw vacuum backer  ...578.ipt   ...578.idw 2 jobs  |
+| CD-001601 bmw bladder plate  ...601.iam   --         STEP    |
+| CD-001644 bmw deckle plate   --           --         missing |
 +---------------------------------------------------------+
 | 34 Make rows - 31 models - 28 drawings - 59 jobs - 3 gap|
 | log...                                        [ Close ] |
@@ -259,6 +290,11 @@ attached, palette imported from `gui.release_workflow` — the arrangement
   once submitted. A second run needs a fresh Scan — the guard against
   accidentally queueing sixty jobs twice.
 - Results table is a `ttk.Treeview`; the summary line sits directly beneath it.
+  The Description column comes from the BOM row — a bare stem like `CD-001613`
+  is hard to sanity-check, and the whole point of the scan step is that a
+  human can spot a wrong or missing part before jobs are queued. The BOM's
+  part number is deliberately not shown: these exports derive it from the
+  filename stem, so it would be the same string twice.
 - Work runs on a worker thread pushing status strings to a `queue.Queue`,
   drained by `after()`, so the window never freezes. Same pattern as the other
   dialogs.
@@ -273,6 +309,9 @@ attached, palette imported from `gui.release_workflow` — the arrangement
 | Unreadable file / bad extension | `read_bom_file`'s `ValueError` shown in a messagebox |
 | BOM parses to zero Make rows | Scan reports "no Make parts found", Submit stays disabled |
 | `search_files` fails for one stem | Row shows `lookup failed`, scan continues |
+| `search_files` *raises* for one stem | Same — caught per row, so one bad row cannot discard an otherwise good scan |
+| Search came back full without the wanted files | Row shows `search truncated - refine`, never a false `not in Vault` |
+| Queue check fails or raises | Warning skipped, submission proceeds — an advisory check must not block the work it annotates |
 | Stem resolves to no files | Row shows `not in Vault`, contributes no jobs |
 | Make part with model, no drawing | STEP queued, drawing counted as a gap |
 | `submit_job` fails | Logged with the Vault error, loop continues, summary counts it |
@@ -328,6 +367,76 @@ Top assembly:
   is `CD-001608` in both cases
 - Blank field queues no top-level jobs
 - Top assembly gets both a PDF and a STEP job when both files exist
+
+## Live verification, 2026-07-28
+
+Run against the production vault (`Simplifyber1`, vault id 1) with the real
+`CD-001608 BOM.xlsx`.
+
+Ground truth was established first by querying Vault directly, *not* through
+this tool, so the check is independent rather than a restatement of the tool's
+own output. The engine then reproduced it exactly:
+
+```
+rows=10  models=10  drawings=3  jobs=13
+missing_drawing=7  not_found=0  failed=0
+```
+
+Seven of the nine Make parts have no drawing — CD-001613, CD-001577,
+CD-001578, CD-001621, CD-001623, CD-001660, CD-001364. Only CD-001612,
+CD-001620 and the CD-001608 top assembly have one. That gap list is the
+tool's actual product.
+
+Incidental confirmations from real data:
+
+- `CD-001578` returns `CD-001578.SLDPRT` and `CD-001578_perf.stl` alongside
+  its `.ipt`. Neither is picked up — the first is an unhandled extension, the
+  second has a different stem. The exact-basename guard earns its keep.
+- The same search returns ItemVersion `SF-001922`, correctly filtered by the
+  `entityType == FileVersion` check.
+- Maximum hits for any stem was 5, so `SEARCH_LIMIT = 50` has wide headroom
+  and no truncation occurred.
+- No stem returned two models or two drawings, so the ambiguity path was not
+  exercised live and remains unit-test-only.
+
+**Submission**, exercised for `CD-001612` alone (one PDF + one STEP, so both
+param shapes were covered) rather than all thirteen jobs:
+
+```
+CD-001612.idw: PDF  queued (job 25206)  Autodesk.Vault.PDF.Create.idw
+CD-001612.ipt: STEP queued (job 25207)  Autodesk.Vault.STEP.Create.ipt
+submitted=2 failed=0
+```
+
+Both were accepted with no param error. They sat at status `Ready` overnight
+while no Job Processor was online, then were consumed once one started.
+
+**Confirmed the following morning: the publish worked end-to-end.** Both jobs
+left the queue and two new files appeared in Vault:
+
+```
+CD-001612-R3.pdf   verId 124909
+CD-001612-R3.stp   verId 124912
+```
+
+Attribution is unambiguous. `CD-001620` and `CD-001608` both have drawings
+too, and neither has a published `.pdf` or `.stp` — because no job was
+submitted for them. Only the one part that was submitted gained outputs.
+
+### Published outputs carry a revision suffix
+
+Note the names: `CD-001612-R3.pdf`, not `CD-001612.pdf`. Vault names a
+published deliverable `<stem>-R<rev>.<ext>`.
+
+This tool is unaffected — it scans *source* files (`.ipt`/`.iam`/`.idw`/
+`.dwg`) and never looks for published outputs. But it is a trap for anything
+downstream that assumes a deliverable is a same-stem sibling of its source.
+`mfg_package.py:271-284` (`_basename_matches`) requires the basename to
+*equal* the part number, so it would not match `CD-001612-R3.pdf` when
+collecting deliverables for `CD-001612`. That module is already disabled for
+unrelated reasons (retired Item Master), but the naming assumption should be
+fixed whenever it is revived — and any future "skip if already published"
+option here would need to match `<stem>-R*.pdf` rather than `<stem>.pdf`.
 
 ## Open questions
 
