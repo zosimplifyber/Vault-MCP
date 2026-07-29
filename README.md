@@ -95,7 +95,7 @@ If no `wrike` block (or token) is present, the launcher shows the Wrike panel as
 python app.py
 ```
 
-This opens the **Vault Integration launcher** (Tk dashboard) and auto-starts the SSE MCP server on `http://127.0.0.1:8765/sse` inside the same process. From the dashboard you can also launch the Release Workflow wizard, BOM → Purchasing sheet, MFG Order Package builder, and Property Check tool — all sharing the same Vault session as the MCP server. One sign-in, one audit trail.
+This opens the **Vault Integration launcher** (Tk dashboard) and auto-starts the SSE MCP server on `http://127.0.0.1:8765/sse` inside the same process. From the dashboard you can also launch the Release Workflow wizard, BOM → Purchasing sheet, MFG Order Package builder, Property Check, and BOM → Publish Deliverables — all sharing the same Vault session as the MCP server. One sign-in, one audit trail.
 
 The server endpoints:
 - Dashboard: opens automatically (no URL — it's a desktop window)
@@ -367,6 +367,7 @@ Vault-MCP/
 ├── wrike_rest_api.py           # Async Wrike API v4 client (second, independent MCP server)
 ├── bom_purchasing.py           # Purchasing-sheet generation engine
 ├── mfg_package.py              # Manufacturing-order package builder engine (PDF + STEP + Excel BOM)
+├── publish_bom.py              # BOM → Vault publish-job engine (queues PDF/STEP for Make parts)
 ├── pdf_watermark.py            # PDF watermark helper (RELEASED / FOR REVIEW overlays)
 ├── file_property_rules.json    # Property-compliance rules for FILES (used by Property Check)
 ├── item_property_rules.json    # Property-compliance rules for ITEMS (used by readiness reports)
@@ -381,7 +382,8 @@ Vault-MCP/
 │   ├── release_workflow.py     # Release Workflow wizard (compliance → sync → release)
 │   ├── purchasing.py           # Purchasing-sheet GUI
 │   ├── file_property_check.py  # Property Check GUI (file name → compliance report)
-│   └── mfg_package.py          # Manufacturing Package builder GUI
+│   ├── mfg_package.py          # Manufacturing Package builder GUI
+│   └── publish_bom.py          # BOM → Publish Deliverables GUI (scan, then queue jobs)
 │
 └── scripts/                    # Helpers and CLI tools used by the GUIs / for one-offs
     ├── vault_sdk.py            # Python wrapper around the Vault .NET SDK (via PowerShell bridge)

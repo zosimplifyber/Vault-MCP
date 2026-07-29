@@ -35,6 +35,7 @@ from gui.release_workflow import (  # noqa: E402
 # import via PROJECT_ROOT on sys.path; this file is reached as
 # ``gui.publish_bom``, so the names do not collide.
 import publish_bom  # noqa: E402
+from supplier_pricing.normalize import file_stem  # noqa: E402
 
 
 class PublishBOMGUI:
@@ -66,6 +67,14 @@ class PublishBOMGUI:
         self.summary_text = tk.StringVar(value="Pick a BOM and click Scan.")
 
         self._build_ui()
+
+        # Retargeting either field invalidates the scan on screen. Without
+        # this, browsing to a different BOM leaves the old results in the
+        # table with Submit still enabled — one click queues jobs for the
+        # wrong assembly.
+        for var in (self.bom_path, self.top_assembly):
+            var.trace_add("write", self._invalidate_scan)
+
         self.win.after(100, self._drain_queue)
 
     # ----- UI ---------------------------------------------------------------
@@ -182,11 +191,27 @@ class PublishBOMGUI:
                     self._set_busy(False)
         except queue.Empty:
             pass
-        self.win.after(100, self._drain_queue)
+        # Matches gui/release_workflow.py — stop re-arming once the window is
+        # gone rather than relying on Tk to drop the pending callback.
+        try:
+            if self.win.winfo_exists():
+                self.win.after(100, self._drain_queue)
+        except tk.TclError:
+            pass
 
     def _set_busy(self, busy: bool) -> None:
         self._busy = busy
         self.scan_btn.configure(state="disabled" if busy else "normal")
+
+    def _invalidate_scan(self, *_args) -> None:
+        """Drop a scan that no longer matches what the fields say."""
+        if self._busy or not self.scan_result:
+            return
+        self.scan_result = []
+        for iid in self.tree.get_children():
+            self.tree.delete(iid)
+        self.submit_btn.configure(state="disabled")
+        self.summary_text.set("BOM changed - click Scan again.")
 
     # ----- Actions ----------------------------------------------------------
 
@@ -229,7 +254,11 @@ class PublishBOMGUI:
         self._set_busy(True)
         self._log(f"Scanning {os.path.basename(path)}")
 
-        top = self.top_assembly.get().strip()
+        # Normalize: pasting "CD-001608.iam" is a plausible gesture, and an
+        # unstripped extension can never match a file stem in Vault, so the
+        # top assembly would report "not in Vault" for a file that exists.
+        # file_stem is idempotent on a bare stem.
+        top = file_stem(self.top_assembly.get().strip())
 
         def runner() -> None:
             try:
@@ -251,19 +280,29 @@ class PublishBOMGUI:
         self.scan_result = rows
         for row in rows:
             part = f"{row.stem} (top)" if row.is_top else row.stem
-            tag = "gap" if row.status != publish_bom.STATUS_BOTH else ""
+            tags = () if row.status == publish_bom.STATUS_BOTH else ("gap",)
             self.tree.insert("", "end", values=(
                 part, row.description or "-",
                 row.model_name or "-", row.drawing_name or "-", row.status,
-            ), tags=(tag,))
+            ), tags=tags)
 
         s = publish_bom.summarize(rows)
-        self.summary_text.set(
-            f"{s['rows']} part(s) - {s['models']} model(s) - "
-            f"{s['drawings']} drawing(s) - {s['jobs']} job(s) to queue - "
-            f"{s['missing_drawing']} missing a drawing - "
-            f"{s['not_found']} not in Vault"
-        )
+        parts = [
+            f"{s['rows']} part(s)",
+            f"{s['models']} model(s)",
+            f"{s['drawings']} drawing(s)",
+            f"{s['jobs']} job(s) to queue",
+            f"{s['missing_drawing']} missing a drawing",
+            f"{s['not_found']} not in Vault",
+        ]
+        # Only shown when non-zero: these are unknowns rather than answers,
+        # and every row must be accounted for somewhere on this line.
+        for count, label in ((s["failed"], "lookup failed"),
+                             (s["truncated"], "search truncated"),
+                             (s["ambiguous"], "ambiguous")):
+            if count:
+                parts.append(f"{count} {label}")
+        self.summary_text.set(" - ".join(parts))
         self._log(f"Scan complete: {s['jobs']} job(s) ready to queue.", "ok")
         self._set_busy(False)
         self.submit_btn.configure(state="normal" if s["jobs"] else "disabled")

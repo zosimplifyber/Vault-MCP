@@ -135,6 +135,7 @@ def _find_column(columns, candidates) -> Optional[str]:
 
 def load_publish_rows(
     bom_file_path: str,
+    on_progress: Optional[ProgressFn] = None,
 ) -> tuple[list[PublishRow], Optional[str]]:
     """Parse a BOM export into the unique CAD file stems to publish.
 
@@ -146,6 +147,8 @@ def load_publish_rows(
     ``coerce_bom_dataframe`` runs, because that function maps ``Reference``
     onto ``Make`` and the distinction cannot be recovered afterwards.
     """
+    progress: ProgressFn = on_progress or (lambda _msg: None)
+
     if not os.path.isfile(bom_file_path):
         return [], f"BOM file not found: {bom_file_path}"
 
@@ -183,12 +186,12 @@ def load_publish_rows(
 
         stem = file_stem(rec.get(file_col))
         if not stem:
-            # A Make row with no file name cannot be published. Log it rather
-            # than dropping it silently — a blank Filename cell is a BOM
-            # problem worth noticing.
-            logger.info(
-                "Skipping BOM row %s: no file name", _norm(rec.get("Row Order"))
-            )
+            # A Make row with no file name cannot be published. Surface it in
+            # the dialog's log, not just the logger — a blank Filename cell is
+            # a BOM problem worth noticing, and nobody reads the log file.
+            label = _norm(rec.get("Row Order")) or "(unnumbered)"
+            logger.info("Skipping BOM row %s: no file name", label)
+            progress(f"  BOM row {label} has no file name; skipped.")
             continue
         key = stem.lower()
         if key in seen:
@@ -493,7 +496,7 @@ async def scan_bom(
     """
     progress: ProgressFn = on_progress or (lambda _msg: None)
 
-    rows, error = load_publish_rows(bom_file_path)
+    rows, error = load_publish_rows(bom_file_path, progress)
     if error:
         return [], error
 
@@ -519,13 +522,32 @@ async def scan_bom(
 
 
 def summarize(rows: list[ScanRow]) -> dict[str, int]:
-    """Counts for the GUI's summary line."""
+    """Counts for the GUI's summary line.
+
+    Counts off the resolved ids and a status *prefix*, never off the whole
+    status string. ``status`` is display text and carries a
+    "(multiple matches)" suffix when a stem was ambiguous — comparing it by
+    equality silently reported zero missing drawings for exactly the rows a
+    human most needs to look at, which is the one number this tool exists to
+    produce.
+    """
+    def _is(row: ScanRow, status: str) -> bool:
+        return row.status.startswith(status)
+
     return {
         "rows": len(rows),
         "models": sum(1 for r in rows if r.model_version_id),
         "drawings": sum(1 for r in rows if r.drawing_version_id),
         "jobs": sum(r.job_count for r in rows),
-        "missing_drawing": sum(1 for r in rows if r.status == STATUS_MODEL_ONLY),
-        "not_found": sum(1 for r in rows if r.status == STATUS_MISSING),
-        "failed": sum(1 for r in rows if r.status == STATUS_FAILED),
+        "missing_drawing": sum(1 for r in rows
+                               if r.model_version_id and not r.drawing_version_id),
+        # A confirmed miss only — a search that failed or came back truncated
+        # is an unknown, not an answer, and must not read as "go draw this".
+        "not_found": sum(1 for r in rows
+                         if not r.model_version_id and not r.drawing_version_id
+                         and not _is(r, STATUS_FAILED)
+                         and not _is(r, STATUS_TRUNCATED)),
+        "failed": sum(1 for r in rows if _is(r, STATUS_FAILED)),
+        "truncated": sum(1 for r in rows if _is(r, STATUS_TRUNCATED)),
+        "ambiguous": sum(1 for r in rows if r.ambiguous),
     }

@@ -1053,6 +1053,7 @@ class LauncherGUI:
             api=self.api, vault_id=self.vault_id,
             cfg=self.cfg, parent=self.root,
         )
+        self.status_var.set("Launching BOM → Publish Deliverables…")
 
     def _on_open_logs(self) -> None:
         log_dir = PROJECT_ROOT / "Log"

@@ -170,12 +170,16 @@ noticing rather than swallowing.
 `scan_rows(api, vault_id, rows, on_progress) -> ScanRow[]`
 
 One `api.search_files(query=stem, latest_only=True, search_sub_folders=True,
-limit=20)` per unique stem, at most 8 in flight behind an
+limit=SEARCH_LIMIT)` per unique stem, at most 8 in flight behind an
 `asyncio.Semaphore` — the cap `vault_state.MAX_CONCURRENCY` already uses.
 
 Filtering each response:
 
-- Keep only `entityType == "FileVersion"`.
+- Keep only `entityType == "FileVersion"`, compared case-insensitively but
+  still as an exact match. The looser `startswith("file")` that
+  `vault_state.py` uses would be wrong here: that module only reads lifecycle
+  state, whereas this one submits the id as a `FileVersionId`, and a master
+  id would publish the wrong thing.
 - Require the basename to **equal** the stem, case-insensitively. A substring
   match pulls in every assembly that references the part; this is the
   `_basename_matches` guard from `mfg_package.py:271-284`.

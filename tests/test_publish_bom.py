@@ -681,3 +681,39 @@ def test_summarize_counts_models_drawings_jobs_and_gaps():
     assert summary["missing_drawing"] == 1
     assert summary["not_found"] == 1
     assert summary["failed"] == 1
+
+
+def test_summarize_counts_a_gap_even_when_the_stem_was_ambiguous():
+    """The ambiguity suffix must not zero the one number the tool produces.
+
+    ``summarize`` used to compare ``status`` by equality, so a row whose stem
+    matched two models reported 'STEP only - no drawing (multiple matches)'
+    and was counted as no gap at all — silently under-reporting the parts that
+    need a drawing, which is the tool's entire product.
+    """
+    row = publish_bom.ScanRow(stem="CD-1", model_name="CD-1.iam",
+                              model_version_id="1")
+    row.status = publish_bom._status_for(row)
+    row.ambiguous = True
+    row.status += " (multiple matches)"
+
+    summary = publish_bom.summarize([row])
+
+    assert summary["missing_drawing"] == 1
+    assert summary["models"] == 1
+    assert summary["drawings"] == 0
+    assert summary["ambiguous"] == 1
+
+
+def test_summarize_separates_truncation_from_a_genuine_miss():
+    """A truncated search is not the same answer as 'no such file'."""
+    missing = _scanned(stem="CD-1", model="", model_id="",
+                       drawing="", drawing_id="")
+    truncated = _scanned(stem="CD-2", model="", model_id="",
+                         drawing="", drawing_id="")
+    truncated.status = publish_bom.STATUS_TRUNCATED
+
+    summary = publish_bom.summarize([missing, truncated])
+
+    assert summary["not_found"] == 1, "a truncated row is not a confirmed miss"
+    assert summary["truncated"] == 1
