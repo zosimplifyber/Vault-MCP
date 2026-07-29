@@ -1,22 +1,30 @@
 # tests/test_release_steps.py
-import os
-import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if ROOT not in sys.path:
-    sys.path.insert(0, ROOT)
+# Exact hex values, not just "starts with #" — a mistyped hex during a pure
+# copy/paste move is the single most likely defect here, and the palette is
+# the one thing this file most needs to catch.
+PALETTE_HEX = {
+    "DARK_BLUE":   "#1F3864",
+    "MID_BLUE":    "#2E75B6",
+    "PALE_BLUE":   "#EAF3FB",
+    "LIGHT_GRAY":  "#F2F2F2",
+    "GRAY_BDR":    "#CCCCCC",
+    "DARK_GRAY":   "#888888",
+    "WHITE":       "#FFFFFF",
+    "OLIVE_GREEN": "#D8E4BC",
+    "RUST_ORANGE": "#C0504D",
+    "WARN_AMBER":  "#B7791F",
+}
+PALETTE = list(PALETTE_HEX)
 
-PALETTE = [
-    "DARK_BLUE", "MID_BLUE", "PALE_BLUE", "LIGHT_GRAY", "GRAY_BDR",
-    "DARK_GRAY", "WHITE", "OLIVE_GREEN", "RUST_ORANGE", "WARN_AMBER",
-]
 
-
-def test_theme_exports_the_palette():
+def test_theme_exports_the_exact_palette_hex_values():
     from gui import theme
-    for name in PALETTE:
+    for name, expected in PALETTE_HEX.items():
         assert hasattr(theme, name), f"theme is missing {name}"
-        assert str(getattr(theme, name)).startswith("#")
+        assert getattr(theme, name) == expected, (
+            f"theme.{name} == {getattr(theme, name)!r}, expected {expected!r}"
+        )
 
 
 def test_theme_exports_the_shared_helpers():
@@ -26,7 +34,7 @@ def test_theme_exports_the_shared_helpers():
 
 
 def test_release_workflow_still_re_exports_the_palette():
-    """Eight modules import these from gui.release_workflow. Keep that working."""
+    """Six GUI modules import these from gui.release_workflow. Keep that working."""
     from gui import release_workflow, theme
     for name in PALETTE + ["_resource_path", "_pil_available"]:
         assert getattr(release_workflow, name) == getattr(theme, name)

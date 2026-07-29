@@ -36,13 +36,16 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
-# The palette lives in gui/theme.py. These re-exports exist because eight
-# modules still import the names from here; do not remove them without
-# updating every importer.
+# The palette lives in gui/theme.py. These re-exports exist because six
+# modules — gui.launcher, gui.purchasing, gui.mfg_package, gui.publish_bom,
+# gui.file_property_check, gui.purchasing_list_sync — still import the names
+# from here; do not remove them without updating every one of those six.
+# (app.py and scripts/release_workflow.py also import from this module, but
+# only for launch_gui, which this shim has nothing to do with.)
 from gui.theme import (  # noqa: F401,E402
     DARK_BLUE, MID_BLUE, PALE_BLUE, LIGHT_GRAY, GRAY_BDR, DARK_GRAY,
     WHITE, OLIVE_GREEN, RUST_ORANGE, WARN_AMBER,
-    PROJECT_ROOT, _pil_available, _resource_path,
+    _pil_available, _resource_path,
     PILImage, ImageTk,
 )
 
