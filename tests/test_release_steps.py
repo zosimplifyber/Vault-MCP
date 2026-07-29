@@ -1019,3 +1019,179 @@ def test_file_version_ids_handles_none_the_same_way_unresolved_files_does():
     assert release_steps.file_version_ids(None) == []
     assert release_steps.file_master_ids(None) == []
     assert release_steps.unresolved_files(None) == []
+
+
+# --- run_purchased_parts_list (Task 8 — Step 4 engine) --------------------
+
+
+def _install_list_sync(monkeypatch, *, report=None, connect_error=None):
+    """Stub the BOM parse, the SharePoint connect, and the sync call."""
+    seen = {"dry_runs": []}
+
+    def fake_connect():
+        if connect_error:
+            raise RuntimeError(connect_error)
+        return object()
+
+    def fake_add(client, df, *, dry_run=True, sources=None,
+                 update_existing=False):
+        seen["dry_runs"].append(dry_run)
+        base = {"missing": ["SF-001902", "SF-001905"], "checked": 42,
+                "already_present": 40, "existing_count": 900, "created": 0,
+                "updated": 0, "errors": [], "by_source": {"Buy": 2},
+                "rows": [], "dry_run": dry_run}
+        out = dict(base, **(report or {}))
+        if not dry_run:
+            out["created"] = len(out["missing"])
+        return out
+
+    monkeypatch.setattr(release_steps, "_list_sync_deps",
+                        lambda: (fake_connect, fake_add,
+                                 lambda _p: ("DF", None)))
+    return seen
+
+
+def test_purchased_parts_preview_is_a_dry_run(monkeypatch):
+    seen = _install_list_sync(monkeypatch)
+    out = release_steps.run_purchased_parts_list("C:/bom.xlsx")
+
+    assert out.ok is True
+    assert out.pending_apply is not None
+    assert seen["dry_runs"] == [True]          # nothing written
+    # Each addition is named, so ISO/DIN fasteners that never match are
+    # visible before they are added.
+    assert any("SF-001902" in text for text, _tag in out.lines)
+
+
+def test_purchased_parts_preview_never_writes_to_sharepoint(monkeypatch):
+    """Distinct from the dry-run-flag check above: the underlying add call
+    raises if it is ever invoked with dry_run=False during a preview, so a
+    bug that reaches the write path is caught even if nothing inspects the
+    dry_run flag it was handed."""
+    calls = {"connects": 0}
+
+    def fake_connect():
+        calls["connects"] += 1
+        return object()
+
+    def fake_add(client, df, *, dry_run=True, sources=None,
+                 update_existing=False):
+        if not dry_run:
+            raise AssertionError("preview must not perform a live write")
+        return {"missing": ["SF-001902"], "checked": 1, "already_present": 0,
+                "existing_count": 0, "created": 0, "updated": 0,
+                "errors": [], "by_source": {"Buy": 1}, "rows": [],
+                "dry_run": True}
+
+    monkeypatch.setattr(release_steps, "_list_sync_deps",
+                        lambda: (fake_connect, fake_add,
+                                 lambda _p: ("DF", None)))
+    out = release_steps.run_purchased_parts_list("C:/bom.xlsx")
+
+    assert out.ok is True
+    assert calls["connects"] == 1
+
+
+def test_purchased_parts_apply_writes(monkeypatch):
+    seen = _install_list_sync(monkeypatch)
+    applied = release_steps.run_purchased_parts_list("C:/bom.xlsx").pending_apply()
+
+    assert applied.ok is True
+    assert seen["dry_runs"] == [True, False]
+    assert "2 of 2" in applied.summary
+
+
+def test_purchased_parts_apply_reports_against_the_expected_count(monkeypatch):
+    """R2: 'created' must be judged against how many the preview said were
+    missing — a partial write (1 of 2 rows actually created, no errors
+    reported) must not read as success just because the errors list happens
+    to be empty."""
+    def fake_add(client, df, *, dry_run=True, sources=None,
+                 update_existing=False):
+        base = {"missing": ["SF-001902", "SF-001905"], "checked": 2,
+                "already_present": 0, "existing_count": 0, "updated": 0,
+                "errors": [], "by_source": {"Buy": 2}, "rows": [],
+                "dry_run": dry_run}
+        base["created"] = 0 if dry_run else 1     # only one really landed
+        return base
+
+    monkeypatch.setattr(release_steps, "_list_sync_deps",
+                        lambda: (lambda: object(), fake_add,
+                                 lambda _p: ("DF", None)))
+    applied = release_steps.run_purchased_parts_list("C:/bom.xlsx").pending_apply()
+
+    assert applied.ok is False
+    assert "1 of 2" in applied.summary
+
+
+def test_purchased_parts_apply_failure_does_not_lose_the_expected_count(
+    monkeypatch,
+):
+    """R4: the apply body must not let an exception escape, and the count of
+    what the preview expected must survive it — losing that record is worse
+    than the failure itself."""
+    def fake_add(client, df, *, dry_run=True, sources=None,
+                 update_existing=False):
+        if dry_run:
+            return {"missing": ["SF-001902", "SF-001905"], "checked": 2,
+                    "already_present": 0, "existing_count": 0, "created": 0,
+                    "updated": 0, "errors": [], "by_source": {"Buy": 2},
+                    "rows": [], "dry_run": True}
+        raise RuntimeError("SharePoint connection dropped mid-batch")
+
+    monkeypatch.setattr(release_steps, "_list_sync_deps",
+                        lambda: (lambda: object(), fake_add,
+                                 lambda _p: ("DF", None)))
+    applied = release_steps.run_purchased_parts_list("C:/bom.xlsx").pending_apply()
+
+    assert applied.ok is False
+    assert "2" in applied.summary      # the expected count survives the raise
+
+
+def test_purchased_parts_apply_refuses_a_second_call(monkeypatch):
+    seen = _install_list_sync(monkeypatch)
+    pending = release_steps.run_purchased_parts_list("C:/bom.xlsx").pending_apply
+
+    pending()
+    second = pending()
+
+    assert seen["dry_runs"] == [True, False]   # nothing submitted again
+    assert second.ok is False
+    assert second.pending_apply is None
+
+
+def test_purchased_parts_stages_nothing_when_list_is_current(monkeypatch):
+    _install_list_sync(monkeypatch, report={"missing": [], "by_source": {}})
+    out = release_steps.run_purchased_parts_list("C:/bom.xlsx")
+
+    assert out.ok is True
+    assert out.pending_apply is None           # nothing to apply
+    assert "0" in out.summary or "up to date" in out.summary.lower()
+
+
+def test_purchased_parts_explains_a_sharepoint_auth_failure(monkeypatch):
+    _install_list_sync(monkeypatch, connect_error="not signed in")
+    out = release_steps.run_purchased_parts_list("C:/bom.xlsx")
+
+    assert out.ok is False
+    assert "supplier_pricing probe" in out.summary
+
+
+def test_purchased_parts_surfaces_a_bom_parse_error(monkeypatch):
+    monkeypatch.setattr(
+        release_steps, "_list_sync_deps",
+        lambda: (lambda: object(), lambda *a, **k: {},
+                 lambda _p: (None, "Unsupported file type: .foo")))
+    out = release_steps.run_purchased_parts_list("C:/bom.foo")
+
+    assert out.ok is False
+    assert "Unsupported file type" in out.summary
+
+
+def test_purchased_parts_only_emits_known_tags(monkeypatch):
+    _install_list_sync(monkeypatch)
+    preview = release_steps.run_purchased_parts_list("C:/bom.xlsx")
+    applied = preview.pending_apply()
+    for outcome in (preview, applied):
+        for _text, tag in outcome.lines:
+            assert tag in release_steps.ALL_TAGS, f"unknown tag {tag!r}"

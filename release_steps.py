@@ -624,6 +624,130 @@ def run_release_files(
     )
 
 
+def _list_sync_deps():
+    """Return (connect_client, add_missing_bom_rows, bom_dataframe_from_file).
+
+    Bundled behind one seam so a single monkeypatch replaces the whole
+    SharePoint path in tests.
+    """
+    import bom_list_sync
+    from supplier_pricing.cli import _connect_client
+    return (_connect_client, bom_list_sync.add_missing_bom_rows,
+            bom_list_sync.bom_dataframe_from_file)
+
+
+# The non-interactive Graph connect fails this way when the token cache is
+# empty; the fix is a one-off interactive probe, so say so rather than
+# surfacing a bare "not signed in".
+_PROBE_HINT = ("Run once in a terminal to sign in:\n"
+               "    python -m supplier_pricing probe")
+
+
+def run_purchased_parts_list(
+    bom_path: str, *, buy_only: bool = True, update_existing: bool = False,
+) -> StepOutcome:
+    """Step 4 — add BOM parts missing from the Engineering Purchased Parts list.
+
+    Preview is a dry run that names every proposed addition. That matters:
+    the list is keyed on SF-###### numbers, so ISO/DIN fasteners in an
+    Inventor BOM never match and would otherwise be added silently as new
+    parts.
+    """
+    connect, add_rows, parse_bom = _list_sync_deps()
+
+    df, err = parse_bom(bom_path)
+    if err:
+        return StepOutcome(ok=False, summary=f"BOM could not be read: {err}",
+                           lines=[(f"  [fail] {err}", TAG_FAIL)])
+
+    sources = {"Buy", "Other"} if buy_only else None
+
+    def sync(dry_run: bool) -> dict[str, Any]:
+        client = connect()
+        return add_rows(client, df, dry_run=dry_run, sources=sources,
+                        update_existing=update_existing)
+
+    try:
+        report = sync(dry_run=True)
+    except Exception as exc:  # noqa: BLE001 — surfaced to the user verbatim
+        msg = str(exc)
+        if "not signed in" in msg.lower():
+            msg = f"{msg}\n{_PROBE_HINT}"
+        return StepOutcome(ok=False, summary=msg,
+                           lines=[(f"  [fail] {msg}", TAG_FAIL)])
+
+    missing = report.get("missing") or []
+    checked = report.get("checked", 0)
+    present = report.get("already_present", 0)
+
+    lines = [(f"  Dry run — {checked} BOM part(s) checked, {present} already "
+              f"listed, {len(missing)} new.", TAG_INFO)]
+    for name in missing:
+        lines.append((f"      + {name}", TAG_WARN))
+    if report.get("skipped_no_name"):
+        lines.append((f"  [warn] {report['skipped_no_name']} row(s) had no "
+                      f"file name and were skipped.", TAG_WARN))
+
+    if not missing:
+        return StepOutcome(
+            ok=True,
+            summary=f"Purchased Parts List is up to date — 0 of {checked} missing.",
+            lines=lines,
+        )
+
+    # Captured here, not re-derived inside apply() (R6): the approved count
+    # is the number the preview showed, and apply's own report is judged
+    # against that, never against itself.
+    expected = len(missing)
+    applied_once = False
+
+    def apply() -> StepOutcome:
+        nonlocal applied_once
+        if applied_once:
+            return StepOutcome(
+                ok=False,
+                summary=("Purchased Parts List: this preview was already "
+                         "applied — re-run step 4 for a fresh one."),
+                lines=[("  [warn] Already applied once this run — nothing "
+                        "submitted again.", TAG_WARN)],
+            )
+        applied_once = True
+        try:
+            applied = sync(dry_run=False)
+        except Exception as exc:  # noqa: BLE001 — a raise mid-write must not
+            # erase the record of how many rows the preview said were coming.
+            msg = (f"Purchased Parts List: the write failed before "
+                   f"confirming any result (expected {expected} of "
+                   f"{expected} new part(s)): {exc}")
+            return StepOutcome(ok=False, summary=msg,
+                               lines=[(f"  [fail] {exc}", TAG_FAIL)])
+
+        created = applied.get("created", 0)
+        errors = applied.get("errors") or []
+        # R2: 'created' is judged against 'expected', not against itself —
+        # a partial write (fewer created than the preview promised) must
+        # fail even when the errors list happens to be empty.
+        ok = created == expected and not errors
+        out = [(f"  [{'ok' if ok else 'fail'}] Added {created} of {expected} "
+                f"part(s) to the list.", TAG_PASS if ok else TAG_FAIL)]
+        for e in errors:
+            out.append((f"    [fail] {e.get('name')}: {e.get('error')}",
+                        TAG_FAIL))
+        return StepOutcome(
+            ok=ok,
+            summary=(f"Purchased Parts List: added {created} of {expected}, "
+                     f"{len(errors)} failed."),
+            lines=out,
+        )
+
+    return StepOutcome(
+        ok=True,
+        summary=(f"{len(missing)} part(s) missing from the list — click "
+                 f"Apply to add."),
+        lines=lines, pending_apply=apply,
+    )
+
+
 def _names_by_version_id(compliance: dict[str, Any]) -> dict[str, str]:
     """Map file-version id -> display name, for readable log lines."""
     names: dict[str, str] = {}
