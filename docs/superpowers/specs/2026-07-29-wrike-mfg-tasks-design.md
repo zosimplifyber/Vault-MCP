@@ -371,6 +371,13 @@ part we control; the probe covers the part we do not.
 
 Matches are reported `already exists - skipped`; new suppliers are created.
 
+If the existence query itself errors, the order is skipped rather than
+created — a duplicate board is worse than a missed one, and Wrike has no
+rollback. But that outcome is reported as its own thing, in a `check_errors`
+list, never as `already exists`. Conflating them would let a run where the
+API failed on every supplier read as "5 skipped, nothing to do", which is a
+clean no-op report for a run that did no work and checked nothing.
+
 ## GUI
 
 `tk.Toplevel` opened from the launcher with the live `api`, `vault_id` and the
