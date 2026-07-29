@@ -148,9 +148,19 @@ Purchasing workbook (.xlsx)
   `"Unmatched (n) — no price in reference: ..."` note below the table, after
   one blank row (`bom_purchasing.py:598-609`). Reading stops at the first
   fully blank row, and also at any row whose first cell begins with the note
-  prefix — which becomes a shared constant, `UNMATCHED_NOTE_PREFIX`, used by
-  writer and reader alike. Without this the note arrives as a phantom part
-  with a name and no supplier.
+  prefix — a shared constant, `UNMATCHED_NOTE_PREFIX`, used by writer and
+  reader alike.
+
+  Against today's writer the blank row is what actually stops the read; the
+  prefix check never fires, because the note is never adjacent to the data.
+  It is kept as defense-in-depth for the day the blank row goes away, and is
+  tested against a hand-built workbook that omits it — otherwise the guard
+  would be dead code with a test that passes whether or not it exists.
+- **Refuse a duplicated column.** Two header cells mapping to the same
+  canonical name is an error naming the column, not a silent last-one-wins.
+  These workbooks are hand-edited — filling in the supplier column is the
+  whole workflow — so a copy-pasted column is a plausible accident, and
+  quietly dropping a supplier column is the failure this tool least affords.
 - **Duplicate titles are aggregated.** A sheet lists the same part once per
   place it appears in the BOM. One line item per part per order: quantities
   sum, lead time takes the longest, other fields come from the first
