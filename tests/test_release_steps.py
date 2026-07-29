@@ -424,3 +424,110 @@ def test_property_check_is_not_ok_when_children_error_is_set(monkeypatch):
     # The result is still carried — this is forceable (property_check_blocked
     # governs whether steps 2/3 may proceed), so step 1 itself must not hide it.
     assert out.result is result
+
+
+# --- run_sync_properties (Task 6 — Step 2 engine) -------------------------
+#
+# This is the first step with a pending_apply. The "preview writes nothing"
+# test is the important one — the same pattern repeats for Task 7.
+
+
+class RecordingAPI:
+    """Fake VaultRestAPI that records job submissions instead of making them."""
+
+    def __init__(self):
+        self.submitted = []
+
+    async def submit_job(self, **kwargs):
+        self.submitted.append(kwargs)
+        return {"error": False, "data": {"job": {"id": str(len(self.submitted))}}}
+
+
+class NoWriteAPI:
+    """Fails the test if anything tries to write during a preview."""
+
+    async def submit_job(self, **kwargs):
+        raise AssertionError("preview must not submit jobs")
+
+
+def test_sync_preview_lists_files_and_writes_nothing():
+    c = _compliance(children=[("200", "20"), ("300", "30")])
+    out = release_steps.run_sync_properties(NoWriteAPI(), "V1", c)
+
+    assert out.ok is True
+    assert out.pending_apply is not None       # staged, not done
+    assert "3" in out.summary
+
+
+def test_sync_apply_submits_one_job_per_file_version():
+    api = RecordingAPI()
+    c = _compliance(children=[("200", "20"), ("300", "30")])
+
+    applied = release_steps.run_sync_properties(api, "V1", c).pending_apply()
+
+    assert applied.ok is True
+    assert applied.pending_apply is None       # terminal
+    assert [j["params"]["FileVersionId"] for j in api.submitted] == \
+        ["100", "200", "300"]
+
+
+def test_sync_uses_pascal_case_job_params():
+    """Vault's /jobs Params keys are case-sensitive PascalCase; camelCase is
+    accepted with a 200 and silently ignored."""
+    api = RecordingAPI()
+    release_steps.run_sync_properties(api, "V1", _compliance()).pending_apply()
+
+    assert "FileVersionId" in api.submitted[0]["params"]
+    assert api.submitted[0]["job_type"] == "Autodesk.Vault.SyncProperties"
+
+
+def test_sync_reports_a_failed_submission():
+    class HalfBrokenAPI:
+        def __init__(self):
+            self.calls = 0
+
+        async def submit_job(self, **kwargs):
+            self.calls += 1
+            if self.calls == 2:
+                return {"error": True, "data": "queue is disabled"}
+            return {"error": False, "data": {"job": {"id": "1"}}}
+
+    c = _compliance(children=[("200", "20")])
+    applied = release_steps.run_sync_properties(
+        HalfBrokenAPI(), "V1", c).pending_apply()
+
+    assert applied.ok is False
+    assert "1 failed" in applied.summary
+
+
+def test_sync_with_no_files_is_ok_and_stages_nothing():
+    out = release_steps.run_sync_properties(NoWriteAPI(), "V1", {})
+    assert out.ok is True
+    assert out.pending_apply is None
+
+
+def test_sync_preview_names_a_file_with_no_version_id_as_unsyncable():
+    """unresolved_files reports both 'version' and 'master' drops; step 2
+    (sync) only needs a version ID, so only 'version'/'both' drops are its
+    problem. A file that's merely missing a master ID syncs fine and is
+    step 3's concern — naming it here would make this preview lie."""
+    c = _compliance(children=[("", "30")])
+    c["children"][0]["file_name"] = "NoVersion.ipt"
+
+    out = release_steps.run_sync_properties(NoWriteAPI(), "V1", c)
+
+    assert any("NoVersion.ipt" in text for text, _tag in out.lines)
+
+
+def test_sync_preview_does_not_flag_a_file_missing_only_its_master_id():
+    """This file has a version ID, so it syncs fine — it belongs in the
+    'will be synced' list (untagged as a problem), not in a skipped/warning
+    line. Only a missing version ID is step 2's concern; a missing master ID
+    is step 3's."""
+    c = _compliance(children=[("200", "")])
+    c["children"][0]["file_name"] = "NoMaster.ipt"
+
+    out = release_steps.run_sync_properties(NoWriteAPI(), "V1", c)
+
+    assert not any("NoMaster.ipt" in text and tag == release_steps.TAG_WARN
+                   for text, tag in out.lines)

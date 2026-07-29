@@ -311,3 +311,88 @@ def run_property_check(
     summary = (f"Property Check: {passed}/{total} on the top file, "
                f"{len(bad_children)} of {len(children)} child file(s) failing.")
     return StepOutcome(ok=ok, summary=summary, lines=lines, result=result)
+
+
+def run_sync_properties(
+    api: Any, vault_id: str, compliance: dict[str, Any],
+) -> StepOutcome:
+    """Step 2 — queue Autodesk.Vault.SyncProperties for every file.
+
+    Preview lists the files; the apply submits. Job params must be PascalCase:
+    Vault's /jobs endpoint is case-sensitive there even though its JSON
+    response echoes camelCase.
+    """
+    import asyncio
+
+    version_ids = file_version_ids(compliance)
+    if not version_ids:
+        return StepOutcome(
+            ok=True, summary="No files to sync.",
+            lines=[("  [warn] No CAD files found — nothing to sync.", TAG_WARN)],
+        )
+
+    names = _names_by_version_id(compliance)
+    lines = [(f"  {len(version_ids)} file(s) will be synced:", TAG_INFO)]
+    lines += [(f"      · {names.get(fid, fid)}", TAG_DIM) for fid in version_ids]
+
+    # Files this step will drop must be named here. The preview is the human
+    # checkpoint; a file silently missing from the batch is a partial sync
+    # reported as success. Only report what THIS step drops — a file with a
+    # version ID but no master ID syncs fine and is step 3's problem, so
+    # claiming it will be skipped here would make the preview lie.
+    for name, missing in unresolved_files(compliance):
+        if missing in ("version", "both"):
+            lines.append(
+                (f"      ! {name}: no file-version ID — cannot be synced",
+                 TAG_WARN))
+
+    def apply() -> StepOutcome:
+        async def submit_all() -> tuple[int, int, list[tuple[str, str]]]:
+            ok_n = bad_n = 0
+            out: list[tuple[str, str]] = []
+            for fid in version_ids:
+                name = names.get(fid, fid)
+                resp = await api.submit_job(
+                    vault_id=vault_id,
+                    job_type="Autodesk.Vault.SyncProperties",
+                    params={"FileVersionId": fid},
+                    description=f"SyncProperties: {name}",
+                    priority=10,
+                )
+                if resp["error"]:
+                    out.append((f"    [fail] {name}: {resp['data']}", TAG_FAIL))
+                    bad_n += 1
+                else:
+                    data = resp["data"] or {}
+                    job_id = str((data.get("job") or {}).get("id")
+                                 or data.get("id") or "?")
+                    out.append((f"    [ok]   {name}  (job {job_id})", TAG_PASS))
+                    ok_n += 1
+            return ok_n, bad_n, out
+
+        ok_n, bad_n, out = asyncio.run(submit_all())
+        return StepOutcome(
+            ok=bad_n == 0,
+            summary=f"Sync Properties: {ok_n} queued, {bad_n} failed.",
+            lines=out,
+        )
+
+    return StepOutcome(
+        ok=True,
+        summary=f"{len(version_ids)} file(s) ready to sync — click Apply to queue.",
+        lines=lines, pending_apply=apply,
+    )
+
+
+def _names_by_version_id(compliance: dict[str, Any]) -> dict[str, str]:
+    """Map file-version id -> display name, for readable log lines."""
+    names: dict[str, str] = {}
+    info = compliance.get("info") or {}
+    top_id = str(info.get("file_version_id") or "")
+    if top_id:
+        names[top_id] = str(compliance.get("file_name") or top_id)
+    for child in compliance.get("children") or []:
+        cid = str(child.get("file_version_id") or "")
+        if cid:
+            names[cid] = str(child.get("file_name") or cid)
+    return names
