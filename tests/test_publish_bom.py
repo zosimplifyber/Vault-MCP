@@ -781,3 +781,61 @@ async def test_submit_defaults_still_queue_both_kinds():
     kinds = {("PDF" if "PDF" in j["job_type"] else "STEP")
              for j in api.submitted}
     assert kinds == {"PDF", "STEP"}
+
+
+def test_count_planned_jobs_breaks_down_by_kind():
+    rows = [
+        _scanned(),                                          # model + drawing
+        _scanned(stem="CD-2", drawing="", drawing_id=""),    # model only
+        _scanned(stem="CD-3", model="", model_id="",
+                 drawing="", drawing_id=""),                 # nothing
+    ]
+    assert publish_bom.count_planned_jobs(rows) == {
+        "pdf": 1, "step": 2, "total": 3}
+
+
+def test_count_planned_jobs_honors_the_type_flags():
+    rows = [_scanned(), _scanned(stem="CD-2", drawing="", drawing_id="")]
+
+    assert publish_bom.count_planned_jobs(rows, include_pdf=False) == {
+        "pdf": 0, "step": 2, "total": 2}
+    assert publish_bom.count_planned_jobs(rows, include_step=False) == {
+        "pdf": 1, "step": 0, "total": 1}
+    assert publish_bom.count_planned_jobs(
+        rows, include_pdf=False, include_step=False) == {
+        "pdf": 0, "step": 0, "total": 0}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("include_pdf,include_step", [
+    (True, True), (True, False), (False, True), (False, False),
+])
+async def test_the_predicted_count_matches_what_is_actually_submitted(
+    include_pdf, include_step
+):
+    """The label and the behavior must not be able to disagree.
+
+    A previous defect in this module had summarize() counting one way while
+    the code behaved another. This pins the count to reality across every
+    flag combination rather than trusting that they were written to match.
+    """
+    rows = [
+        _scanned(),
+        _scanned(stem="CD-2", model="CD-2.iam", model_id="7",
+                 drawing="", drawing_id=""),
+        _scanned(stem="CD-3", model="", model_id="",
+                 drawing="CD-3.idw", drawing_id="8"),
+    ]
+    predicted = publish_bom.count_planned_jobs(
+        rows, include_pdf=include_pdf, include_step=include_step)
+
+    api = FakeAPI()
+    result = await publish_bom.submit_jobs(
+        api, "1", rows, include_pdf=include_pdf, include_step=include_step)
+
+    assert result["submitted"] == predicted["total"]
+    assert len(api.submitted) == predicted["total"]
+    actual_pdf = sum(1 for j in api.submitted if "PDF" in j["job_type"])
+    actual_step = sum(1 for j in api.submitted if "STEP" in j["job_type"])
+    assert actual_pdf == predicted["pdf"]
+    assert actual_step == predicted["step"]

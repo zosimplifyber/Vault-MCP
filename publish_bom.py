@@ -389,6 +389,27 @@ def _planned_jobs(
     return jobs
 
 
+def count_planned_jobs(
+    rows: list[ScanRow],
+    *,
+    include_pdf: bool = True,
+    include_step: bool = True,
+) -> dict[str, int]:
+    """How many jobs ``submit_jobs`` would queue for ``rows``.
+
+    Implemented by calling ``_planned_jobs`` rather than re-deriving the rule,
+    so the number shown to the user cannot drift from the number submitted.
+    """
+    counts = {"pdf": 0, "step": 0, "total": 0}
+    for row in rows:
+        for kind, _name, _fvid in _planned_jobs(
+            row, include_pdf=include_pdf, include_step=include_step
+        ):
+            counts["pdf" if kind == "PDF" else "step"] += 1
+            counts["total"] += 1
+    return counts
+
+
 def _job_spec(kind: str, name: str, fvid: str) -> Optional[tuple[str, dict[str, str]]]:
     """JobType and Params for one job, or None if the extension doesn't fit.
 
