@@ -13,6 +13,7 @@ Fire and forget: jobs are queued, not polled. Watch them in Vault Explorer.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import queue
 import sys
@@ -41,6 +42,8 @@ from supplier_pricing.normalize import file_stem  # noqa: E402
 # Windows fonts, and this table already uses ASCII hyphens for that reason.
 CHECKED = "[x]"
 UNCHECKED = "[ ]"
+
+logger = logging.getLogger(__name__)
 
 
 class PublishBOMGUI:
@@ -77,6 +80,9 @@ class PublishBOMGUI:
         # that is what lets a selection survive a re-scan.
         self.selected: set[str] = set()
         self._prev_stems: set[str] = set()
+        # Latched once a run has been submitted; a second run needs a fresh
+        # Scan. Cleared by _on_scan and _invalidate_scan.
+        self._submitted = False
 
         self._build_ui()
 
@@ -167,20 +173,30 @@ class PublishBOMGUI:
         columns = ("sel", "part", "description", "model", "drawing", "status")
         self.tree = ttk.Treeview(
             table_frame, columns=columns, show="headings", height=10)
-        for key, label, width, anchor in (
-            ("sel", "", 34, "center"),
-            ("part", "Part", 120, "w"),
-            ("description", "Description", 190, "w"),
-            ("model", "Model", 160, "w"),
-            ("drawing", "Drawing", 160, "w"),
-            ("status", "Status", 165, "w"),
+        # These widths sum to under the tree's width at the window's declared
+        # 760 minsize, so nothing is clipped there. `stretch` only shares out
+        # SURPLUS width — it never shrinks a column below its set width — so
+        # oversized defaults would push Status off the right edge no matter
+        # what stretch said. The horizontal scrollbar below is the backstop
+        # for a user who drags a column wider.
+        for key, label, width, anchor, stretch in (
+            ("sel", "", 34, "center", False),
+            ("part", "Part", 105, "w", False),
+            ("description", "Description", 150, "w", True),
+            ("model", "Model", 135, "w", True),
+            ("drawing", "Drawing", 135, "w", True),
+            ("status", "Status", 140, "w", True),
         ):
             self.tree.heading(key, text=label)
-            self.tree.column(key, width=width, anchor=anchor, stretch=False)
+            self.tree.column(key, width=width, minwidth=width,
+                             anchor=anchor, stretch=stretch)
         vsb = ttk.Scrollbar(table_frame, orient="vertical",
                             command=self.tree.yview)
-        self.tree.configure(yscrollcommand=vsb.set)
+        hsb = ttk.Scrollbar(table_frame, orient="horizontal",
+                            command=self.tree.xview)
+        self.tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
         vsb.pack(side="right", fill="y")
+        hsb.pack(side="bottom", fill="x")
         self.tree.pack(side="left", fill="both", expand=True)
         self.tree.tag_configure("gap", foreground=RUST_ORANGE)
         self.tree.bind("<Button-1>", self._on_tree_click)
@@ -234,13 +250,24 @@ class PublishBOMGUI:
                     self._set_busy(False)
         except queue.Empty:
             pass
-        # Matches gui/release_workflow.py — stop re-arming once the window is
-        # gone rather than relying on Tk to drop the pending callback.
-        try:
-            if self.win.winfo_exists():
-                self.win.after(100, self._drain_queue)
-        except tk.TclError:
-            pass
+        except Exception:  # noqa: BLE001 — see below
+            # A handler that raises must not take the pump down with it. The
+            # re-arm lives in `finally` for the same reason: without it, one
+            # exception here stops the dialog processing any further log line,
+            # scan result or submit result, and _set_busy(False) never runs —
+            # a permanent freeze with only Close working.
+            logger.exception("publish-bom queue handler failed")
+            self._log("Internal error handling a background result; "
+                      "see the log file.", "err")
+            self._set_busy(False)
+        finally:
+            # Matches gui/release_workflow.py — stop re-arming once the window
+            # is gone rather than relying on Tk to drop the pending callback.
+            try:
+                if self.win.winfo_exists():
+                    self.win.after(100, self._drain_queue)
+            except tk.TclError:
+                pass
 
     def _set_busy(self, busy: bool) -> None:
         self._busy = busy
@@ -248,15 +275,24 @@ class PublishBOMGUI:
 
     def _invalidate_scan(self, *_args) -> None:
         """Drop a scan that no longer matches what the fields say."""
-        if self._busy or not self.scan_result:
+        if self._busy:
             return
-        self.scan_result = []
+
+        # Cleared before the has-results guard below, not after. A failed scan
+        # leaves scan_result empty while selected and _prev_stems still hold
+        # intent from the *previous* BOM; bailing early would carry that
+        # intent onto the next assembly and silently untick a part there.
         self.selected = set()
         self._prev_stems = set()
+        self._submitted = False
         self.queue_text.set("")
+        self.submit_btn.configure(state="disabled")
+
+        if not self.scan_result:
+            return
+        self.scan_result = []
         for iid in self.tree.get_children():
             self.tree.delete(iid)
-        self.submit_btn.configure(state="disabled")
         self.summary_text.set("BOM changed - click Scan again.")
 
     # ----- Selection --------------------------------------------------------
@@ -308,7 +344,12 @@ class PublishBOMGUI:
             include_pdf=self.want_pdf.get(),
             include_step=self.want_step.get(),
         )
-        if self.scan_result:
+        if self._submitted:
+            # Past tense, and never a live count: this run is over, and a
+            # present-tense "Queueing N" beside "DONE - N job(s) queued"
+            # reads as though something were still pending.
+            self.queue_text.set("Submitted - click Scan to start a new run.")
+        elif self.scan_result:
             self.queue_text.set(
                 f"Queueing {counts['total']} job(s): {counts['pdf']} PDF + "
                 f"{counts['step']} STEP  "
@@ -316,8 +357,14 @@ class PublishBOMGUI:
             )
         else:
             self.queue_text.set("")
+        # _submitted is consulted here, not only in _render_submit, because
+        # this method is the sole authority on the button's state. Disabling
+        # the button over there alone would be undone by the next tick, type
+        # toggle or bulk click — and re-queueing a whole run against the job
+        # server is not something a stray click should be able to do.
         self.submit_btn.configure(
-            state="normal" if counts["total"] and not self._busy else "disabled"
+            state="normal" if (counts["total"] and not self._busy
+                               and not self._submitted) else "disabled"
         )
 
     def _set_selection(self, stems: set[str]) -> None:
@@ -387,6 +434,11 @@ class PublishBOMGUI:
 
         self.submit_btn.configure(state="disabled")
         self.scan_result = []
+        # A run is over once a new scan starts, and the queue line describes a
+        # result that no longer exists — leaving it up during a ten-search scan
+        # states a present-tense intention that is not true.
+        self._submitted = False
+        self.queue_text.set("")
         for iid in self.tree.get_children():
             self.tree.delete(iid)
 
@@ -416,6 +468,12 @@ class PublishBOMGUI:
         threading.Thread(target=runner, daemon=True, name="publish-bom-scan").start()
 
     def _render_scan(self, rows: list[publish_bom.ScanRow]) -> None:
+        # Clear the table here rather than relying on the caller having done
+        # it. tree.insert(iid=...) raises on a duplicate id, and this runs
+        # inside the queue pump — an escaping TclError would kill the pump.
+        for iid in self.tree.get_children():
+            self.tree.delete(iid)
+
         new_stems = {r.stem for r in rows}
         self.selected = publish_bom.merge_selection(
             self.selected, self._prev_stems, new_stems)
@@ -441,6 +499,8 @@ class PublishBOMGUI:
             f"{s['missing_drawing']} missing a drawing",
             f"{s['not_found']} not in Vault",
         ]
+        # Only shown when non-zero: these are unknowns rather than answers,
+        # and every row must be accounted for somewhere on this line.
         for count, label in ((s["failed"], "lookup failed"),
                              (s["truncated"], "search truncated"),
                              (s["ambiguous"], "ambiguous")):
@@ -458,12 +518,17 @@ class PublishBOMGUI:
         if self._busy or not self.scan_result or not self._require_session():
             return
         rows = [r for r in self.scan_result if r.stem in self.selected]
+        # Read the toggles ONCE, here, and close over the result. Reading them
+        # again on the worker thread would let a flip made while the
+        # confirmation dialog is open submit something other than what was
+        # confirmed — and cross-thread Tk reads raise outright if the
+        # interpreter is torn down mid-submit.
+        want_pdf = self.want_pdf.get()
+        want_step = self.want_step.get()
         counts = publish_bom.count_planned_jobs(
-            rows,
-            include_pdf=self.want_pdf.get(),
-            include_step=self.want_step.get(),
-        )
+            rows, include_pdf=want_pdf, include_step=want_step)
         if not counts["total"]:
+            self._log("Nothing selected to queue.", "dim")
             return
         if not messagebox.askyesno(
             "Queue jobs?",
@@ -485,8 +550,8 @@ class PublishBOMGUI:
                 result = asyncio.run(publish_bom.submit_jobs(
                     self.api, self.vault_id, rows,
                     on_progress=lambda m: self.q.put(("log", m)),
-                    include_pdf=self.want_pdf.get(),
-                    include_step=self.want_step.get(),
+                    include_pdf=want_pdf,
+                    include_step=want_step,
                 ))
                 self.q.put(("submit_done", result))
             except Exception as exc:  # noqa: BLE001
@@ -501,8 +566,13 @@ class PublishBOMGUI:
         if result["failed"]:
             self._log(f"  {result['failed']} submission(s) failed.", "err")
         self._log("Watch the queue in Vault Explorer.", "dim")
-        self._set_busy(False)
         # A second run needs a fresh Scan — the guard against queueing twice.
+        # Latched rather than merely disabling the button, because
+        # _update_queue_line owns that button and would re-enable it on the
+        # next tick or type toggle.
+        self._submitted = True
+        self.queue_text.set("")
+        self._set_busy(False)
         self.submit_btn.configure(state="disabled")
 
 

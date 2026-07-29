@@ -405,7 +405,12 @@ def count_planned_jobs(
         for kind, _name, _fvid in _planned_jobs(
             row, include_pdf=include_pdf, include_step=include_step
         ):
-            counts["pdf" if kind == "PDF" else "step"] += 1
+            if kind == "PDF":
+                counts["pdf"] += 1
+            elif kind == "STEP":
+                counts["step"] += 1
+            else:  # pragma: no cover — a third kind would need a bucket
+                raise ValueError(f"unknown job kind {kind!r}")
             counts["total"] += 1
     return counts
 

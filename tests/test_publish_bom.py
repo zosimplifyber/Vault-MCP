@@ -762,14 +762,24 @@ async def test_submit_with_step_disabled_queues_only_pdf_jobs():
 
 @pytest.mark.asyncio
 async def test_submit_with_both_types_disabled_does_nothing_at_all():
-    """Not even the advisory queue check — there is no work to annotate."""
-    api = FakeAPI()
+    """Not even the advisory queue check — there is no work to annotate.
+
+    The queue check's only observable effect is its warning, so a disabled
+    queue plus a silent progress log is what proves the early return sits
+    above the check rather than below it. Asserting only on ``api.submitted``
+    would pass either way, and would not be testing this docstring at all.
+    """
+    messages = []
+    api = FakeAPI(queue_enabled=False)
     result = await publish_bom.submit_jobs(api, "1", [_scanned()],
+                                           on_progress=messages.append,
                                            include_pdf=False,
                                            include_step=False)
 
     assert api.submitted == []
     assert result == {"submitted": 0, "failed": 0, "jobs": []}
+    assert messages == [], (
+        "the queue was checked despite there being nothing to submit")
 
 
 @pytest.mark.asyncio
@@ -841,18 +851,26 @@ async def test_the_predicted_count_matches_what_is_actually_submitted(
     assert actual_step == predicted["step"]
 
 
-def test_merge_selection_keeps_a_ticked_part_ticked():
+def test_merge_selection_keeps_each_part_as_the_user_left_it():
+    """CD-1 was ticked and stays ticked; CD-2 was not and stays not."""
     result = publish_bom.merge_selection(
         previous={"CD-1"}, previous_stems={"CD-1", "CD-2"},
         new_stems={"CD-1", "CD-2"})
     assert result == {"CD-1"}
 
 
-def test_merge_selection_keeps_an_unticked_part_unticked():
-    result = publish_bom.merge_selection(
-        previous={"CD-1"}, previous_stems={"CD-1", "CD-2"},
-        new_stems={"CD-1", "CD-2"})
-    assert "CD-2" not in result
+def test_merge_selection_does_not_mutate_what_it_was_given():
+    """The dialog holds these sets; returning a fresh one keeps it honest."""
+    previous = {"CD-1"}
+    previous_stems = {"CD-1", "CD-2"}
+    new_stems = {"CD-1", "CD-2", "CD-3"}
+
+    result = publish_bom.merge_selection(previous, previous_stems, new_stems)
+
+    assert previous == {"CD-1"}
+    assert previous_stems == {"CD-1", "CD-2"}
+    assert new_stems == {"CD-1", "CD-2", "CD-3"}
+    assert result is not previous
 
 
 def test_merge_selection_ticks_a_part_that_is_new_this_scan():
