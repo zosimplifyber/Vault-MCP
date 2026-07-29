@@ -7,6 +7,7 @@ This is what `app.py --gui` opens. From here the user can:
   * see the MCP server status and start/stop it (SSE on the configured port)
   * launch the Release Workflow wizard with the live session pre-attached
   * launch Property Check — file-name-driven property compliance
+  * launch BOM → Publish Deliverables — queue PDF/STEP jobs from a BOM
   * open the Log folder where readiness reports get saved
 
 Same Simplifyber palette as the workflow wizard. The dashboard owns the Tk
@@ -626,6 +627,16 @@ class LauncherGUI:
         )
         self._tool_row(
             body,
+            "BOM → Publish Deliverables",
+            "Upload an exported BOM and queue Vault jobs that publish a PDF "
+            "drawing and a STEP file for every Make part, plus the top "
+            "assembly. Scan first to see which parts have no drawing.",
+            "Open Publisher",
+            self._on_open_publish_bom,
+            primary=False,
+        )
+        self._tool_row(
+            body,
             "Open Reports Folder",
             "Browse saved Markdown readiness reports and MCP server logs.",
             "Open Folder",
@@ -1021,6 +1032,27 @@ class LauncherGUI:
             return
         run_property_check(parent=self.root)
         self.status_var.set("Launching Property Check…")
+
+    def _on_open_publish_bom(self) -> None:
+        if not (self.api and self.vault_id):
+            messagebox.showwarning(
+                "Not signed in",
+                "Click Reconnect first — the deliverable publisher needs an "
+                "authenticated Vault session.",
+                parent=self.root,
+            )
+            return
+        try:
+            from gui.publish_bom import launch_gui as launch_publish_gui
+        except ImportError as exc:
+            messagebox.showerror(
+                "Publisher unavailable", str(exc), parent=self.root,
+            )
+            return
+        launch_publish_gui(
+            api=self.api, vault_id=self.vault_id,
+            cfg=self.cfg, parent=self.root,
+        )
 
     def _on_open_logs(self) -> None:
         log_dir = PROJECT_ROOT / "Log"
