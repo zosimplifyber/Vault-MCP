@@ -717,3 +717,67 @@ def test_summarize_separates_truncation_from_a_genuine_miss():
 
     assert summary["not_found"] == 1, "a truncated row is not a confirmed miss"
     assert summary["truncated"] == 1
+
+
+# --------------------------------------------------------------------------- selection
+
+def test_planned_jobs_honors_each_type_flag():
+    row = _scanned()   # has both a model and a drawing
+
+    both = publish_bom._planned_jobs(row)
+    assert {k for k, _n, _i in both} == {"PDF", "STEP"}
+
+    step_only = publish_bom._planned_jobs(row, include_pdf=False)
+    assert {k for k, _n, _i in step_only} == {"STEP"}
+
+    pdf_only = publish_bom._planned_jobs(row, include_step=False)
+    assert {k for k, _n, _i in pdf_only} == {"PDF"}
+
+    neither = publish_bom._planned_jobs(row, include_pdf=False,
+                                        include_step=False)
+    assert neither == []
+
+
+@pytest.mark.asyncio
+async def test_submit_with_pdf_disabled_queues_only_step_jobs():
+    api = FakeAPI()
+    result = await publish_bom.submit_jobs(api, "1", [_scanned()],
+                                           include_pdf=False)
+
+    assert len(api.submitted) == 1
+    assert "STEP" in api.submitted[0]["job_type"]
+    assert result["submitted"] == 1
+
+
+@pytest.mark.asyncio
+async def test_submit_with_step_disabled_queues_only_pdf_jobs():
+    api = FakeAPI()
+    result = await publish_bom.submit_jobs(api, "1", [_scanned()],
+                                           include_step=False)
+
+    assert len(api.submitted) == 1
+    assert "PDF" in api.submitted[0]["job_type"]
+    assert result["submitted"] == 1
+
+
+@pytest.mark.asyncio
+async def test_submit_with_both_types_disabled_does_nothing_at_all():
+    """Not even the advisory queue check — there is no work to annotate."""
+    api = FakeAPI()
+    result = await publish_bom.submit_jobs(api, "1", [_scanned()],
+                                           include_pdf=False,
+                                           include_step=False)
+
+    assert api.submitted == []
+    assert result == {"submitted": 0, "failed": 0, "jobs": []}
+
+
+@pytest.mark.asyncio
+async def test_submit_defaults_still_queue_both_kinds():
+    """Backward compatibility: every existing caller passes no flags."""
+    api = FakeAPI()
+    await publish_bom.submit_jobs(api, "1", [_scanned()])
+
+    kinds = {("PDF" if "PDF" in j["job_type"] else "STEP")
+             for j in api.submitted}
+    assert kinds == {"PDF", "STEP"}

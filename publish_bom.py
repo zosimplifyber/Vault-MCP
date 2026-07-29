@@ -366,12 +366,25 @@ def _queue_is_disabled(data: Any) -> bool:
     return False
 
 
-def _planned_jobs(row: ScanRow) -> list[tuple[str, str, str]]:
-    """(kind, file name, file version id) for each job this row implies."""
+def _planned_jobs(
+    row: ScanRow,
+    *,
+    include_pdf: bool = True,
+    include_step: bool = True,
+) -> list[tuple[str, str, str]]:
+    """(kind, file name, file version id) for each job this row implies.
+
+    The single place that decides what a row means. ``count_planned_jobs``
+    calls this rather than re-deriving the rule, so a displayed count cannot
+    drift from what is actually submitted.
+
+    The flags are the user's output-type choice. They default to permissive so
+    that every caller predating the selection feature behaves unchanged.
+    """
     jobs: list[tuple[str, str, str]] = []
-    if row.drawing_version_id:
+    if include_pdf and row.drawing_version_id:
         jobs.append(("PDF", row.drawing_name, row.drawing_version_id))
-    if row.model_version_id:
+    if include_step and row.model_version_id:
         jobs.append(("STEP", row.model_name, row.model_version_id))
     return jobs
 
@@ -416,6 +429,8 @@ async def submit_jobs(
     on_progress: Optional[ProgressFn] = None,
     *,
     priority: int = 10,
+    include_pdf: bool = True,
+    include_step: bool = True,
 ) -> dict[str, Any]:
     """Queue one job per resolved file. Fire and forget — nothing is polled.
 
@@ -423,9 +438,17 @@ async def submit_jobs(
     readable and the queue ordered. A failed submit is logged and counted; the
     loop continues.
 
+    ``include_pdf`` / ``include_step`` are the user's output-type choice.
+    Both default to True, which is the pre-selection behavior.
+
     Returns ``{"submitted": int, "failed": int, "jobs": [...]}``.
     """
     progress: ProgressFn = on_progress or (lambda _msg: None)
+
+    # Nothing to do, so do not even run the advisory queue check — a warning
+    # about a queue we are not going to use is noise.
+    if not (include_pdf or include_step):
+        return {"submitted": 0, "failed": 0, "jobs": []}
 
     try:
         queue_resp = await api.get_job_queue_enabled(vault_id=vault_id)
@@ -443,7 +466,9 @@ async def submit_jobs(
     jobs: list[dict[str, str]] = []
 
     for row in scan_rows_in:
-        for kind, name, fvid in _planned_jobs(row):
+        for kind, name, fvid in _planned_jobs(
+            row, include_pdf=include_pdf, include_step=include_step
+        ):
             spec = _job_spec(kind, name, fvid)
             if spec is None:
                 logger.warning(
