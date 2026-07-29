@@ -26,6 +26,7 @@ Launch:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import queue
@@ -56,7 +57,8 @@ from gui.theme import (  # noqa: F401,E402
 
 # The item-based SearchDialog lives in gui/search_dialog.py and belongs to
 # gui.mfg_package now. This wizard works from file names, so it does not import
-# it — it gets its own FileSearchDialog. Do not add a re-export here.
+# it — FileSearchDialog at the bottom of this module is its replacement. Do not
+# add a re-export here, and do not repoint search_dialog.py at search_files.
 
 # Every step runs through release_steps — the headless engines. The wizard
 # holds no Vault logic of its own: check_item_properties and the item-based
@@ -773,11 +775,13 @@ class ReleaseWorkflowGUI:
         if self.busy:
             messagebox.showwarning("Busy", "Wait for the current step to finish.")
             return
+        # Reset the *workflow*, not the connection. The wizard has no sign-in
+        # of its own any more — the launcher (or app.py --gui) hands it a
+        # session — so clearing self.api here would leave the window unable to
+        # run a single Vault step and no way to get back. set_top_file() calls
+        # this on every pick from the search dialog, which made that a
+        # one-click brick.
         self.compliance = None
-        self.api = None
-        self.vault_id = ""
-        self.access_token = ""
-        self.cfg = {}
         self._clear_pending()
         for num in self.statuses:
             self._update_step_label(num, STATUS_PENDING)
@@ -1052,28 +1056,406 @@ class ReleaseWorkflowGUI:
     # ----- Vault search dialog ---------------------------------------------
 
     def _open_search_dialog(self) -> None:
-        """Placeholder until ``FileSearchDialog`` lands.
+        """Open the wizard's own file search.
 
-        The old item-based ``SearchDialog`` (now gui/search_dialog.py, owned by
-        gui.mfg_package) returns a *part number*; this field wants a *file
-        name*. Wiring the two together would silently put a value in the box
-        that step 1 can never resolve, so say so instead of guessing.
+        Deliberately NOT the item ``SearchDialog`` in gui/search_dialog.py:
+        that one belongs to MFG Order Package and hands back a *part number*,
+        and this field wants a *file name*. Feeding one to the other would
+        silently put a value in the box that step 1 can never resolve.
         """
         if self.busy:
             messagebox.showwarning(
                 "Busy", "Wait for the current step to finish before searching.")
             return
-        messagebox.showinfo(
-            "File search not wired up yet",
-            "Type the top file name — e.g. CD-001659.iam — into the Top File "
-            "box for now. The Vault file search dialog is not connected yet.",
-        )
+        if not self._ensure_signed_in():
+            messagebox.showwarning(
+                "Not signed in",
+                "Searching Vault needs a session. Open the workflow from the "
+                "launcher, or click Reconnect there first.")
+            return
+        FileSearchDialog(self)
+
+    def set_top_file(self, file_name: str) -> None:
+        """Hook FileSearchDialog calls when the user picks a file.
+
+        Reset first, then set the var. Reversing it means ``_on_reset``
+        overwrites the status line with "Reset. Ready." and the user never
+        sees which file they just picked — and if ``_on_reset`` ever grows to
+        clear the inputs (it clears every other piece of run state already),
+        reversing it would throw the pick away outright.
+        """
+        self._on_reset()
+        self.top_file_var.set(file_name)
+        self.status_var.set(
+            f"Top file set to {file_name}. Click 'Run next step' to begin.")
 
     # NOTE: the old ``set_part_number`` hook is deliberately gone. It existed
     # only to serve the item ``SearchDialog``, which moved out to
     # gui/search_dialog.py and belongs to gui.mfg_package (which has its own
-    # copy of the hook). The wizard's replacement, ``set_top_file``, arrives
-    # with FileSearchDialog. Nothing in the repo calls this class's version.
+    # copy of the hook). Nothing in the repo calls this class's version.
+
+
+# ---------------------------------------------------------------------------
+# The wizard's file search dialog
+# ---------------------------------------------------------------------------
+
+
+def _summarise_file_for_search(record: dict[str, Any]) -> dict[str, str]:
+    """Pick out the fields the search dialog shows for a file record.
+
+    Vault returns file properties either flattened at the root or nested under
+    ``properties``; this normalises both. Anything genuinely absent stays an
+    empty string — the Treeview must show a blank cell rather than a
+    plausible-looking value the record never carried.
+    """
+    props = record.get("properties")
+    props = props if isinstance(props, dict) else {}
+
+    def pick(*keys: str, default: str = "") -> str:
+        for source in (record, props):
+            for k in keys:
+                v = source.get(k)
+                if v not in (None, ""):
+                    return str(v)
+        return default
+
+    return {
+        "file_name": pick("name", "Name", "fileName"),
+        "revision":  pick("revision", "Revision"),
+        "state":     pick("state", "State", "lifecycleState"),
+        "category":  pick("category", "Category Name", "categoryName"),
+        "folder":    pick("folderPath", "Folder Path", "path"),
+    }
+
+
+class FileSearchDialog:
+    """Modal Vault **file** search — query box, results table, pick a file.
+
+    The wizard's counterpart to gui/search_dialog.py's item ``SearchDialog``.
+    It is a separate class on purpose: that one belongs to MFG Order Package
+    and genuinely wants ``api.search_items`` and a part number back. This one
+    calls ``api.search_files`` and hands a *file name* to
+    ``parent.set_top_file``. Do not merge them.
+
+    The threading shape — worker thread, ``queue.Queue``, drain on the Tk
+    thread via ``parent.root.after`` — is copied from ``SearchDialog``
+    deliberately: no Tk call may happen off the main thread.
+    """
+
+    COLUMNS = [
+        ("file_name",   "File Name",   220),
+        ("revision",    "Rev",          50),
+        ("state",       "State",       130),
+        ("category",    "Category",    170),
+        ("folder",      "Folder",      280),
+    ]
+
+    def __init__(self, parent_gui: Any) -> None:
+        self.parent = parent_gui
+        self.results: list[dict[str, Any]] = []
+        self.busy = False
+        self.q: queue.Queue[tuple[str, Any]] = queue.Queue()
+        self._build_window()
+        # Pre-fill from the Top File box so "search for what I have" is one
+        # click plus Enter.
+        existing = parent_gui.top_file_var.get().strip()
+        if existing:
+            self.query_var.set(existing)
+        self.query_entry.focus_set()
+        self.parent.root.after(100, self._drain_queue)
+
+    # ----- Window construction ---------------------------------------------
+
+    def _build_window(self) -> None:
+        self.win = tk.Toplevel(self.parent.root)
+        self.win.title("Search Vault Files")
+        self.win.geometry("920x520")
+        self.win.minsize(640, 360)
+        self.win.configure(bg=LIGHT_GRAY)
+        self.win.transient(self.parent.root)
+        self.win.grab_set()
+        self.win.protocol("WM_DELETE_WINDOW", self._on_cancel)
+
+        hdr = tk.Frame(self.win, bg=DARK_BLUE, height=44)
+        hdr.pack(fill="x")
+        hdr.pack_propagate(False)
+        tk.Label(
+            hdr, text="  Search Vault Files",
+            bg=DARK_BLUE, fg=WHITE,
+            font=("Arial", 12, "bold"),
+            anchor="w", padx=12,
+        ).pack(side="left", fill="y")
+        tk.Frame(self.win, bg=MID_BLUE, height=2).pack(fill="x")
+
+        # Query bar
+        bar = tk.Frame(self.win, bg=LIGHT_GRAY, padx=14, pady=12)
+        bar.pack(fill="x")
+        tk.Label(
+            bar, text="Query",
+            bg=LIGHT_GRAY, fg=DARK_BLUE,
+            font=("Arial", 9, "bold"),
+        ).pack(side="left", padx=(0, 6))
+
+        self.query_var = tk.StringVar()
+        self.query_entry = tk.Entry(
+            bar, textvariable=self.query_var,
+            font=("Arial", 10),
+            bg=WHITE, relief="solid", bd=1,
+            highlightthickness=1,
+            highlightbackground=GRAY_BDR,
+            highlightcolor=MID_BLUE,
+        )
+        self.query_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        self.query_entry.bind("<Return>", lambda _e: self._do_search())
+
+        self.search_btn = self.parent._brand_button(
+            bar, "Search", self._do_search, primary=True,
+        )
+        self.search_btn.pack(side="left", padx=(0, 6))
+
+        self.limit_var = tk.StringVar(value="50")
+        tk.Label(
+            bar, text="Limit",
+            bg=LIGHT_GRAY, fg=DARK_BLUE, font=("Arial", 9),
+        ).pack(side="left", padx=(8, 4))
+        tk.Entry(
+            bar, textvariable=self.limit_var, width=5,
+            font=("Arial", 10), bg=WHITE,
+            relief="solid", bd=1,
+            highlightthickness=1, highlightbackground=GRAY_BDR,
+            highlightcolor=MID_BLUE,
+        ).pack(side="left")
+
+        # Results table
+        body = tk.Frame(self.win, bg=LIGHT_GRAY, padx=14, pady=0)
+        body.pack(fill="both", expand=True, pady=(0, 10))
+
+        style = ttk.Style(self.win)
+        # 'clam' is the only built-in ttk theme that respects every colour
+        # option on Treeview headings — the native Windows theme ignores them.
+        try:
+            style.theme_use("clam")
+        except tk.TclError:
+            pass
+        style.configure(
+            "Vault.Treeview",
+            background=WHITE, fieldbackground=WHITE,
+            foreground="#222222",
+            rowheight=24, borderwidth=0,
+            font=("Arial", 10),
+        )
+        style.configure(
+            "Vault.Treeview.Heading",
+            background=DARK_BLUE, foreground=WHITE,
+            font=("Arial", 10, "bold"),
+            relief="flat",
+        )
+        style.map(
+            "Vault.Treeview",
+            background=[("selected", MID_BLUE)],
+            foreground=[("selected", WHITE)],
+        )
+        style.map(
+            "Vault.Treeview.Heading",
+            background=[("active", MID_BLUE)],
+        )
+
+        col_ids = [c[0] for c in self.COLUMNS]
+        self.tree = ttk.Treeview(
+            body, columns=col_ids, show="headings",
+            style="Vault.Treeview", selectmode="browse",
+        )
+        for cid, label_text, width in self.COLUMNS:
+            self.tree.heading(cid, text=label_text)
+            self.tree.column(cid, width=width, anchor="w", stretch=True)
+        self.tree.tag_configure("alt", background=PALE_BLUE)
+
+        ys = ttk.Scrollbar(body, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=ys.set)
+        self.tree.pack(side="left", fill="both", expand=True)
+        ys.pack(side="right", fill="y")
+
+        self.tree.bind("<Double-1>", lambda _e: self._on_use_selected())
+        self.tree.bind("<Return>",   lambda _e: self._on_use_selected())
+
+        # Action bar
+        actions = tk.Frame(self.win, bg=LIGHT_GRAY, padx=14, pady=10)
+        actions.pack(fill="x")
+        self.use_btn = self.parent._brand_button(
+            actions, "Use selected", self._on_use_selected, primary=True,
+        )
+        self.use_btn.pack(side="left", padx=(0, 8))
+        self.parent._brand_button(
+            actions, "Cancel", self._on_cancel, primary=False,
+        ).pack(side="left")
+
+        # Status bar
+        self.status_var = tk.StringVar(
+            value="Enter a file name or keyword (e.g. CD-001659) and press Enter."
+        )
+        bar2 = tk.Frame(self.win, bg=PALE_BLUE,
+                        highlightthickness=1, highlightbackground=GRAY_BDR)
+        bar2.pack(fill="x", side="bottom")
+        tk.Label(
+            bar2, textvariable=self.status_var,
+            bg=PALE_BLUE, fg=DARK_BLUE,
+            font=("Arial", 9), anchor="w",
+            padx=12, pady=4,
+        ).pack(fill="x", side="left", expand=True)
+
+    # ----- Search execution -------------------------------------------------
+
+    def _do_search(self) -> None:
+        if self.busy:
+            return
+        query = self.query_var.get().strip()
+        if not query:
+            messagebox.showwarning(
+                "Missing query", "Type a file name or keyword to search for.",
+                parent=self.win,
+            )
+            return
+        try:
+            limit = max(1, int(self.limit_var.get().strip() or "50"))
+        except ValueError:
+            limit = 50
+
+        self.busy = True
+        self.search_btn.configure(state="disabled")
+        self.status_var.set(f"Searching for {query!r} …")
+        self._clear_results()
+
+        def worker() -> None:
+            try:
+                if not self.parent._ensure_signed_in():
+                    self._post_done(
+                        error="No Vault session — reconnect from the launcher.")
+                    return
+                resp = asyncio.run(self.parent.api.search_files(
+                    vault_id=self.parent.vault_id,
+                    query=query,
+                    limit=limit,
+                ))
+            except Exception as exc:  # noqa: BLE001
+                self._post_done(error=f"{type(exc).__name__}: {exc}")
+                return
+            if resp.get("error"):
+                self._post_done(error=str(resp.get("data")))
+                return
+            rows = self._extract_rows(resp.get("data"))
+            self._post_done(rows=rows, query=query)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _post_done(self, *, rows: Optional[list[dict[str, Any]]] = None,
+                   query: str = "", error: str = "") -> None:
+        # Hop back onto the Tk thread before touching widgets — the drain
+        # loop (running under root.after) calls _render_done from the right
+        # thread. Calling root.after directly from a worker is unsafe.
+        self.q.put(("done", (rows or [], query, error)))
+
+    def _drain_queue(self) -> None:
+        try:
+            while True:
+                kind, payload = self.q.get_nowait()
+                if kind == "done":
+                    rows, query, error = payload
+                    self._render_done(rows, query, error)
+        except queue.Empty:
+            pass
+        # Re-arm only while the dialog window is alive
+        try:
+            if self.win.winfo_exists():
+                self.parent.root.after(100, self._drain_queue)
+        except tk.TclError:
+            pass
+
+    def _render_done(self, rows: list[dict[str, Any]], query: str,
+                     error: str) -> None:
+        self.busy = False
+        self.search_btn.configure(state="normal")
+        if error:
+            self.status_var.set(f"Search failed: {error}")
+            return
+        self.results = rows
+        self._populate_tree(rows)
+        if rows:
+            self.status_var.set(
+                f"{len(rows)} result(s) for {query!r}. "
+                "Double-click or 'Use selected' to pick one."
+            )
+            # Pre-select the first row for keyboard-only flow
+            first = self.tree.get_children()
+            if first:
+                self.tree.selection_set(first[0])
+                self.tree.focus(first[0])
+        else:
+            self.status_var.set(f"No results for {query!r}.")
+
+    # ----- Result extraction & rendering -----------------------------------
+
+    @staticmethod
+    def _extract_rows(data: Any) -> list[dict[str, Any]]:
+        """Pull a list of file records out of the search response."""
+        files: list[dict[str, Any]] = []
+        if data is None:
+            return files
+        if isinstance(data, list):
+            files = [r for r in data if isinstance(r, dict)]
+        elif isinstance(data, dict):
+            for key in ("results", "files", "fileVersions",
+                        "data", "value", "records"):
+                inner = data.get(key)
+                if isinstance(inner, list):
+                    files = [r for r in inner if isinstance(r, dict)]
+                    break
+            else:
+                if data.get("id") or data.get("masterId") or data.get("name"):
+                    files = [data]
+
+        return [_summarise_file_for_search(f) for f in files]
+
+    def _populate_tree(self, rows: list[dict[str, Any]]) -> None:
+        for i, row in enumerate(rows):
+            tags = ("alt",) if i % 2 == 1 else ()
+            values = [row.get(cid, "") for cid, *_ in self.COLUMNS]
+            self.tree.insert("", "end", iid=str(i), values=values, tags=tags)
+
+    def _clear_results(self) -> None:
+        for iid in self.tree.get_children():
+            self.tree.delete(iid)
+        self.results = []
+
+    # ----- Use / cancel ----------------------------------------------------
+
+    def _on_use_selected(self) -> None:
+        sel = self.tree.selection()
+        if not sel:
+            messagebox.showinfo(
+                "No selection", "Pick a row first.", parent=self.win)
+            return
+        idx = int(sel[0])
+        row = self.results[idx]
+        name = str(row.get("file_name") or "").strip()
+        if not name:
+            messagebox.showwarning(
+                "No file name",
+                "Selected row has no file name — pick a different result.",
+                parent=self.win,
+            )
+            return
+        self.parent.set_top_file(name)
+        self._close()
+
+    def _on_cancel(self) -> None:
+        self._close()
+
+    def _close(self) -> None:
+        try:
+            self.win.grab_release()
+        except tk.TclError:
+            pass
+        self.win.destroy()
 
 
 # ---------------------------------------------------------------------------

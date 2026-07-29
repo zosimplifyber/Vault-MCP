@@ -557,3 +557,191 @@ def test_the_retired_item_runners_are_gone():
                  "_child_status", "_guess_top_assembly", "_compliance_blocked",
                  "set_part_number"):
         assert not hasattr(ReleaseWorkflowGUI, name), f"{name} survived"
+
+
+# ---------------------------------------------------------------------------
+# The wizard's own file search dialog
+# ---------------------------------------------------------------------------
+
+
+def test_search_summarises_a_file_record():
+    from gui.release_workflow import _summarise_file_for_search
+    row = _summarise_file_for_search({
+        "name": "CD-001659.iam",
+        "properties": {"Revision": "A", "State": "Work in Progress",
+                       "Category Name": "Engineering"},
+    })
+    assert row["file_name"] == "CD-001659.iam"
+    assert row["revision"] == "A"
+    assert row["state"] == "Work in Progress"
+    assert row["category"] == "Engineering"
+
+
+def test_search_falls_back_to_flat_fields():
+    from gui.release_workflow import _summarise_file_for_search
+    row = _summarise_file_for_search({
+        "name": "CD-001659.ipt", "Revision": "B", "State": "Released"})
+    assert row["revision"] == "B"
+    assert row["state"] == "Released"
+
+
+def test_search_summary_never_invents_a_value():
+    """An empty record must render as blanks, not as a plausible-looking row."""
+    from gui.release_workflow import _summarise_file_for_search
+    row = _summarise_file_for_search({})
+    assert set(row) == {"file_name", "revision", "state", "category", "folder"}
+    assert all(v == "" for v in row.values()), row
+
+
+def test_file_search_columns_are_file_shaped():
+    from gui.release_workflow import FileSearchDialog
+    ids = [c[0] for c in FileSearchDialog.COLUMNS]
+    assert ids[0] == "file_name"
+    assert "number" not in ids
+
+
+def test_file_search_extracts_rows_from_every_response_shape():
+    from gui.release_workflow import FileSearchDialog
+    for key in ("results", "files", "fileVersions", "data", "value", "records"):
+        rows = FileSearchDialog._extract_rows({key: [{"name": "A.iam"}]})
+        assert [r["file_name"] for r in rows] == ["A.iam"], key
+    assert FileSearchDialog._extract_rows([{"name": "B.ipt"}])[0]["file_name"] == "B.ipt"
+    assert FileSearchDialog._extract_rows(None) == []
+
+
+def test_file_search_queries_files_not_items():
+    """Read the attribute names the class actually calls, not its prose —
+    the docstring mentions search_items to say it is NOT used."""
+    import ast
+    import inspect
+    import textwrap
+
+    from gui.release_workflow import FileSearchDialog
+
+    tree = ast.parse(textwrap.dedent(inspect.getsource(FileSearchDialog)))
+    called = {n.func.attr for n in ast.walk(tree)
+              if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)}
+    assert "search_files" in called
+    assert "search_items" not in called
+    assert "set_top_file" in called
+
+
+def test_the_item_search_dialog_is_untouched():
+    """Task 11 moved SearchDialog out for MFG Order Package. Adding the
+    wizard's file dialog must not change it."""
+    from gui.search_dialog import SearchDialog
+    ids = [c[0] for c in SearchDialog.COLUMNS]
+    assert "number" in ids
+
+
+def test_set_top_file_survives_the_reset_it_triggers():
+    """_on_reset clears top_file_var via _invalidate, so setting the var first
+    and resetting afterwards would wipe the file the user just picked."""
+    root, gui = _make_gui()
+    try:
+        from gui.release_workflow import STATUS_OK, STATUS_PENDING
+        gui._update_step_label("1", STATUS_OK)
+        gui.compliance = {"file_name": "OLD.iam"}
+        gui.set_top_file("CD-001659.iam")
+        root.update_idletasks()
+
+        assert gui.top_file_var.get() == "CD-001659.iam"
+        assert gui.compliance is None
+        assert gui.statuses["1"] == STATUS_PENDING
+        assert "CD-001659.iam" in gui.status_var.get()
+    finally:
+        root.destroy()
+
+
+def test_reset_clears_the_run_state_but_keeps_the_vault_session():
+    """The wizard cannot sign itself in — the launcher hands it a session.
+    set_top_file() calls _on_reset on every pick, so dropping api/vault_id
+    there would make choosing a file from the search dialog disconnect the
+    window, with no way back."""
+    from gui.release_workflow import STATUS_OK, STATUS_PENDING
+    root, gui = _make_gui()
+    try:
+        api = object()
+        gui.api, gui.vault_id, gui.access_token = api, "1", "V:tok"
+        gui.compliance = {"file_name": "OLD.iam"}
+        gui._update_step_label("2", STATUS_OK)
+        gui._on_reset()
+        root.update_idletasks()
+
+        assert gui.api is api
+        assert gui.vault_id == "1"
+        assert gui.access_token == "V:tok"
+        assert gui.compliance is None
+        assert gui.statuses["2"] == STATUS_PENDING
+    finally:
+        root.destroy()
+
+
+def test_the_search_button_opens_the_file_dialog(monkeypatch):
+    """The Search… button was a 'not wired up yet' placeholder. Drive it."""
+    from gui import release_workflow as rw
+    root, gui = _make_gui()
+    try:
+        opened = []
+        monkeypatch.setattr(rw, "FileSearchDialog",
+                            lambda parent: opened.append(parent))
+        monkeypatch.setattr(rw.messagebox, "showinfo",
+                            lambda *a, **k: pytest.fail(f"placeholder shown: {a}"))
+        gui.api, gui.vault_id = object(), "1"
+        gui._open_search_dialog()
+        assert opened == [gui]
+    finally:
+        root.destroy()
+
+
+def test_the_search_button_refuses_without_a_vault_session(monkeypatch):
+    from gui import release_workflow as rw
+    root, gui = _make_gui()
+    try:
+        opened = []
+        warned = []
+        monkeypatch.setattr(rw, "FileSearchDialog",
+                            lambda parent: opened.append(parent))
+        monkeypatch.setattr(rw.messagebox, "showwarning",
+                            lambda *a, **k: warned.append(a))
+        gui.api, gui.vault_id = None, ""
+        gui._open_search_dialog()
+        assert opened == [], "opened a search dialog with no session"
+        assert warned
+    finally:
+        root.destroy()
+
+
+def test_the_file_dialog_builds_and_prefills_from_the_top_file_box():
+    from gui.release_workflow import FileSearchDialog
+    root, gui = _make_gui()
+    try:
+        gui.api, gui.vault_id = object(), "1"
+        gui.top_file_var.set("CD-001659.iam")
+        dlg = FileSearchDialog(gui)
+        root.update_idletasks()
+        assert dlg.query_var.get() == "CD-001659.iam"
+        assert [c[0] for c in FileSearchDialog.COLUMNS] == list(
+            dlg.tree["columns"])
+        dlg._close()
+    finally:
+        root.destroy()
+
+
+def test_picking_a_row_hands_the_file_name_back_to_the_wizard():
+    from gui.release_workflow import FileSearchDialog
+    root, gui = _make_gui()
+    try:
+        gui.api, gui.vault_id = object(), "1"
+        dlg = FileSearchDialog(gui)
+        dlg._render_done(
+            [{"file_name": "CD-001659.iam", "revision": "A", "state": "WIP",
+              "category": "Engineering", "folder": "$/Designs"}],
+            "CD-001659", "")
+        root.update_idletasks()
+        assert dlg.tree.selection(), "no row auto-selected"
+        dlg._on_use_selected()
+        root.update_idletasks()
+        assert gui.top_file_var.get() == "CD-001659.iam"
+    finally:
+        root.destroy()
