@@ -622,8 +622,8 @@ In `_build_ui`, immediately after the `actions` frame block (after
 `self.submit_btn.pack(...)`), insert:
 
 ```python
-        bulk = tk.Frame(self.win, bg=LIGHT_GRAY, padx=16, pady=(6, 0))
-        bulk.pack(fill="x")
+        bulk = tk.Frame(self.win, bg=LIGHT_GRAY, padx=16)
+        bulk.pack(fill="x", pady=(6, 0))
         tk.Label(bulk, text="Select:", bg=LIGHT_GRAY, fg=DARK_BLUE,
                  font=("Arial", 9, "bold")).pack(side="left", padx=(0, 6))
         for text, command in (
@@ -645,7 +645,7 @@ In `_build_ui`, immediately after the `tk.Label(self.win, textvariable=self.summ
 ```python
         tk.Label(self.win, textvariable=self.queue_text, bg=PALE_BLUE,
                  fg=OLIVE_GREEN, font=("Arial", 9, "bold"), anchor="w",
-                 padx=16, pady=(0, 4)).pack(fill="x")
+                 padx=16).pack(fill="x", pady=(0, 4))
 ```
 
 - [ ] **Step 4: Add the bulk-select methods**
