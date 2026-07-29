@@ -264,9 +264,15 @@ session parameters — supplied, and omitted.
 
 ## Open questions
 
-None blocking. Two to confirm during implementation:
+Both resolved while writing the implementation plan:
 
-1. Whether `bom_list_sync`'s SharePoint auth path works from inside the wizard
-   process or expects its own interactive sign-in.
-2. Whether `bom_purchasing`'s sheet writer takes an explicit output path or
-   always targets Downloads.
+1. **SharePoint auth works in-process.** `supplier_pricing.cli._connect_client`
+   calls `GraphListClient.connect(..., interactive=False)`, so step 4 needs no
+   interactive sign-in. When the token cache is empty it raises "not signed
+   in"; the step surfaces the existing one-off fix, `python -m supplier_pricing
+   probe`, rather than a bare error.
+2. **The sheet writer takes an explicit directory.**
+   `bom_purchasing.generate_from_file(bom_file_path, assembly_number,
+   output_dir="", reference_path="")` writes
+   `{assembly_number}-PurchasingExport.xlsx` into `output_dir`, defaulting to
+   the BOM's own folder, and returns `output_path`. Nothing targets Downloads.
