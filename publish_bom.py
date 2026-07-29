@@ -200,3 +200,97 @@ def top_assembly_stem(bom_file_path: str) -> str:
     base = os.path.splitext(os.path.basename(bom_file_path))[0]
     match = _TOP_STEM_RE.search(base)
     return match.group(0) if match else ""
+
+
+# ---------------------------------------------------------------------------
+# Stage 2: scan Vault for each stem's model and drawing
+# ---------------------------------------------------------------------------
+
+def _search_results(data: Any) -> list[dict[str, Any]]:
+    """Pull the hit list out of a search-results response body."""
+    if isinstance(data, list):
+        return [r for r in data if isinstance(r, dict)]
+    if isinstance(data, dict):
+        for key in ("results", "items", "data", "value"):
+            inner = data.get(key)
+            if isinstance(inner, list):
+                return [r for r in inner if isinstance(r, dict)]
+    return []
+
+
+def _error_text(resp: dict[str, Any]) -> str:
+    data = resp.get("data")
+    if isinstance(data, dict):
+        for key in ("message", "detail", "error"):
+            v = data.get(key)
+            if isinstance(v, str) and v:
+                return v
+    return f"HTTP {resp.get('status_code', '?')}"
+
+
+def _status_for(row: ScanRow) -> str:
+    if row.model_version_id and row.drawing_version_id:
+        return STATUS_BOTH
+    if row.model_version_id:
+        return STATUS_MODEL_ONLY
+    if row.drawing_version_id:
+        return STATUS_DRAWING_ONLY
+    return STATUS_MISSING
+
+
+async def _scan_one(api, vault_id: str, row: PublishRow,
+                    progress: ProgressFn) -> ScanRow:
+    out = ScanRow(stem=row.stem, description=row.description,
+                  is_top=row.is_top)
+
+    resp = await api.search_files(
+        vault_id=vault_id, query=row.stem,
+        search_sub_folders=True, latest_only=True, limit=20,
+    )
+    if resp.get("error"):
+        out.status = STATUS_FAILED
+        progress(f"  {row.stem}: lookup failed - {_error_text(resp)}")
+        return out
+
+    for rec in _search_results(resp.get("data")):
+        if rec.get("entityType") != "FileVersion":
+            continue
+        name = _norm(rec.get("name"))
+        # Require the basename to EQUAL the stem. A loose containment check
+        # pulls in every assembly that references this part.
+        if file_stem(name).lower() != row.stem.lower():
+            continue
+        fvid = _norm(rec.get("id"))
+        if not fvid:
+            continue
+        ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+        if ext in MODEL_EXTS and not out.model_version_id:
+            out.model_name, out.model_version_id = name, fvid
+        elif ext in DRAWING_EXTS and not out.drawing_version_id:
+            out.drawing_name, out.drawing_version_id = name, fvid
+
+    out.status = _status_for(out)
+    progress(f"  {row.stem}: {out.status}")
+    return out
+
+
+async def scan_rows(
+    api,
+    vault_id: str,
+    rows: list[PublishRow],
+    on_progress: Optional[ProgressFn] = None,
+) -> list[ScanRow]:
+    """Resolve every PublishRow to its model and drawing file versions.
+
+    Runs at most ``MAX_CONCURRENCY`` searches at once. Output order matches
+    input order so the GUI table is stable. A search failure degrades that one
+    row to ``STATUS_FAILED``; it never aborts the scan.
+    """
+    progress: ProgressFn = on_progress or (lambda _msg: None)
+    sem = asyncio.Semaphore(MAX_CONCURRENCY)
+
+    async def guarded(row: PublishRow) -> ScanRow:
+        async with sem:
+            return await _scan_one(api, vault_id, row, progress)
+
+    return list(await asyncio.gather(*(guarded(r) for r in rows)))

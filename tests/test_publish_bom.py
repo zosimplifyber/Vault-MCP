@@ -165,3 +165,144 @@ def test_top_assembly_stem_is_parsed_from_the_file_name(filename, expected):
 def test_top_assembly_stem_ignores_the_directory():
     path = r"C:\Vault Workspace\DESIGNS\PRODUCTION EQUIPMENT\CD-001608 BOM.xlsx"
     assert publish_bom.top_assembly_stem(path) == "CD-001608"
+
+
+# --------------------------------------------------------------------------- fake api
+
+class FakeAPI:
+    """Records calls and replays canned responses.
+
+    ``search_map`` maps a query stem to the ``results`` list the Vault search
+    should return. ``search_errors`` holds stems whose search should fail.
+    """
+
+    def __init__(self, search_map=None, search_errors=(), submit_errors=(),
+                 queue_enabled=True):
+        self.search_map = search_map or {}
+        self.search_errors = set(search_errors)
+        self.submit_errors = set(submit_errors)
+        self.queue_enabled = queue_enabled
+        self.submitted = []
+        self._next_job_id = 1000
+
+    async def search_files(self, vault_id, query, **kwargs):
+        if query in self.search_errors:
+            return {"error": True, "status_code": 500,
+                    "data": {"message": "boom"}}
+        return {"error": False, "status_code": 200,
+                "data": {"results": self.search_map.get(query, [])}}
+
+    async def get_job_queue_enabled(self, vault_id):
+        return {"error": False, "status_code": 200,
+                "data": {"value": self.queue_enabled}}
+
+    async def submit_job(self, vault_id, job_type, *, params=None,
+                         description=None, priority=None):
+        self.submitted.append({
+            "job_type": job_type, "params": dict(params or {}),
+            "description": description, "priority": priority,
+        })
+        fvid = (params or {}).get("FileVersionId", "")
+        if fvid in self.submit_errors:
+            return {"error": True, "status_code": 400,
+                    "data": {"message": "Job param error"}}
+        self._next_job_id += 1
+        return {"error": False, "status_code": 200,
+                "data": {"id": str(self._next_job_id)}}
+
+
+def _hit(name, fvid):
+    return {"entityType": "FileVersion", "name": name, "id": fvid}
+
+
+# --------------------------------------------------------------------------- scan
+
+@pytest.mark.asyncio
+async def test_scan_classifies_model_and_drawing():
+    api = FakeAPI({"CD-001578": [
+        _hit("CD-001578.ipt", "111"),
+        _hit("CD-001578.idw", "222"),
+    ]})
+    rows = await publish_bom.scan_rows(
+        api, "1", [publish_bom.PublishRow(stem="CD-001578")])
+
+    assert len(rows) == 1
+    assert rows[0].model_name == "CD-001578.ipt"
+    assert rows[0].model_version_id == "111"
+    assert rows[0].drawing_name == "CD-001578.idw"
+    assert rows[0].drawing_version_id == "222"
+    assert rows[0].status == publish_bom.STATUS_BOTH
+
+
+@pytest.mark.asyncio
+async def test_scan_reports_a_make_part_with_no_drawing():
+    """The gap this tool exists to surface."""
+    api = FakeAPI({"CD-001601": [_hit("CD-001601.iam", "333")]})
+    rows = await publish_bom.scan_rows(
+        api, "1", [publish_bom.PublishRow(stem="CD-001601")])
+
+    assert rows[0].status == publish_bom.STATUS_MODEL_ONLY
+    assert rows[0].drawing_version_id == ""
+    assert rows[0].job_count == 1
+
+
+@pytest.mark.asyncio
+async def test_scan_reports_a_stem_that_matches_nothing():
+    api = FakeAPI({})
+    rows = await publish_bom.scan_rows(
+        api, "1", [publish_bom.PublishRow(stem="CD-001644")])
+
+    assert rows[0].status == publish_bom.STATUS_MISSING
+    assert rows[0].job_count == 0
+
+
+@pytest.mark.asyncio
+async def test_scan_requires_an_exact_basename_match():
+    """A substring match would pull in every assembly that uses the part."""
+    api = FakeAPI({"CD-001578": [
+        _hit("CD-001578-BRACKET.ipt", "999"),
+        _hit("CD-001578 REV A.idw", "998"),
+        _hit("CD-001578.ipt", "111"),
+    ]})
+    rows = await publish_bom.scan_rows(
+        api, "1", [publish_bom.PublishRow(stem="CD-001578")])
+
+    assert rows[0].model_version_id == "111"
+    assert rows[0].drawing_version_id == ""
+
+
+@pytest.mark.asyncio
+async def test_scan_ignores_non_file_version_hits():
+    api = FakeAPI({"CD-001578": [
+        {"entityType": "Item", "name": "CD-001578.ipt", "id": "777"},
+        _hit("CD-001578.ipt", "111"),
+    ]})
+    rows = await publish_bom.scan_rows(
+        api, "1", [publish_bom.PublishRow(stem="CD-001578")])
+
+    assert rows[0].model_version_id == "111"
+
+
+@pytest.mark.asyncio
+async def test_a_search_failure_degrades_only_its_own_row():
+    api = FakeAPI(
+        {"CD-000002": [_hit("CD-000002.ipt", "111")]},
+        search_errors=["CD-000001"],
+    )
+    rows = await publish_bom.scan_rows(api, "1", [
+        publish_bom.PublishRow(stem="CD-000001"),
+        publish_bom.PublishRow(stem="CD-000002"),
+    ])
+
+    assert rows[0].status == publish_bom.STATUS_FAILED
+    assert rows[1].status == publish_bom.STATUS_MODEL_ONLY
+
+
+@pytest.mark.asyncio
+async def test_scan_preserves_input_order():
+    api = FakeAPI({})
+    stems = [f"CD-00{n:04d}" for n in range(20)]
+    rows = await publish_bom.scan_rows(
+        api, "1", [publish_bom.PublishRow(stem=s) for s in stems])
+
+    assert [r.stem for r in rows] == stems
