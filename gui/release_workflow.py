@@ -43,6 +43,7 @@ from gui.theme import (  # noqa: F401,E402
     DARK_BLUE, MID_BLUE, PALE_BLUE, LIGHT_GRAY, GRAY_BDR, DARK_GRAY,
     WHITE, OLIVE_GREEN, RUST_ORANGE, WARN_AMBER,
     PROJECT_ROOT, _pil_available, _resource_path,
+    PILImage, ImageTk,
 )
 
 from check_item_properties import (  # noqa: E402

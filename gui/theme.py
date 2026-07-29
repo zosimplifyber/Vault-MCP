@@ -6,7 +6,7 @@ the primary (headers, primary buttons), mid blue is the accent (hover,
 secondary text), pale blue is for info cards and hover wells.
 
 This used to live in ``gui/release_workflow.py``; it was extracted so the
-workflow wizard could be rewritten without breaking the seven other modules
+workflow wizard could be rewritten without breaking the eight other modules
 that import the palette.
 """
 
@@ -28,11 +28,16 @@ RUST_ORANGE = "#C0504D"   # failures, legible on light backgrounds
 WARN_AMBER  = "#B7791F"
 
 # Optional Pillow for the brand logo in the header / window icon. The GUIs
-# still work without PIL — they fall back to a text-only header.
+# still work without PIL — they fall back to a text-only header. PILImage /
+# ImageTk are always bound (to None when PIL is absent) so callers can do
+# `from gui.theme import PILImage, ImageTk` unconditionally; guard on
+# `_pil_available` before actually using them.
 try:
     from PIL import Image as PILImage, ImageTk  # noqa: F401
     _pil_available = True
 except ImportError:
+    PILImage = None
+    ImageTk = None
     _pil_available = False
 
 

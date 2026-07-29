@@ -30,3 +30,11 @@ def test_release_workflow_still_re_exports_the_palette():
     from gui import release_workflow, theme
     for name in PALETTE + ["_resource_path", "_pil_available"]:
         assert getattr(release_workflow, name) == getattr(theme, name)
+
+
+def test_release_workflow_still_exposes_the_pil_names():
+    """_build_header and _set_window_icon reference these; without them the
+    logo and window icon fail inside a bare except and vanish silently."""
+    from gui import release_workflow
+    for name in ("PILImage", "ImageTk", "_pil_available"):
+        assert hasattr(release_workflow, name), f"release_workflow lost {name}"
