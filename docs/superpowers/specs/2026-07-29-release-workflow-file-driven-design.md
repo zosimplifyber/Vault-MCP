@@ -110,6 +110,18 @@ class StepOutcome:
     pending_apply: Callable[[], StepOutcome] | None = None
 ```
 
+`StepOutcome.needs_review` (a property, `pending_apply is not None`) is the
+single named check the wizard uses. **It takes precedence over `ok`:** a preview
+may legitimately report problems and still offer Apply — step 5 previewing
+drawing gaps is exactly that case. Callers test `needs_review` before `ok`, and
+`Run all remaining` halts on it. Giving this one name, rather than an
+`is not None` test repeated at each call site, is what keeps the "nothing
+reaches Vault unattended" invariant from resting on six engines each
+independently getting an unwritten precedence rule right.
+
+`result` is the channel step 1's compliance dict travels through to steps 2
+and 3; it is `None` for every other step.
+
 `pending_apply is None` means the step is finished. When it is set, the step
 has computed a preview and staged a write. The wizard then:
 
@@ -221,6 +233,42 @@ a BOM path is set.
 `force` covers failing properties but deliberately does **not** cover a missing
 step 1 result: steps 2 and 3 take their file list from step 1, so with no step 1
 there is nothing to force past.
+
+### The gate must distinguish "checked and passed" from "not checked"
+
+Code review found the first draft resolving absent data to the permissive
+answer in three places, each ending in a release that reports success while
+files stay behind. The producer's own contract makes this explicit —
+`evaluate_against_rules` sets `report = None` when no rule set matches
+"which reports as SKIP, never as a pass"
+(`scripts/check_file_properties.py:420`), and `result_exit_code` returns a
+distinct code **2** for that case rather than 0.
+
+Reading `report` with `(x or {}).get("failed", 0)` turns `None` into `0` into
+"clear". The gate was therefore strictly more permissive than the CLI on
+identical input. Three rules, decided:
+
+| Condition | Blocks? | `force` overrides? | Why |
+| --- | --- | --- | --- |
+| No step 1 result | Yes | **No** | Steps 2/3 have no file list at all. Nothing to force past. |
+| Top file has no rule set (`category_resolved` falsy, `report is None`) | Yes | **Yes** | Nothing was evaluated. A category may legitimately have no rules, so an un-forceable block would make the wizard unusable for that work. The gate exists to stop *unknowing* release of unchecked files; ticking Force is informed consent. The message must say "nothing was checked", never imply failure. |
+| `children_error` set (the CAD BOM walk failed) | Yes | **No** | The child list is silently incomplete. The user cannot consent to a partial release because they cannot know what is missing — step 3 would move the top assembly and whatever children happened to resolve, leaving the rest in WIP and reporting success. Re-running step 1 is cheap. |
+
+Children with no rule set are **not** blocked — they stay SKIP, matching
+`child_status`, which already treats an unresolved child category as SKIP
+rather than FAIL. Only the top file escalates, matching `result_exit_code`.
+
+### Dropped files must be visible
+
+`file_version_ids` / `file_master_ids` drop entries carrying no usable Vault ID
+— correct, since one bad ID fails an entire lifecycle batch. But dropping them
+at `logger.debug` is invisible: no GUI module configures a logging handler and
+`app.py` defaults to INFO, so those lines go nowhere. Step 3 would release 37 of
+40 files and report "37 moved" with no trace of the 3 left behind.
+
+`unresolved_files(compliance) -> list[str]` names them, and steps 2 and 3 must
+surface it in their preview. The preview panel is the human checkpoint; a file
+silently missing from a batch is a partial release reported as success.
 
 ## Search dialog
 
