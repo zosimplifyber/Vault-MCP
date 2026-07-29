@@ -294,3 +294,107 @@ async def scan_rows(
             return await _scan_one(api, vault_id, row, progress)
 
     return list(await asyncio.gather(*(guarded(r) for r in rows)))
+
+
+# ---------------------------------------------------------------------------
+# Stage 3: submit the jobs
+# ---------------------------------------------------------------------------
+
+def _queue_is_disabled(data: Any) -> bool:
+    """True only when the response clearly says the queue is off."""
+    if isinstance(data, bool):
+        return not data
+    if isinstance(data, dict):
+        for key in ("value", "enabled", "isEnabled", "jobQueueEnabled"):
+            v = data.get(key)
+            if isinstance(v, bool):
+                return not v
+            if isinstance(v, str) and v.strip().lower() in ("true", "false"):
+                return v.strip().lower() == "false"
+    return False
+
+
+def _planned_jobs(row: ScanRow) -> list[tuple[str, str, str]]:
+    """(kind, file name, file version id) for each job this row implies."""
+    jobs: list[tuple[str, str, str]] = []
+    if row.drawing_version_id:
+        jobs.append(("PDF", row.drawing_name, row.drawing_version_id))
+    if row.model_version_id:
+        jobs.append(("STEP", row.model_name, row.model_version_id))
+    return jobs
+
+
+def _job_spec(kind: str, name: str, fvid: str) -> tuple[str, dict[str, str]]:
+    """JobType and Params for one job.
+
+    Param keys are PascalCase because the job processor's constructor rejects
+    the job otherwise. STEP reads both UpdatePdfOption and UpdateViewOption
+    despite the names; there is no UpdateStpOption.
+    """
+    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    if kind == "PDF":
+        return (
+            f"Autodesk.Vault.PDF.Create.{ext}",
+            {"FileVersionId": fvid, "UpdateViewOption": "False"},
+        )
+    return (
+        f"Autodesk.Vault.STEP.Create.{ext}",
+        {
+            "FileVersionId": fvid,
+            "UpdatePdfOption": "False",
+            "UpdateViewOption": "False",
+        },
+    )
+
+
+async def submit_jobs(
+    api,
+    vault_id: str,
+    scan_rows_in: list[ScanRow],
+    on_progress: Optional[ProgressFn] = None,
+    *,
+    priority: int = 10,
+) -> dict[str, Any]:
+    """Queue one job per resolved file. Fire and forget — nothing is polled.
+
+    Submits serially: job submission is cheap, and serial keeps the log
+    readable and the queue ordered. A failed submit is logged and counted; the
+    loop continues.
+
+    Returns ``{"submitted": int, "failed": int, "jobs": [...]}``.
+    """
+    progress: ProgressFn = on_progress or (lambda _msg: None)
+
+    queue_resp = await api.get_job_queue_enabled(vault_id=vault_id)
+    if not queue_resp.get("error") and _queue_is_disabled(queue_resp.get("data")):
+        progress(
+            "WARNING: the Vault job queue is disabled. Jobs will be queued but "
+            "sit unprocessed until a Job Processor agent comes online."
+        )
+
+    submitted = 0
+    failed = 0
+    jobs: list[dict[str, str]] = []
+
+    for row in scan_rows_in:
+        for kind, name, fvid in _planned_jobs(row):
+            job_type, params = _job_spec(kind, name, fvid)
+            resp = await api.submit_job(
+                vault_id=vault_id,
+                job_type=job_type,
+                params=params,
+                description=f"{kind} Create: {name}",
+                priority=priority,
+            )
+            if resp.get("error"):
+                failed += 1
+                progress(f"  {name}: {kind} submit FAILED - {_error_text(resp)}")
+                continue
+
+            data = resp.get("data")
+            job_id = _norm(data.get("id")) if isinstance(data, dict) else ""
+            submitted += 1
+            jobs.append({"file": name, "kind": kind, "job_id": job_id})
+            progress(f"  {name}: {kind} queued (job {job_id or '?'})")
+
+    return {"submitted": submitted, "failed": failed, "jobs": jobs}

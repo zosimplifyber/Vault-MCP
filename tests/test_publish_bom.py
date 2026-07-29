@@ -306,3 +306,122 @@ async def test_scan_preserves_input_order():
         api, "1", [publish_bom.PublishRow(stem=s) for s in stems])
 
     assert [r.stem for r in rows] == stems
+
+
+# --------------------------------------------------------------------------- submit
+
+def _scanned(stem="CD-001578", model="CD-001578.ipt", model_id="111",
+             drawing="CD-001578.idw", drawing_id="222", is_top=False):
+    row = publish_bom.ScanRow(stem=stem, is_top=is_top,
+                              model_name=model, model_version_id=model_id,
+                              drawing_name=drawing, drawing_version_id=drawing_id)
+    row.status = publish_bom._status_for(row)
+    return row
+
+
+@pytest.mark.asyncio
+async def test_submit_uses_the_right_job_type_per_extension():
+    api = FakeAPI()
+    await publish_bom.submit_jobs(api, "1", [
+        _scanned(model="CD-001578.ipt", drawing="CD-001578.idw"),
+        _scanned(stem="CD-001613", model="CD-001613.iam", model_id="333",
+                 drawing="CD-001613.dwg", drawing_id="444"),
+    ])
+
+    types = {j["job_type"] for j in api.submitted}
+    assert types == {
+        "Autodesk.Vault.PDF.Create.idw",
+        "Autodesk.Vault.STEP.Create.ipt",
+        "Autodesk.Vault.PDF.Create.dwg",
+        "Autodesk.Vault.STEP.Create.iam",
+    }
+
+
+@pytest.mark.asyncio
+async def test_step_and_pdf_params_match_the_shapes_the_job_processor_accepts():
+    """PascalCase, and STEP reads UpdatePdfOption despite the name.
+
+    The job processor's constructor rejects the job outright on wrong casing,
+    and the REST response echoes params back camelCased, which makes this easy
+    to get wrong twice.
+    """
+    api = FakeAPI()
+    await publish_bom.submit_jobs(api, "1", [_scanned()])
+
+    step = next(j for j in api.submitted if "STEP" in j["job_type"])
+    pdf = next(j for j in api.submitted if "PDF" in j["job_type"])
+
+    assert step["params"] == {
+        "FileVersionId": "111",
+        "UpdatePdfOption": "False",
+        "UpdateViewOption": "False",
+    }
+    assert pdf["params"] == {
+        "FileVersionId": "222",
+        "UpdateViewOption": "False",
+    }
+
+
+@pytest.mark.asyncio
+async def test_every_job_carries_a_non_empty_description():
+    """Vault error 155 ("Illegal null parameter") otherwise."""
+    api = FakeAPI()
+    await publish_bom.submit_jobs(api, "1", [_scanned()])
+
+    assert api.submitted
+    assert all(j["description"] for j in api.submitted)
+
+
+@pytest.mark.asyncio
+async def test_a_row_with_no_drawing_queues_only_the_step_job():
+    api = FakeAPI()
+    result = await publish_bom.submit_jobs(
+        api, "1", [_scanned(drawing="", drawing_id="")])
+
+    assert len(api.submitted) == 1
+    assert "STEP" in api.submitted[0]["job_type"]
+    assert result["submitted"] == 1
+
+
+@pytest.mark.asyncio
+async def test_one_failing_submit_does_not_stop_the_rest():
+    api = FakeAPI(submit_errors=["111"])
+    result = await publish_bom.submit_jobs(api, "1", [
+        _scanned(),
+        _scanned(stem="CD-001613", model="CD-001613.iam", model_id="333",
+                 drawing="CD-001613.idw", drawing_id="444"),
+    ])
+
+    assert len(api.submitted) == 4
+    assert result["failed"] == 1
+    assert result["submitted"] == 3
+
+
+@pytest.mark.asyncio
+async def test_submit_reports_job_ids():
+    api = FakeAPI()
+    result = await publish_bom.submit_jobs(api, "1", [_scanned()])
+
+    assert len(result["jobs"]) == 2
+    assert all(j["job_id"] for j in result["jobs"])
+
+
+@pytest.mark.asyncio
+async def test_rows_with_nothing_found_queue_nothing():
+    api = FakeAPI()
+    result = await publish_bom.submit_jobs(
+        api, "1", [_scanned(model="", model_id="", drawing="", drawing_id="")])
+
+    assert api.submitted == []
+    assert result["submitted"] == 0
+
+
+@pytest.mark.asyncio
+async def test_a_disabled_queue_warns_but_still_submits():
+    messages = []
+    api = FakeAPI(queue_enabled=False)
+    result = await publish_bom.submit_jobs(
+        api, "1", [_scanned()], on_progress=messages.append)
+
+    assert any("disabled" in m.lower() for m in messages)
+    assert result["submitted"] == 2
