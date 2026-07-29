@@ -179,8 +179,24 @@ authenticated session by the launcher, so this re-authenticates on every run
 of step 1.
 
 Add optional `api` and `vault_id` parameters. When both are supplied, skip the
-sign-in block and use them; otherwise behave exactly as now. Existing callers
-— the CLI and `gui/file_property_check.py` — are unaffected.
+sign-in block and use them; when neither is, behave exactly as now. Existing
+callers — the CLI and `gui/file_property_check.py` — are unaffected.
+
+**Supplying exactly one raises `ValueError`.** Silently falling back to a full
+sign-in was the first draft, and review showed it hides a reachable bug rather
+than tolerating a hypothetical one: `scripts/release_workflow.py` derives
+`vault_id` as `str(... or ... or "")` without validating it, so a sign-in that
+returns `error: False` with an unexpected payload yields a truthy `api` and an
+empty `vault_id` — and `_ensure_signed_in` stores that pair and reports
+success. In that state the lenient version would silently re-authenticate on
+every call, so the optimisation quietly no-ops with nobody the wiser; and where
+`config.json` is absent — a real deployment mode for the standalone exe — it
+would report `config.json is missing vault.servername`, blaming config for what
+is actually a session fault.
+
+Raising is safe for the wizard because `run_property_check` turns any exception
+into `StepOutcome(ok=False, summary=str(exc))`, so a partial session surfaces as
+a cleanly failed step 1 with an accurate message.
 
 ## Component: Sync Properties (step 2)
 
