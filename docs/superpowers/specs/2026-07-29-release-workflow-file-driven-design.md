@@ -108,6 +108,11 @@ class StepOutcome:
     summary: str                       # one line, for the status bar
     lines: list[tuple[str, str]]       # (text, tag) for the OUTPUT panel
     pending_apply: Callable[[], StepOutcome] | None = None
+    result: Any = None                 # step 1's compliance dict; None elsewhere
+
+    @property
+    def needs_review(self) -> bool:    # pending_apply is not None
+        ...
 ```
 
 `StepOutcome.needs_review` (a property, `pending_apply is not None`) is the
@@ -266,9 +271,22 @@ at `logger.debug` is invisible: no GUI module configures a logging handler and
 `app.py` defaults to INFO, so those lines go nowhere. Step 3 would release 37 of
 40 files and report "37 moved" with no trace of the 3 left behind.
 
-`unresolved_files(compliance) -> list[str]` names them, and steps 2 and 3 must
-surface it in their preview. The preview panel is the human checkpoint; a file
-silently missing from a batch is a partial release reported as success.
+`unresolved_files(compliance) -> list[tuple[str, str]]` names them as
+`(name, missing)`, where `missing` is `"version"`, `"master"` or `"both"`.
+Steps 2 and 3 must surface it in their preview, each filtering to the kind it
+actually drops.
+
+The attribution matters. A file can carry a valid version ID and no master ID:
+step 2 syncs it perfectly well, step 3 silently drops it. Returning bare names
+would make step 2's preview announce "will be skipped" about a file it handles
+fine — and a preview that cries wolf trains people to click through it, which
+is the same failure this exists to prevent. Returning the *kind* lets each step
+say something true.
+
+It returns `[]` for a falsy `compliance`. That is unreachable in practice — the
+gate blocks a missing step 1 result un-forceably — but it means the function is
+not a standalone health check: `if not unresolved_files(c)` reads "all clear"
+when step 1 never ran.
 
 ## Search dialog
 

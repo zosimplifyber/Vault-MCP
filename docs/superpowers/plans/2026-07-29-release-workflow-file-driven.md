@@ -896,6 +896,17 @@ def run_sync_properties(
     lines = [(f"  {len(version_ids)} file(s) will be synced:", TAG_INFO)]
     lines += [(f"      · {names.get(fid, fid)}", TAG_DIM) for fid in version_ids]
 
+    # Files this step will drop must be named here. The preview is the human
+    # checkpoint; a file silently missing from the batch is a partial sync
+    # reported as success. Only report what THIS step drops — a file with a
+    # version ID but no master ID syncs fine and is step 3's problem, so
+    # claiming it will be skipped here would make the preview lie.
+    for name, missing in unresolved_files(compliance):
+        if missing in ("version", "both"):
+            lines.append(
+                (f"      ! {name}: no file-version ID — cannot be synced",
+                 TAG_WARN))
+
     def apply() -> StepOutcome:
         async def submit_all() -> tuple[int, int, list[tuple[str, str]]]:
             ok_n = bad_n = 0
@@ -1106,6 +1117,17 @@ def run_release_files(
         ("  This changes lifecycle state in Vault and cannot be undone "
          "from here.", TAG_WARN),
     ]
+
+    # Name every file this step will drop. Releasing 37 of 40 files and
+    # reporting "37 moved" is a partial release reported as success — the
+    # engineer has no baseline to compare 37 against. Report only what THIS
+    # step drops: a missing master ID is what excludes a file from the
+    # lifecycle batch.
+    for name, missing in unresolved_files(compliance):
+        if missing in ("master", "both"):
+            lines.append(
+                (f"      ! {name}: no file master ID — will NOT be released",
+                 TAG_WARN))
 
     def apply() -> StepOutcome:
         try:
@@ -1960,6 +1982,60 @@ Delete `_browse_workfolder`, `_browse_top_iam`, `workfolder_var`, `top_iam_var`,
             self.compliance = None
 ```
 
+- [ ] **Step 4b: Make the output tags checkable**
+
+Tk's `Text.insert(index, text, tag)` does **not** raise on an unconfigured tag
+— it renders the text unstyled. So if this rewrite renames or drops a
+`tag_configure`, engine output silently loses its colour and every test still
+passes. `release_steps.ALL_TAGS` exists to close that; wire it up.
+
+Replace the loose `self.text.tag_configure(...)` calls in `_build_body` with a
+module-level dict, and configure from it:
+
+```python
+# Every tag release_steps emits, plus the wizard's own chrome. Built as a dict
+# so a test can assert it covers release_steps.ALL_TAGS — Tk silently renders
+# unstyled text for an unconfigured tag, so a dropped entry has no other
+# symptom.
+TAG_STYLES: dict[str, dict[str, Any]] = {
+    "h1":   {"foreground": DARK_BLUE, "font": ("Arial", 12, "bold"),
+             "spacing1": 8, "spacing3": 4},
+    "h2":   {"foreground": DARK_BLUE, "font": ("Arial", 10, "bold"),
+             "spacing1": 6, "spacing3": 2},
+    "dim":  {"foreground": DARK_GRAY},
+    "pass": {"foreground": "#1F6B2E", "font": ("Consolas", 10, "bold")},
+    "fail": {"foreground": RUST_ORANGE, "font": ("Consolas", 10, "bold")},
+    "warn": {"foreground": WARN_AMBER},
+    "info": {"foreground": MID_BLUE},
+    "step_banner": {"foreground": WHITE, "background": DARK_BLUE,
+                    "font": ("Arial", 10, "bold"),
+                    "spacing1": 10, "spacing3": 4},
+}
+```
+
+then in `_build_body`:
+
+```python
+        for tag, style in TAG_STYLES.items():
+            self.text.tag_configure(tag, **style)
+```
+
+Add the cross-check test to `tests/test_release_workflow_gui.py` — it needs no
+display, so it runs everywhere:
+
+```python
+def test_wizard_styles_every_tag_the_engines_emit():
+    """Tk renders an unconfigured tag as plain text without raising, so a
+    dropped tag_configure has no symptom other than looking wrong."""
+    import release_steps
+    from gui.release_workflow import TAG_STYLES
+    for tag in release_steps.ALL_TAGS:
+        assert tag in TAG_STYLES, f"engines emit {tag!r}, wizard never styles it"
+```
+
+Verify it bites: delete one entry from `TAG_STYLES`, confirm the test fails,
+restore it.
+
 - [ ] **Step 5: Add the new instance state**
 
 In `__init__`, replace `self.downloads = []` with:
@@ -2232,8 +2308,12 @@ The `step_done` branch of `_handle_signal` becomes:
                 self.compliance = outcome.result
                 self.btn_save_report.configure(state="normal")
 
-            if outcome.pending_apply is not None:
+            if outcome.needs_review:
                 # Staged, not written. Park it and wait for a human.
+                # MUST be tested before `ok` — a preview may report problems
+                # (ok=False) and still legitimately offer Apply. This is the
+                # line the "nothing reaches Vault unattended" guarantee rests
+                # on; do not replace it with a raw `pending_apply is not None`.
                 self.pending_apply = outcome.pending_apply
                 self.pending_step = num
                 self._update_step_label(num, STATUS_REVIEW)
@@ -2507,6 +2587,14 @@ git commit -m "feat(release-workflow): add FileSearchDialog for file-driven inpu
 **Files:**
 - Modify: `gui/launcher.py:578-587`
 - Test: `tests/test_launcher_flags.py:28-35`
+
+**Pre-existing fragility to fix while you are in this file:**
+`tests/test_launcher_flags.py:17` reads `config.json` unguarded, but that file
+is gitignored. In any checkout without it — a fresh worktree, CI — these tests
+fail with `FileNotFoundError` rather than skipping. Wrap the read and
+`pytest.skip("config.json not present")` when it is missing, so the suite's
+"zero failures" stops being environment-dependent. Do this as its own commit
+before the changes below.
 
 - [ ] **Step 1: Update the failing test**
 
