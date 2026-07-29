@@ -26,7 +26,6 @@ Launch:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 import queue
@@ -59,23 +58,16 @@ from gui.theme import (  # noqa: F401,E402
 # gui.mfg_package now. This wizard works from file names, so it does not import
 # it — it gets its own FileSearchDialog. Do not add a re-export here.
 
-from check_item_properties import (  # noqa: E402
-    DEFAULT_RULES_PATH,
-    check_part_number,
-    format_markdown_report,
-    load_json,
-)
-from release_workflow import (  # noqa: E402
-    CONFIG_PATH,
-    DEFAULT_WORKFOLDER,
-    _associated_file_versions,
-    _collect_file_master_ids,
-    _sign_in,
-)
-# vault_soap was the previous lifecycle-change path; it's been replaced by
-# vault_sdk (PowerShell ↔ .NET SDK bridge). The import lives inline at the
-# step-runner that needs it so we fail late and clearly if the bridge is
-# missing rather than blocking GUI startup.
+# Every step runs through release_steps — the headless engines. The wizard
+# holds no Vault logic of its own: check_item_properties and the item-based
+# release_workflow script are deliberately NOT imported here any more.
+import release_steps  # noqa: E402
+
+# self.compliance is now a *file* property-check result, so the report
+# formatter has to be the file one. Imported at module scope on purpose: a
+# lazy import inside the save handler would only surface as a traceback the
+# first time somebody clicks Save report.
+from check_file_properties import format_markdown_report  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -712,6 +704,11 @@ class ReleaseWorkflowGUI:
     def _on_run_next(self) -> None:
         if self.busy:
             return
+        if self.pending_apply is not None:
+            # The button reads "Apply" right now — this click is the human
+            # consent the staged write has been waiting for.
+            self._run_pending_apply()
+            return
         nxt = self._next_pending_step()
         if not nxt:
             messagebox.showinfo("Workflow complete", "No more pending steps.")
@@ -720,6 +717,14 @@ class ReleaseWorkflowGUI:
 
     def _on_skip(self) -> None:
         if self.busy:
+            return
+        if self.pending_apply is not None:
+            # Drop the staged closure on the floor. Nothing was written.
+            num = self.pending_step
+            self._clear_pending()
+            self._update_step_label(num, STATUS_SKIPPED)
+            self._write(f"\n[skipped] Step {num} — nothing was written.", "dim")
+            self.status_var.set(f"Step {num} skipped.")
             return
         nxt = self._next_pending_step()
         if not nxt:
@@ -730,6 +735,19 @@ class ReleaseWorkflowGUI:
 
     def _on_run_all(self) -> None:
         if self.busy:
+            return
+        if self.pending_apply is not None:
+            # Not a matter of taste: _next_pending_step() skips over a REVIEW
+            # step, so running on from here would strand it at REVIEW forever
+            # and overwrite self.pending_apply with the next step's closure —
+            # silently discarding a write the user had been shown. And
+            # applying it on their behalf is exactly the unattended write the
+            # gate exists to prevent. So: neither. Ask.
+            messagebox.showwarning(
+                "Step awaiting review",
+                f"Step {self.pending_step} has a change staged but not written. "
+                "Click Apply to write it, or Skip to discard it, before "
+                "running the rest.")
             return
         nxt = self._next_pending_step()
         if not nxt:
@@ -769,29 +787,78 @@ class ReleaseWorkflowGUI:
 
     # ----- Step dispatch ----------------------------------------------------
 
+    def _missing_input_for(self, num: str) -> Optional[str]:
+        """Return why this step cannot run yet, or None when it can.
+
+        The two groups are independent: a missing BOM never blocks steps 1-3
+        and a missing top file never blocks steps 4-6.
+        """
+        if num in VAULT_STEPS and not self.top_file_var.get().strip():
+            return "Enter a top file name (e.g. CD-001659.iam) first."
+        if num in BOM_STEPS and not self.bom_path_var.get().strip():
+            return "Browse to an exported BOM first."
+        return None
+
     def _run_step(self, num: str, *, run_all_after: bool) -> None:
-        pn = self.pn_var.get().strip()
-        if not pn:
-            messagebox.showwarning("Missing part number", "Enter a part number first.")
+        missing = self._missing_input_for(num)
+        if missing:
+            messagebox.showwarning("Missing input", missing)
+            return
+        if num in VAULT_STEPS and not self._ensure_signed_in_ui():
             return
 
-        # Per-step pre-flight UI updates
         name = next((n for k, n, *_ in STEPS if k == num), "?")
         self._banner(num, name)
         self._update_step_label(num, STATUS_RUNNING)
         self._set_busy(True)
         self.status_var.set(f"Step {num} ({name}) running…")
 
-        # Pick the worker function for this step
         runner = self._step_runner(num)
 
         def thread_main() -> None:
             try:
-                ok = runner()  # may post messages onto self.q
+                outcome = runner()
             except Exception as exc:  # noqa: BLE001 — surface any error to UI
-                self.q.put(WorkerSignal("err", f"{type(exc).__name__}: {exc}"))
-                ok = False
-            self.q.put(WorkerSignal("step_done", (num, ok, run_all_after)))
+                outcome = release_steps.StepOutcome(
+                    ok=False, summary=f"{type(exc).__name__}: {exc}",
+                    lines=[(f"  [error] {type(exc).__name__}: {exc}", "fail")])
+            self.q.put(WorkerSignal("step_done", (num, outcome, run_all_after)))
+
+        self.worker_thread = threading.Thread(target=thread_main, daemon=True)
+        self.worker_thread.start()
+
+    def _run_pending_apply(self) -> None:
+        """Perform the write a step staged. Only reachable from the Apply button.
+
+        Nothing else in this class may call this — it is the single point at
+        which a ``pending_apply`` closure is invoked.
+        """
+        num, apply_fn = self.pending_step, self.pending_apply
+        if not num or not apply_fn:
+            return
+        self._clear_pending()
+        self._update_step_label(num, STATUS_RUNNING)
+        self._set_busy(True)
+        self.status_var.set(f"Step {num} applying…")
+
+        def thread_main() -> None:
+            try:
+                outcome = apply_fn()
+            except Exception as exc:  # noqa: BLE001
+                outcome = release_steps.StepOutcome(
+                    ok=False, summary=f"{type(exc).__name__}: {exc}",
+                    lines=[(f"  [error] {type(exc).__name__}: {exc}", "fail")])
+            if not isinstance(outcome, release_steps.StepOutcome):
+                # A closure that returned nothing has told us nothing about
+                # what it wrote. Report that, don't assume it went fine — and
+                # don't let it blow up the queue drain on the Tk thread.
+                outcome = release_steps.StepOutcome(
+                    ok=False,
+                    summary=(f"Step {num} apply returned {outcome!r}, not a "
+                             "StepOutcome — what it wrote is unknown."),
+                    lines=[(f"  [error] apply returned {outcome!r}; the write "
+                            "may be partial — verify in Vault.", "fail")])
+            self.q.put(WorkerSignal("step_done", (num, outcome, False)))
 
         self.worker_thread = threading.Thread(target=thread_main, daemon=True)
         self.worker_thread.start()
@@ -849,17 +916,40 @@ class ReleaseWorkflowGUI:
             else:
                 self.target_state_var.set(names[0])
         elif sig.kind == "step_done":
-            num, ok, run_all_after = sig.payload
-            new_status = STATUS_OK if ok else STATUS_FAILED
-            self._update_step_label(num, new_status)
+            num, outcome, run_all_after = sig.payload
+            for line, tag in outcome.lines:
+                self._write(line, tag)
+
+            if num == "1":
+                # Assign unconditionally, including None. Steps 2 and 3 read
+                # their file list from here; a step 1 that produced nothing
+                # must leave them with nothing, not with the previous run's
+                # clean result.
+                self.compliance = outcome.result
+                self.btn_save_report.configure(
+                    state="normal" if outcome.result else "disabled")
+
+            if outcome.needs_review:
+                # Staged, not written. Park it and wait for a human.
+                # MUST be tested before `ok` — a preview may report problems
+                # (ok=False) and still legitimately offer Apply; step 5
+                # previewing drawing gaps is exactly that case. This is the
+                # line the "nothing reaches Vault unattended" guarantee rests
+                # on; do not replace it with a raw `pending_apply is not None`.
+                self.pending_apply = outcome.pending_apply
+                self.pending_step = num
+                self._update_step_label(num, STATUS_REVIEW)
+                self.btn_run.configure(text="  Apply  ")
+                self._set_busy(False)
+                self.status_var.set(outcome.summary)
+                return   # never auto-continue a Run all through a write
+
+            self._update_step_label(
+                num, STATUS_OK if outcome.ok else STATUS_FAILED)
             self._set_busy(False)
-            if num == "1" and ok:
-                self.btn_save_report.configure(state="normal")
-            if not ok:
-                self.status_var.set(f"Step {num} failed — fix the issue and click 'Run next step' or 'Skip'.")
-                # Don't auto-continue past a failure
+            self.status_var.set(outcome.summary)
+            if not outcome.ok:
                 return
-            self.status_var.set(f"Step {num} OK.")
             if run_all_after:
                 nxt = self._next_pending_step()
                 if nxt:
@@ -869,15 +959,55 @@ class ReleaseWorkflowGUI:
 
     # ----- Per-step runners (executed on worker thread) --------------------
 
-    def _step_runner(self, num: str) -> Callable[[], bool]:
+    def _step_runner(self, num: str) -> Callable[[], Any]:
+        """Return a zero-arg callable that runs this step on the worker thread.
+
+        Every input is read *here*, on the Tk thread, and captured by the
+        closure — the worker must never touch a Tk variable.
+        """
+        top_file = self.top_file_var.get().strip()
+        bom_path = self.bom_path_var.get().strip()
+        target_state = self.target_state_var.get().strip() or "Released"
+        state_id = self._target_state_id_or_none()
+        buy_only = self.buy_only_var.get()
+        # Read on the Tk thread, not inside gated(): a tk.BooleanVar.get()
+        # from the worker raises "main thread is not in main loop", and the
+        # wrapper would turn the compliance gate into a plain step failure
+        # rather than the block it is.
+        force = self.force_var.get()
+
+        def gated(fn: Callable[[], Any]) -> Callable[[], Any]:
+            """Steps 2 and 3 only: refuse when Property Check is not clean.
+
+            ``property_check_blocked`` is a module-level function in
+            release_steps, not a method here — the wizard holds no copy of
+            the gate logic.
+            """
+            def run() -> Any:
+                reason = release_steps.property_check_blocked(
+                    self.compliance, force=force)
+                if reason:
+                    return release_steps.StepOutcome(
+                        ok=False, summary=reason,
+                        lines=[(f"  [blocked] {reason}", "fail")])
+                return fn()
+            return run
+
         return {
-            "1": self._run_step_1_compliance,
-            "2": self._run_step_2_report,
-            "3": self._run_step_3_sync,
-            "4": self._run_step_4_download,
-            "5": self._run_step_5_inventor,
-            "6": self._run_step_6_release_cad,
-            "7": self._run_step_7_release_items,
+            "1": lambda: release_steps.run_property_check(
+                top_file, api=self.api, vault_id=self.vault_id),
+            "2": gated(lambda: release_steps.run_sync_properties(
+                self.api, self.vault_id, self.compliance)),
+            "3": gated(lambda: release_steps.run_release_files(
+                self.api, self.vault_id, self.compliance,
+                target_state=target_state, state_id=state_id)),
+            "4": lambda: release_steps.run_purchased_parts_list(
+                bom_path, buy_only=buy_only),
+            "5": lambda: release_steps.run_publish_deliverables(
+                self.api, self.vault_id, bom_path,
+                top_assembly=Path(bom_path).stem if bom_path else ""),
+            "6": lambda: release_steps.run_purchasing_sheet(
+                bom_path, Path(bom_path).stem if bom_path else "BOM"),
         }[num]
 
     def _log(self, line: str, tag: Optional[str] = None) -> None:
@@ -886,581 +1016,29 @@ class ReleaseWorkflowGUI:
     def _set_status(self, msg: str) -> None:
         self.q.put(WorkerSignal("status", msg))
 
-    # Helper: run an async coroutine to completion on this worker thread
-    def _run_async(self, coro):
-        return asyncio.run(coro)
+    # ----- Vault session ----------------------------------------------------
 
     def _ensure_signed_in(self) -> bool:
-        # Pre-authenticated session passed in from app.py --gui? Reuse it.
-        if self.api is not None and self.vault_id and self.access_token:
-            return True
-        try:
-            self.cfg = load_json(Path(self.cfg_path()))
-            self.api, self.vault_id, self.access_token = self._run_async(_sign_in(self.cfg))
-            self._log(f"  [ok] Signed in to Vault (vault_id={self.vault_id})", "pass")
-            return True
-        except Exception as exc:  # noqa: BLE001
-            self._log(f"  [fail] Vault sign-in failed: {exc}", "fail")
-            return False
+        """Confirm a live Vault session. Called from worker threads.
 
-    def cfg_path(self) -> str:
-        return str(CONFIG_PATH)
-
-    # ----- Step 1: compliance ----------------------------------------------
-
-    def _run_step_1_compliance(self) -> bool:
-        pn = self.pn_var.get().strip()
-        self._log(f"  Walking BOM for {pn} and running rules…", "info")
-        try:
-            result = self._run_async(check_part_number(
-                pn, config_path=CONFIG_PATH,
-                rules_path=DEFAULT_RULES_PATH, recursive=True,
-            ))
-        except Exception as exc:  # noqa: BLE001
-            self._log(f"  [fail] {exc}", "fail")
-            return False
-
-        self.compliance = result
-        self._log_compliance_summary(result)
-
-        top_failed = bool((result.get("report") or {}).get("failed", 0))
-        kids_failed = any(
-            c.get("error") is not None or
-            (c.get("report") or {}).get("failed", 0) > 0
-            for c in (result.get("children") or [])
-        )
-        if top_failed or kids_failed:
-            if not self.force_var.get():
-                self._log(
-                    "  Compliance gate is engaged — fix the items above then "
-                    "re-run, or tick 'Force past compliance gate' and continue. "
-                    "Step 2 will render the full markdown report.",
-                    "warn",
-                )
-                # Still report success at the *step* level — the gate is a
-                # separate decision made before subsequent steps.
-        return True
-
-    # ----- Step 1 output formatting ----------------------------------------
-
-    def _log_compliance_summary(self, result: dict[str, Any]) -> None:
-        """Write a compact, scannable failure summary to the output panel.
-
-        Surfaces *what* failed, not just *that* something failed:
-          • top-item header with pass/total + every failing property
-          • children roll-up (counts) + per-child compact failure lines
-          • final verdict banner
-        Step 2 still renders the full markdown report — this is the
-        scan-at-a-glance view a user gets right after Step 1 finishes.
+        The wizard no longer signs itself in: it is launched from the
+        launcher dashboard or ``app.py --gui``, both of which hand it an
+        already-authenticated session. Doing our own sign-in here would mean
+        a second login and a second audit trail for the same user.
         """
-        pn = result.get("part_number", "?")
-        info = result.get("info") or {}
-        top_props = info.get("properties") or {}
-        report = result.get("report") or {}
-        children = result.get("children") or []
-        category = result.get("category_resolved") or result.get("category_raw") or "(no rule set)"
+        return bool(self.api is not None and self.vault_id)
 
-        # ---- Top-level item ------------------------------------------------
-        top_total = report.get("total", 0)
-        top_pass = report.get("passed", 0)
-        top_fail = report.get("failed", 0)
-        verdict = "PASS" if top_fail == 0 else "FAIL"
-        verdict_tag = "pass" if top_fail == 0 else "fail"
-
-        self._log("")
-        self._log(f"  Top item — {pn}  [{category}]", "h2")
-        self._log(
-            f"    revision={top_props.get('Revision', '?')!r}  "
-            f"state={top_props.get('State', '?')!r}",
-            "dim",
-        )
-        self._log(f"    {verdict}  ({top_pass}/{top_total} checks pass)", verdict_tag)
-
-        if top_fail:
-            for r in report.get("results") or []:
-                if r.get("passed"):
-                    continue
-                v = r.get("value")
-                v_str = "(empty)" if v in (None, "") else str(v)
-                self._log(
-                    f"      • {r['property']:24s}  = {v_str[:40]}",
-                    "fail",
-                )
-                for f in r.get("failures") or []:
-                    self._log(f"          → {f}", "fail")
-
-        # ---- BOM children --------------------------------------------------
-        if not children:
-            return
-
-        statuses = [self._child_status(c) for c in children]
-        n_pass = statuses.count("PASS")
-        n_fail = statuses.count("FAIL")
-        n_skip = statuses.count("SKIP")
-        n_err = statuses.count("ERROR")
-
-        self._log("")
-        self._log(f"  BOM children — {len(children)} item(s)", "h2")
-        roll_tag = "pass" if (n_fail == 0 and n_err == 0) else "fail"
-        self._log(
-            f"    {n_pass} pass · {n_fail} fail · {n_skip} skipped · {n_err} errored",
-            roll_tag,
-        )
-
-        # Compact per-child failure lines (only the offenders)
-        offenders = [(c, st) for c, st in zip(children, statuses)
-                     if st in ("FAIL", "ERROR")]
-        if offenders:
-            self._log("")
-            self._log(f"    Offenders ({len(offenders)}):", "h2")
-            for c, st in offenders:
-                child_pn = c.get("part_number") or "?"
-                cat = c.get("category_resolved") or c.get("category_raw") or "(no rule set)"
-
-                if st == "ERROR":
-                    self._log(
-                        f"      • {child_pn:14s} [{cat}]  ERROR: {c.get('error', '')}",
-                        "fail",
-                    )
-                    continue
-
-                rep = c.get("report") or {}
-                bad_props = [r for r in (rep.get("results") or []) if not r.get("passed")]
-                # One-line summary: "SF-001702 [Assembly - Engineering] · 3 fail · Revision, Source, Engr Approved"
-                names = ", ".join(b["property"] for b in bad_props)
-                self._log(
-                    f"      • {child_pn:14s} [{cat:24s}]  "
-                    f"{len(bad_props)} fail · {names}",
-                    "fail",
-                )
-                # Indented per-property reasons (one line each, no value to keep it scannable)
-                for b in bad_props:
-                    reasons = "; ".join(b.get("failures") or [])
-                    self._log(f"          → {b['property']}: {reasons}", "dim")
-
-        # ---- Final verdict line -------------------------------------------
-        self._log("")
-        if top_fail == 0 and n_fail == 0 and n_err == 0:
-            self._log(
-                f"  [OK]  All {1 + len(children)} item(s) pass compliance.",
-                "pass",
-            )
-        else:
-            total_failed = (1 if top_fail else 0) + n_fail + n_err
-            self._log(
-                f"  [WARN]  {total_failed} of {1 + len(children)} item(s) failed compliance.",
-                "warn",
-            )
-
-    @staticmethod
-    def _child_status(child: dict[str, Any]) -> str:
-        if child.get("error"):
-            return "ERROR"
-        if not child.get("category_resolved"):
-            return "SKIP"
-        return "PASS" if (child.get("report") or {}).get("failed", 0) == 0 else "FAIL"
-
-    # ----- Step 2: render readiness report ---------------------------------
-
-    def _run_step_2_report(self) -> bool:
-        if not self.compliance:
-            self._log("  [fail] No compliance result — run step 1 first.", "fail")
-            return False
-        md = format_markdown_report(self.compliance)
-        # Render line-by-line so headings get a heading colour
-        for line in md.splitlines():
-            tag = None
-            if line.startswith("# "):
-                tag = "h1"
-            elif line.startswith("## "):
-                tag = "h2"
-            elif line.startswith("**READY**"):
-                tag = "pass"
-            elif line.startswith("**NOT READY**"):
-                tag = "fail"
-            self._log(line, tag)
-        self._set_status("Readiness report rendered. Use 'Save report…' to write to disk.")
-        return True
-
-    # ----- Step 3: sync properties -----------------------------------------
-
-    def _run_step_3_sync(self) -> bool:
-        # Compliance gate
-        if self._compliance_blocked():
-            return False
-        if not self._ensure_signed_in():
-            return False
-
-        async def gather_files() -> dict[str, dict[str, Any]]:
-            files: dict[str, dict[str, Any]] = {}
-            top_iv = (self.compliance.get("info") or {}).get("item_version_id") or ""
-            for fv in await _associated_file_versions(self.api, self.vault_id, top_iv):
-                fid = str(fv.get("id") or "")
-                if fid:
-                    files[fid] = fv
-            for child in self.compliance.get("children") or []:
-                cv = child.get("item_version_id") or ""
-                if not cv:
-                    continue
-                for fv in await _associated_file_versions(self.api, self.vault_id, cv):
-                    fid = str(fv.get("id") or "")
-                    if fid and fid not in files:
-                        files[fid] = fv
-            return files
-
-        try:
-            files = self._run_async(gather_files())
-        except Exception as exc:  # noqa: BLE001
-            self._log(f"  [fail] could not enumerate files: {exc}", "fail")
-            return False
-
-        if not files:
-            self._log("  [warn] No CAD files found — nothing to sync.", "warn")
+    def _ensure_signed_in_ui(self) -> bool:
+        """Tk-thread version — warns in a dialog instead of logging."""
+        if self._ensure_signed_in():
             return True
-
-        self._log(f"  Submitting Autodesk.Vault.SyncProperties for {len(files)} file(s)…", "info")
-
-        async def submit_all() -> tuple[int, int]:
-            ok_n = bad_n = 0
-            for fid, fv in files.items():
-                name = fv.get("name") or "(file)"
-                resp = await self.api.submit_job(
-                    vault_id=self.vault_id,
-                    job_type="Autodesk.Vault.SyncProperties",
-                    params={"FileVersionId": fid},
-                    description=f"SyncProperties: {name}",
-                    priority=10,
-                )
-                if resp["error"]:
-                    self._log(f"    [fail] {name}: {resp['data']}", "fail")
-                    bad_n += 1
-                else:
-                    job_id = str(((resp["data"] or {}).get("job") or {}).get("id")
-                                 or resp["data"].get("id") or "?")
-                    self._log(f"    [ok]   {name}  (job {job_id})", "pass")
-                    ok_n += 1
-            return ok_n, bad_n
-
-        ok_n, bad_n = self._run_async(submit_all())
-        self._log(f"  {ok_n} queued, {bad_n} failed.", "info")
-        return bad_n == 0
-
-    # ----- Step 4: download local ------------------------------------------
-
-    def _run_step_4_download(self) -> bool:
-        if self._compliance_blocked():
-            return False
-        if not self._ensure_signed_in():
-            return False
-        wf = Path(self.workfolder_var.get()).expanduser().resolve()
-        wf.mkdir(parents=True, exist_ok=True)
-
-        async def gather_and_download() -> list[dict[str, Any]]:
-            files: dict[str, dict[str, Any]] = {}
-            top_iv = (self.compliance.get("info") or {}).get("item_version_id") or ""
-            for fv in await _associated_file_versions(self.api, self.vault_id, top_iv):
-                fid = str(fv.get("id") or "")
-                if fid:
-                    files[fid] = fv
-            for child in self.compliance.get("children") or []:
-                cv = child.get("item_version_id") or ""
-                if not cv:
-                    continue
-                for fv in await _associated_file_versions(self.api, self.vault_id, cv):
-                    fid = str(fv.get("id") or "")
-                    if fid and fid not in files:
-                        files[fid] = fv
-
-            results: list[dict[str, Any]] = []
-            for fid, fv in files.items():
-                name = fv.get("name") or f"file_{fid}"
-                target = wf / name
-                resp = await self.api.download_file_version_content(
-                    vault_id=self.vault_id, file_version_id=fid
-                )
-                if resp["error"]:
-                    self._log(f"    [fail] {name}: {resp['data']}", "fail")
-                    results.append({"name": name, "ok": False, "error": resp["data"]})
-                    continue
-                target.write_bytes(resp["data"])
-                self._log(f"    [ok]   {name}  ({len(resp['data']):,} bytes)", "pass")
-                results.append({"name": name, "ok": True, "path": str(target),
-                                "size": len(resp["data"])})
-            return results
-
-        self._log(f"  Downloading into {wf}", "info")
-        try:
-            self.downloads = self._run_async(gather_and_download())
-        except Exception as exc:  # noqa: BLE001
-            self._log(f"  [fail] download failed: {exc}", "fail")
-            return False
-        ok_n = sum(1 for d in self.downloads if d.get("ok"))
-        self._log(f"  {ok_n}/{len(self.downloads)} files downloaded.", "info")
-        return ok_n == len(self.downloads)
-
-    # ----- Step 5: Inventor rebuild ----------------------------------------
-
-    def _run_step_5_inventor(self) -> bool:
-        if self._compliance_blocked():
-            return False
-        # Pick the .iam to open
-        explicit = self.top_iam_var.get().strip()
-        if explicit:
-            target = Path(explicit)
-        else:
-            target = self._guess_top_assembly()
-            if not target:
-                self._log(
-                    "  [fail] Could not auto-detect a top .iam. "
-                    "Use the Top .iam Browse button to pick one explicitly.",
-                    "fail",
-                )
-                return False
-
-        self._log(f"  Top assembly: {target}", "info")
-        self._log("  Launching Inventor (may take a moment on first start)…", "info")
-
-        try:
-            from inventor_automation import (
-                InventorUnavailableError,
-                rebuild_and_save_assembly,
-            )
-        except ImportError as exc:
-            self._log(f"  [fail] inventor_automation unavailable: {exc}", "fail")
-            return False
-
-        try:
-            path_used = rebuild_and_save_assembly(
-                target, visible=self.visible_inventor_var.get()
-            )
-        except InventorUnavailableError as exc:
-            self._log(f"  [fail] {exc}", "fail")
-            self._log(
-                "  Open the assembly manually in Inventor, rebuild it, "
-                "and check it back in to Vault before running step 6.",
-                "warn",
-            )
-            return False
-        except Exception as exc:  # noqa: BLE001
-            self._log(f"  [fail] Inventor rebuild failed: {exc}", "fail")
-            return False
-
-        self._log(f"  [ok] Rebuilt and saved: {path_used}", "pass")
-        self._log(
-            "  IMPORTANT: use the Vault add-in inside Inventor to Check In the "
-            "updated assembly before running step 6.",
-            "warn",
-        )
-        return True
-
-    def _guess_top_assembly(self) -> Optional[Path]:
-        iams = [d for d in self.downloads
-                if d.get("ok") and d.get("name", "").lower().endswith(".iam")]
-        if not iams:
-            return None
-        pn = self.pn_var.get().strip().lower()
-        for d in iams:
-            if pn and pn in d["name"].lower():
-                return Path(d["path"])
-        best = max(iams, key=lambda d: d.get("size", 0))
-        return Path(best["path"])
-
-    # ----- Step 6: release CAD ---------------------------------------------
-
-    def _run_step_6_release_cad(self) -> bool:
-        if self._compliance_blocked():
-            return False
-        if not self._ensure_signed_in():
-            return False
-
-        target_state = self.target_state_var.get().strip() or "Released"
-        explicit_state_id = self._target_state_id_or_none()
-
-        async def gather_masters() -> list[int]:
-            files: dict[str, dict[str, Any]] = {}
-            top_iv = (self.compliance.get("info") or {}).get("item_version_id") or ""
-            for fv in await _associated_file_versions(self.api, self.vault_id, top_iv):
-                fid = str(fv.get("id") or "")
-                if fid:
-                    files[fid] = fv
-            for child in self.compliance.get("children") or []:
-                cv = child.get("item_version_id") or ""
-                if not cv:
-                    continue
-                for fv in await _associated_file_versions(self.api, self.vault_id, cv):
-                    fid = str(fv.get("id") or "")
-                    if fid and fid not in files:
-                        files[fid] = fv
-            return _collect_file_master_ids(files)
-
-        try:
-            masters = self._run_async(gather_masters())
-        except Exception as exc:  # noqa: BLE001
-            self._log(f"  [fail] could not enumerate file masters: {exc}", "fail")
-            return False
-
-        if not masters:
-            self._log("  [warn] No CAD files found to release.", "warn")
-            return True
-
-        # Resolve the state id. We need it to live in the file lifecycle —
-        # not the item lifecycle — so look up the first file's lifecycle
-        # def and pick the matching state from there.
-        try:
-            from vault_sdk import (
-                VaultSDKError, lookup_file, find_state_id_for_file,
-                update_file_lifecycle_states,
-            )
-        except ImportError as exc:
-            self._log(f"  [fail] vault_sdk unavailable: {exc}", "fail")
-            return False
-
-        state_id = explicit_state_id
-        if state_id is None:
-            try:
-                first = lookup_file(masters[0])
-            except VaultSDKError as exc:
-                self._log(f"  [fail] file lookup failed: {exc}", "fail")
-                return False
-            if not first.get("found"):
-                self._log(f"  [fail] could not look up file masterId={masters[0]}", "fail")
-                return False
-            state_id = find_state_id_for_file(first, target_state)
-        if state_id is None:
-            self._log(
-                f"  [fail] Could not resolve lifecycle state id for "
-                f"{target_state!r} in the file's lifecycle. "
-                "Set 'State ID (override)' explicitly.",
-                "fail",
-            )
-            return False
-
-        self._log(
-            f"  Promoting {len(masters)} file(s) to '{target_state}' "
-            f"(state_id={state_id}) via Vault SDK…",
-            "info",
-        )
-        try:
-            result = update_file_lifecycle_states(
-                masters, state_id,
-                comment=f"Released via gui.release_workflow to {target_state}",
-            )
-        except VaultSDKError as exc:
-            self._log(f"  [fail] {exc}", "fail")
-            return False
-        self._log(f"  [ok] Released {result.get('updated', len(masters))} file(s).", "pass")
-        return True
-
-    # ----- Step 7: release items -------------------------------------------
-
-    def _run_step_7_release_items(self) -> bool:
-        if self._compliance_blocked():
-            return False
-
-        target_state = self.target_state_var.get().strip() or "Released"
-        explicit_state_id = self._target_state_id_or_none()
-
-        # SDK lifecycle change works on master IDs, not item-version IDs.
-        # Pull each child's masterId from the compliance result, plus the
-        # top item's masterId from its info.
-        master_ids: list[int] = []
-        seen: set[int] = set()
-
-        def add(v: Any) -> None:
-            if v is None:
-                return
-            try:
-                mid = int(v)
-            except (TypeError, ValueError):
-                return
-            if mid not in seen:
-                seen.add(mid)
-                master_ids.append(mid)
-
-        # Top-level item master id — pull from info.master.id (the master record)
-        top_master = ((self.compliance.get("info") or {}).get("master") or {}).get("id")
-        add(top_master)
-        for child in self.compliance.get("children") or []:
-            child_master = ((child.get("properties") or {}).get("item") or {}).get("id")
-            add(child_master)
-
-        if not master_ids:
-            self._log("  [warn] No item master IDs collected.", "warn")
-            return True
-
-        try:
-            from vault_sdk import (
-                VaultSDKError, lookup_item, find_state_id_for_item,
-                update_item_lifecycle_states,
-            )
-        except ImportError as exc:
-            self._log(f"  [fail] vault_sdk unavailable: {exc}", "fail")
-            return False
-
-        state_id = explicit_state_id
-        if state_id is None:
-            # Look up the top item via SDK to get its lifecycle def, then
-            # find Released within THAT def (not Basic Release Process etc.)
-            top_pn = (self.compliance.get("info") or {}).get("properties", {}).get("Number")
-            if not top_pn:
-                self._log("  [fail] could not determine top item part number", "fail")
-                return False
-            try:
-                top_item = lookup_item(top_pn)
-            except VaultSDKError as exc:
-                self._log(f"  [fail] item lookup failed: {exc}", "fail")
-                return False
-            if not top_item.get("found"):
-                self._log(f"  [fail] item {top_pn!r} not found via SDK", "fail")
-                return False
-            state_id = find_state_id_for_item(top_item, target_state)
-        if state_id is None:
-            self._log(
-                f"  [fail] Could not resolve lifecycle state id for "
-                f"{target_state!r} in the item's lifecycle. "
-                "Set 'State ID (override)' explicitly.",
-                "fail",
-            )
-            return False
-
-        self._log(
-            f"  Promoting {len(master_ids)} item(s) to '{target_state}' "
-            f"(state_id={state_id}) via Vault SDK…",
-            "info",
-        )
-        try:
-            result = update_item_lifecycle_states(
-                master_ids, state_id,
-                comment=f"Released via gui.release_workflow to {target_state}",
-            )
-        except VaultSDKError as exc:
-            self._log(f"  [fail] {exc}", "fail")
-            return False
-        self._log(f"  [ok] Released {result.get('updated', len(master_ids))} item(s).", "pass")
-        return True
+        messagebox.showwarning(
+            "Not signed in",
+            "This step needs a Vault session. Open the workflow from the "
+            "launcher, or click Reconnect there first.")
+        return False
 
     # ----- Misc helpers ----------------------------------------------------
-
-    def _compliance_blocked(self) -> bool:
-        """Return True (and log a clear message) if the compliance gate is
-        engaged — i.e. compliance ran, has failures, and force isn't set."""
-        if not self.compliance:
-            self._log("  [fail] Run step 1 (compliance check) first.", "fail")
-            return True
-        top_failed = bool((self.compliance.get("report") or {}).get("failed", 0))
-        kids_failed = any(
-            c.get("error") is not None or
-            (c.get("report") or {}).get("failed", 0) > 0
-            for c in (self.compliance.get("children") or [])
-        )
-        if (top_failed or kids_failed) and not self.force_var.get():
-            self._log(
-                "  [blocked] Compliance gate engaged — fix failing properties or "
-                "tick 'Force past compliance gate' to continue.",
-                "fail",
-            )
-            return True
-        return False
 
     def _target_state_id_or_none(self) -> Optional[int]:
         raw = self.target_state_id_var.get().strip()
