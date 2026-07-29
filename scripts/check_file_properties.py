@@ -449,7 +449,8 @@ async def check_file_name(
     Keys: ``file_name``, ``info``, ``rules``, ``category_raw``,
     ``category_resolved``, ``report``, ``children``, ``children_error``,
     ``recursive``. Raises ``RuntimeError`` for any fatal Vault / config error
-    so the caller can surface the message.
+    so the caller can surface the message, or ``ValueError`` if only one of
+    ``api``/``vault_id`` is supplied.
 
     Pass ``api`` and ``vault_id`` together to reuse an already-authenticated
     session (the GUI has one, and re-signing in on every call wastes a round
@@ -463,8 +464,11 @@ async def check_file_name(
 
     if (api is not None) != bool(vault_id):
         raise ValueError(
-            "check_file_name: api and vault_id must be supplied together — got "
-            f"api={'set' if api is not None else 'None'}, vault_id={vault_id!r}"
+            "Vault session handed to check_file_name is incomplete — this "
+            "points to a problem signing in, not a missing config.json. "
+            "api and vault_id must be supplied together (got "
+            f"api={'set' if api is not None else 'None'}, "
+            f"vault_id={vault_id!r})."
         )
 
     if api is None:
@@ -488,6 +492,10 @@ async def check_file_name(
             or sign_in["data"].get("vaultId", "")
             or ""
         )
+        if not vault_id:
+            raise RuntimeError(
+                "Vault sign-in succeeded but returned no recognisable vault id"
+            )
 
     info = await fetch_file(api, vault_id, file_name)
 

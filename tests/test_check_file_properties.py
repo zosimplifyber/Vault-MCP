@@ -1185,26 +1185,78 @@ def test_check_file_name_signs_in_when_no_session_supplied(monkeypatch, tmp_path
     assert seen_vault_id["value"] == "V-SIGNED-IN"
 
 
-def test_check_file_name_raises_when_vault_id_is_blank_despite_an_api():
+class _BadPayloadAPI:
+    """Reports a successful sign-in with a payload shape this module cannot
+    read a vault id out of — no 'vaultInformation.id', no 'vaultId'."""
+
+    async def create_session(self, **_kw):
+        return {"error": False, "data": {"someOtherField": "nope"}}
+
+
+def test_check_file_name_raises_when_sign_in_returns_no_vault_id(
+        monkeypatch, tmp_path):
+    """The module's own sign-in derives vault_id with the same unvalidated
+    ``str(... or ... or "")`` idiom that motivated the caller-supplied-session
+    guard above — one level deeper. A sign-in that reports success
+    (``error: False``) but returns a payload with no recognisable vault id
+    must not be allowed to proceed with an empty vault_id and read as a
+    normal, silent success.
+    """
+    monkeypatch.setattr(cfp, "VaultRestAPI", lambda **_kw: _BadPayloadAPI())
+
+    with pytest.raises(RuntimeError, match="no recognisable vault id"):
+        asyncio.run(cfp.check_file_name(
+            "CD-001659.ipt", config_path=_write_config(tmp_path), recursive=False))
+
+
+def test_check_file_name_raises_when_vault_id_is_blank_despite_an_api(
+        monkeypatch, tmp_path):
     """api set, vault_id blank is not a hypothetical slip — it is reachable
     from a sign-in that reported success but returned a payload this module
     didn't recognise. Silently re-authenticating would hide that bug behind
     a quiet no-op, so this must raise instead of falling through to a sign-in.
+
+    The XOR guard should raise before ever touching config or the network —
+    but a test whose job is catching a regression in that guard must not
+    depend on the guard for its own safety. VaultRestAPI is patched to a
+    constructor that raises, and config_path points at a file that doesn't
+    exist, so if the guard ever regresses this fails locally instead of
+    quietly reaching the real Vault server.
     """
     class BoomAPI:
         async def create_session(self, **_kw):
             raise AssertionError("must raise before ever touching the api")
 
+    def boom_vault_rest_api(**_kw):
+        raise AssertionError(
+            "must not construct a new VaultRestAPI when a session is supplied")
+
+    monkeypatch.setattr(cfp, "VaultRestAPI", boom_vault_rest_api)
+
     with pytest.raises(ValueError,
                        match="api and vault_id must be supplied together"):
         asyncio.run(cfp.check_file_name(
-            "CD-001659.ipt", api=BoomAPI(), vault_id="", recursive=False))
+            "CD-001659.ipt", api=BoomAPI(), vault_id="", recursive=False,
+            config_path=tmp_path / "does-not-exist.json"))
 
 
-def test_check_file_name_raises_when_api_is_none_despite_a_vault_id():
+def test_check_file_name_raises_when_api_is_none_despite_a_vault_id(
+        monkeypatch, tmp_path):
     """vault_id set, api blank must also raise rather than sign in — half a
-    session is an error, not a hint to authenticate a fresh one."""
+    session is an error, not a hint to authenticate a fresh one.
+
+    Same two defenses as its sibling above: this test's job is to catch a
+    regression in the XOR guard, so it must not rely on that guard to stay
+    off the network itself.
+    """
+    def boom_vault_rest_api(**_kw):
+        raise AssertionError(
+            "must not construct a new VaultRestAPI when a session is supplied")
+
+    monkeypatch.setattr(cfp, "VaultRestAPI", boom_vault_rest_api)
+
     with pytest.raises(ValueError,
                        match="api and vault_id must be supplied together"):
         asyncio.run(cfp.check_file_name(
-            "CD-001659.ipt", api=None, vault_id="V1", recursive=False))
+            "CD-001659.ipt", api=None, vault_id="V1", recursive=False,
+            config_path=tmp_path / "does-not-exist.json"))
