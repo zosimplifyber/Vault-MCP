@@ -208,12 +208,19 @@ wrappers are bypassed entirely and the engines are called directly.
 
 ## Gate
 
-`_compliance_blocked()` becomes `_property_check_blocked()` and is consulted by
-**steps 2 and 3 only**.
+The wizard's `_compliance_blocked()` method is replaced by
+`release_steps.property_check_blocked(compliance, *, force)` — a module-level
+function, not a GUI method, so it is testable without a window. It is consulted
+by **steps 2 and 3 only**.
 
-It returns blocked when step 1 has not run, or when step 1 found failures and
-**Force past compliance gate** is unticked. Steps 4–6 never consult it and are
-runnable from the moment a BOM path is set.
+It returns a reason string when blocked and `None` when clear. It blocks when
+step 1 has not run, or when step 1 found failures and **Force past compliance
+gate** is unticked. Steps 4–6 never consult it and are runnable from the moment
+a BOM path is set.
+
+`force` covers failing properties but deliberately does **not** cover a missing
+step 1 result: steps 2 and 3 take their file list from step 1, so with no step 1
+there is nothing to force past.
 
 ## Search dialog
 
