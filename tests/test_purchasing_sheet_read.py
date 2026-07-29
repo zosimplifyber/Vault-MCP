@@ -118,10 +118,35 @@ def test_the_header_row_is_found_when_it_is_not_at_hdr_row(tmp_path):
     assert list(df["Title"]) == ["CD-001200"]
 
 
+def test_a_duplicated_column_is_refused_rather_than_silently_dropped(tmp_path):
+    """These workbooks are hand-edited — filling in suppliers is the whole
+    workflow — so a copy-pasted column is a plausible accident. Keeping only
+    the last one would lose a supplier column with nothing said."""
+    path = tmp_path / "duplicated.xlsx"
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = bp.PURCHASING_SHEET_NAME
+    ws["A1"] = "CD-001608"
+    headers = [bp.HEADER_LABELS.get(c, c) for c in bp.SHEET_COLUMNS]
+    headers.append("Vendor")           # the accidental duplicate
+    for offset, name in enumerate(headers, 1):
+        ws.cell(row=bp.HDR_ROW, column=offset, value=name)
+    wb.save(path)
+
+    df, _assembly, error = bp.read_purchasing_sheet(str(path))
+
+    assert error is not None
+    assert "Vendor" in error
+    assert df.empty
+
+
 def test_the_unmatched_note_never_becomes_a_row(tmp_path):
-    """An unpriced Buy row makes the writer append an "Unmatched (n)" note
-    below the table. It is a merged full-width cell, so it would otherwise
-    read as a part with a name and nothing else."""
+    """Against a real generated workbook: an unpriced Buy row makes the
+    writer append an "Unmatched (n)" note below the table, always preceded by
+    a fully blank row. This proves the reader stops cleanly at that blank row
+    before it ever reaches the note — not that the UNMATCHED_NOTE_PREFIX
+    guard itself fires, since the blank-row break always wins first here. See
+    test_the_unmatched_note_guard_holds_even_without_a_blank_row for that."""
     unpriced = dict(BUY, Vendor=None, **{"Cost Per": None})
     path = _sheet(tmp_path, [unpriced, MAKE])
 
@@ -129,6 +154,40 @@ def test_the_unmatched_note_never_becomes_a_row(tmp_path):
 
     assert error is None
     assert len(df) == 2
+    assert not any(str(t).startswith(bp.UNMATCHED_NOTE_PREFIX)
+                   for t in df["Title"])
+
+
+def test_the_unmatched_note_guard_holds_even_without_a_blank_row(tmp_path):
+    """The real writer always inserts a blank row before the note, so the
+    blank-row break above the UNMATCHED_NOTE_PREFIX check always fires first
+    against real output — the prefix check itself is never exercised there.
+    Hand-build a workbook with the note placed immediately after the data,
+    with no blank row between, so this test actually depends on the guard."""
+    path = tmp_path / "no_blank_row.xlsx"
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = bp.PURCHASING_SHEET_NAME
+    ws["A1"] = "CD-001608"
+    headers = [bp.HEADER_LABELS.get(c, c) for c in bp.SHEET_COLUMNS]
+    for offset, name in enumerate(headers, 1):
+        ws.cell(row=bp.HDR_ROW, column=offset, value=name)
+    row = {"Title": "CD-001200", "Source": "Make", "Vendor": "Acme"}
+    for offset, col in enumerate(bp.SHEET_COLUMNS, 1):
+        ws.cell(row=bp.HDR_ROW + 1, column=offset, value=row.get(col))
+
+    note_row = bp.HDR_ROW + 2  # immediately after the data — no blank row
+    n_cols = len(bp.SHEET_COLUMNS)
+    ws.merge_cells(start_row=note_row, start_column=1,
+                   end_row=note_row, end_column=n_cols)
+    ws.cell(row=note_row, column=1,
+            value=f"{bp.UNMATCHED_NOTE_PREFIX}1) — no price in reference: SF-000067")
+    wb.save(path)
+
+    df, _assembly, error = bp.read_purchasing_sheet(str(path))
+
+    assert error is None
+    assert len(df) == 1
     assert not any(str(t).startswith(bp.UNMATCHED_NOTE_PREFIX)
                    for t in df["Title"])
 

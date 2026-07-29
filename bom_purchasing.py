@@ -663,7 +663,13 @@ NO_PURCHASING_TAB_ERROR = (
 )
 NO_HEADER_ROW_ERROR = (
     "Could not find the column header row on the 'Purchasing' tab — no row "
-    "in the first 10 carries both a 'Source' and a 'Vendor' column."
+    f"in the first {_HEADER_SCAN_ROWS} carries both a 'Source' and a 'Vendor' "
+    "column."
+)
+DUPLICATE_COLUMN_ERROR = (
+    "The 'Purchasing' tab has more than one {column!r} column, so there is no "
+    "way to tell which one holds the real values. Delete the duplicate and "
+    "load the workbook again."
 )
 
 
@@ -685,13 +691,15 @@ def _cell_text(value: Any) -> str:
     return str(value).strip()
 
 
-def _locate_header_row(ws) -> Optional[int]:
+def _locate_header_row(ws, labels: dict[str, str]) -> Optional[int]:
     """Row number of the column headers, or None.
 
     Tries HDR_ROW first, then scans. Source and Vendor are the two columns
     nothing downstream can work without, so their presence identifies the row.
+    ``labels`` is the header-label -> canonical-column map from
+    _sheet_label_to_column(), built once by the caller and shared with the
+    column-name resolution in read_purchasing_sheet.
     """
-    labels = _sheet_label_to_column()
     order = [HDR_ROW] + [r for r in range(1, _HEADER_SCAN_ROWS + 1) if r != HDR_ROW]
     for row in order:
         if row > ws.max_row:
@@ -734,13 +742,28 @@ def read_purchasing_sheet(
 
         assembly = _cell_text(ws.cell(row=1, column=1).value)
 
-        hdr_row = _locate_header_row(ws)
+        labels = _sheet_label_to_column()
+        hdr_row = _locate_header_row(ws, labels)
         if hdr_row is None:
             return pd.DataFrame(), "", NO_HEADER_ROW_ERROR
 
-        labels = _sheet_label_to_column()
         columns = [labels.get(_cell_text(c.value).lower(), _cell_text(c.value))
                    for c in ws[hdr_row]]
+
+        # A named column (blank header cells are already "" and don't count —
+        # trailing empty cells are normal) that repeats means two columns map
+        # to the same canonical name. Keeping only the last would silently
+        # drop the other's data, which is exactly the failure mode these
+        # hand-edited workbooks can't afford — a filled-in supplier column
+        # lost with no error. Refuse instead of guessing which one is real.
+        seen: set[str] = set()
+        for name in columns:
+            if not name:
+                continue
+            if name in seen:
+                return (pd.DataFrame(), "",
+                        DUPLICATE_COLUMN_ERROR.format(column=name))
+            seen.add(name)
 
         records: list[dict[str, Any]] = []
         for row in ws.iter_rows(min_row=hdr_row + 1):
