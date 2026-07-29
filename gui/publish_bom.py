@@ -37,6 +37,11 @@ from gui.release_workflow import (  # noqa: E402
 import publish_bom  # noqa: E402
 from supplier_pricing.normalize import file_stem  # noqa: E402
 
+# ASCII rather than Unicode ballot boxes: those render inconsistently across
+# Windows fonts, and this table already uses ASCII hyphens for that reason.
+CHECKED = "[x]"
+UNCHECKED = "[ ]"
+
 
 class PublishBOMGUI:
     """Toplevel dialog. One per launch — closes when the user clicks Close."""
@@ -65,6 +70,13 @@ class PublishBOMGUI:
         self.bom_path = tk.StringVar()
         self.top_assembly = tk.StringVar()
         self.summary_text = tk.StringVar(value="Pick a BOM and click Scan.")
+        self.queue_text = tk.StringVar(value="")
+        self.want_pdf = tk.BooleanVar(value=True)
+        self.want_step = tk.BooleanVar(value=True)
+        # Part stems the user wants published. Stems rather than row indices:
+        # that is what lets a selection survive a re-scan.
+        self.selected: set[str] = set()
+        self._prev_stems: set[str] = set()
 
         self._build_ui()
 
@@ -128,24 +140,27 @@ class PublishBOMGUI:
 
         table_frame = tk.Frame(self.win, bg=WHITE, padx=16, pady=10)
         table_frame.pack(fill="both", expand=True)
-        columns = ("part", "description", "model", "drawing", "status")
+        columns = ("sel", "part", "description", "model", "drawing", "status")
         self.tree = ttk.Treeview(
             table_frame, columns=columns, show="headings", height=10)
-        for key, label, width in (
-            ("part", "Part", 130),
-            ("description", "Description", 200),
-            ("model", "Model", 170),
-            ("drawing", "Drawing", 170),
-            ("status", "Status", 170),
+        for key, label, width, anchor in (
+            ("sel", "", 34, "center"),
+            ("part", "Part", 120, "w"),
+            ("description", "Description", 190, "w"),
+            ("model", "Model", 160, "w"),
+            ("drawing", "Drawing", 160, "w"),
+            ("status", "Status", 165, "w"),
         ):
             self.tree.heading(key, text=label)
-            self.tree.column(key, width=width, anchor="w")
+            self.tree.column(key, width=width, anchor=anchor, stretch=False)
         vsb = ttk.Scrollbar(table_frame, orient="vertical",
                             command=self.tree.yview)
         self.tree.configure(yscrollcommand=vsb.set)
         vsb.pack(side="right", fill="y")
         self.tree.pack(side="left", fill="both", expand=True)
         self.tree.tag_configure("gap", foreground=RUST_ORANGE)
+        self.tree.bind("<Button-1>", self._on_tree_click)
+        self.tree.bind("<space>", self._on_space)
 
         tk.Label(self.win, textvariable=self.summary_text, bg=PALE_BLUE,
                  fg=DARK_BLUE, font=("Arial", 9, "bold"), anchor="w",
@@ -212,6 +227,67 @@ class PublishBOMGUI:
             self.tree.delete(iid)
         self.submit_btn.configure(state="disabled")
         self.summary_text.set("BOM changed - click Scan again.")
+
+    # ----- Selection --------------------------------------------------------
+
+    def _on_tree_click(self, event) -> None:
+        """Toggle when the checkbox cell itself is clicked.
+
+        Scoped to column #1 so clicking any other cell still selects the row
+        normally for reading.
+        """
+        if self.tree.identify_region(event.x, event.y) != "cell":
+            return
+        if self.tree.identify_column(event.x) != "#1":
+            return
+        iid = self.tree.identify_row(event.y)
+        if iid:
+            self._toggle([iid])
+
+    def _on_space(self, _event) -> str:
+        """Toggle every selected row.
+
+        Treeview already supports shift-click and ctrl-click ranges, so this
+        turns 'tick these fifteen' into drag-then-space.
+        """
+        rows = self.tree.selection()
+        if rows:
+            self._toggle(rows)
+        return "break"
+
+    def _toggle(self, stems) -> None:
+        for stem in stems:
+            if stem in self.selected:
+                self.selected.discard(stem)
+            else:
+                self.selected.add(stem)
+        self._refresh_checks()
+
+    def _refresh_checks(self) -> None:
+        """Repaint the glyphs and recompute what Submit would queue."""
+        for iid in self.tree.get_children():
+            self.tree.set(
+                iid, "sel", CHECKED if iid in self.selected else UNCHECKED)
+        self._update_queue_line()
+
+    def _update_queue_line(self) -> None:
+        rows = [r for r in self.scan_result if r.stem in self.selected]
+        counts = publish_bom.count_planned_jobs(
+            rows,
+            include_pdf=self.want_pdf.get(),
+            include_step=self.want_step.get(),
+        )
+        if self.scan_result:
+            self.queue_text.set(
+                f"Queueing {counts['total']} job(s): {counts['pdf']} PDF + "
+                f"{counts['step']} STEP  "
+                f"({len(rows)} of {len(self.scan_result)} parts)"
+            )
+        else:
+            self.queue_text.set("")
+        self.submit_btn.configure(
+            state="normal" if counts["total"] and not self._busy else "disabled"
+        )
 
     # ----- Actions ----------------------------------------------------------
 
