@@ -141,8 +141,25 @@ def property_check_blocked(
 
 def _entries(compliance: dict[str, Any]) -> list[dict[str, Any]]:
     """Top file first, then every CAD BOM child — errored ones included;
-    callers filter."""
-    out = [compliance.get("info") or {}]
+    callers filter.
+
+    Returns ``[]`` for a falsy ``compliance`` (``None`` included) — the one
+    guard ``file_version_ids``, ``file_master_ids`` and ``unresolved_files``
+    all rely on, so ``compliance=None`` behaves the same everywhere instead
+    of some of them returning ``[]`` and others raising ``AttributeError``.
+
+    The top file's own dict (``compliance["info"]``) carries no
+    ``file_name`` of its own — ``fetch_file`` (check_file_properties.py)
+    never copies it down; the name lives one level up, on ``compliance``
+    itself. Without borrowing it here, a preview that names every dropped
+    file gets every CAD BOM child right and reports the one file the user
+    actually typed in as ``"(unnamed)"``.
+    """
+    if not compliance:
+        return []
+    info = dict(compliance.get("info") or {})
+    info.setdefault("file_name", compliance.get("file_name") or "")
+    out = [info]
     out.extend(compliance.get("children") or [])
     return out
 
@@ -201,12 +218,11 @@ def unresolved_files(compliance: dict[str, Any]) -> list[tuple[str, str]]:
     click through it — the exact failure mode this visibility fix exists to
     prevent. Steps 2 and 3 each filter to the kind they actually drop.
 
-    Returns ``[]`` for a falsy ``compliance`` — unreachable in practice,
-    since the gate (:func:`property_check_blocked`) blocks a missing step 1
-    result un-forceably. This is therefore not a standalone health check.
+    Returns ``[]`` for a falsy ``compliance`` (via ``_entries``'s own
+    guard) — unreachable in practice, since the gate
+    (:func:`property_check_blocked`) blocks a missing step 1 result
+    un-forceably. This is therefore not a standalone health check.
     """
-    if not compliance:
-        return []
     out: list[tuple[str, str]] = []
     for entry in _entries(compliance):
         vid = str(entry.get("file_version_id") or "").strip()
@@ -259,7 +275,14 @@ def run_property_check(
                            lines=[(f"  [fail] {exc}", TAG_FAIL)])
 
     lines: list[tuple[str, str]] = []
-    report = result.get("report") or {}
+    raw_report = result.get("report")
+    # ``report`` is None — never {} — when no rule set matches the top
+    # file's category (check_file_properties.evaluate_against_rules;
+    # result_exit_code returns 2 for this case). That means nothing was
+    # checked, and must never render as a green PASS: the same "absent data
+    # reads as success" bug already fixed once in property_check_blocked.
+    unchecked = raw_report is None
+    report = raw_report or {}
     total = report.get("total", 0)
     passed = report.get("passed", 0)
     failed = report.get("failed", 0)
@@ -270,9 +293,13 @@ def run_property_check(
     lines.append((f"  Top file — {file_name}  [{category}]", TAG_H2))
     lines.append((f"    revision={props.get('Revision', '?')!r}  "
                   f"state={props.get('State', '?')!r}", TAG_DIM))
-    lines.append((f"    {'PASS' if not failed else 'FAIL'}  "
-                  f"({passed}/{total} checks pass)",
-                  TAG_PASS if not failed else TAG_FAIL))
+    if unchecked:
+        lines.append((f"    SKIP  no rule set matches category {category!r} "
+                      f"— nothing was checked", TAG_WARN))
+    else:
+        lines.append((f"    {'PASS' if not failed else 'FAIL'}  "
+                      f"({passed}/{total} checks pass)",
+                      TAG_PASS if not failed else TAG_FAIL))
 
     for r in report.get("results") or []:
         if r.get("passed"):
@@ -304,12 +331,21 @@ def run_property_check(
 
     # A failed CAD BOM walk (children_error) means the child list is
     # incomplete — an unseen child could be failing rules the walk never
-    # reached. Reporting a pass on a partial walk is exactly the "absent data
-    # reads as success" bug already fixed once in property_check_blocked;
-    # this closes the same hole in the step engine itself.
-    ok = not failed and not bad_children and not result.get("children_error")
-    summary = (f"Property Check: {passed}/{total} on the top file, "
-               f"{len(bad_children)} of {len(children)} child file(s) failing.")
+    # reached. An unchecked top file means literally nothing was verified.
+    # Either one reading as a pass is exactly the "absent data reads as
+    # success" bug already fixed once in property_check_blocked; this closes
+    # the same hole in the step engine itself.
+    ok = (not failed and not bad_children
+          and not result.get("children_error") and not unchecked)
+    if unchecked:
+        summary = (f"Property Check: no rule set for category {category!r} "
+                   f"— nothing was checked on the top file "
+                   f"({len(bad_children)} of {len(children)} child file(s) "
+                   f"failing).")
+    else:
+        summary = (f"Property Check: {passed}/{total} on the top file, "
+                   f"{len(bad_children)} of {len(children)} child file(s) "
+                   f"failing.")
     return StepOutcome(ok=ok, summary=summary, lines=lines, result=result)
 
 
@@ -324,11 +360,31 @@ def run_sync_properties(
     """
     import asyncio
 
+    entries = _entries(compliance)
     version_ids = file_version_ids(compliance)
     if not version_ids:
+        if not entries:
+            return StepOutcome(
+                ok=True, summary="No files to sync.",
+                lines=[("  [warn] No CAD files found — nothing to sync.",
+                        TAG_WARN)],
+            )
+        # Files WERE found by step 1 — every one of them just failed to
+        # carry a usable version ID. That is a total drop, not "nothing to
+        # do": it must not read the same as an assembly with zero CAD files,
+        # or a single API shape change that blanks every ID paints the whole
+        # step green.
+        lines = [(f"  [fail] {len(entries)} file(s) found, but none carry a "
+                  f"usable file-version ID — nothing can be synced.",
+                  TAG_FAIL)]
+        for name, missing in unresolved_files(compliance):
+            if missing in ("version", "both"):
+                lines.append((f"      ! {name}: no file-version ID", TAG_FAIL))
         return StepOutcome(
-            ok=True, summary="No files to sync.",
-            lines=[("  [warn] No CAD files found — nothing to sync.", TAG_WARN)],
+            ok=False,
+            summary=(f"Sync Properties: {len(entries)} file(s) found, 0 "
+                     f"usable — nothing was synced."),
+            lines=lines,
         )
 
     names = _names_by_version_id(compliance)
@@ -346,24 +402,47 @@ def run_sync_properties(
                 (f"      ! {name}: no file-version ID — cannot be synced",
                  TAG_WARN))
 
+    applied_once = False
+
     def apply() -> StepOutcome:
+        nonlocal applied_once
+        if applied_once:
+            # The GUI's own state machine should prevent a second click, but
+            # this engine is what's under test, and Tasks 8-10 copy this
+            # shape — it must refuse to submit twice on its own account.
+            return StepOutcome(
+                ok=False,
+                summary=("Sync Properties: this preview was already applied "
+                         "— re-run step 2 for a fresh one."),
+                lines=[("  [warn] Already applied once this run — nothing "
+                        "submitted again.", TAG_WARN)],
+            )
+        applied_once = True
+
         async def submit_all() -> tuple[int, int, list[tuple[str, str]]]:
             ok_n = bad_n = 0
             out: list[tuple[str, str]] = []
             for fid in version_ids:
                 name = names.get(fid, fid)
-                resp = await api.submit_job(
-                    vault_id=vault_id,
-                    job_type="Autodesk.Vault.SyncProperties",
-                    params={"FileVersionId": fid},
-                    description=f"SyncProperties: {name}",
-                    priority=10,
-                )
-                if resp["error"]:
-                    out.append((f"    [fail] {name}: {resp['data']}", TAG_FAIL))
+                try:
+                    resp = await api.submit_job(
+                        vault_id=vault_id,
+                        job_type="Autodesk.Vault.SyncProperties",
+                        params={"FileVersionId": fid},
+                        description=f"SyncProperties: {name}",
+                        priority=10,
+                    )
+                except Exception as exc:  # noqa: BLE001 — one file must not
+                    # sink the ones already submitted before it.
+                    out.append((f"    [fail] {name}: {exc}", TAG_FAIL))
+                    bad_n += 1
+                    continue
+                if resp.get("error"):
+                    out.append((f"    [fail] {name}: {resp.get('data')}",
+                                TAG_FAIL))
                     bad_n += 1
                 else:
-                    data = resp["data"] or {}
+                    data = resp.get("data") or {}
                     job_id = str((data.get("job") or {}).get("id")
                                  or data.get("id") or "?")
                     out.append((f"    [ok]   {name}  (job {job_id})", TAG_PASS))
@@ -401,30 +480,68 @@ def run_release_files(
 ) -> StepOutcome:
     """Step 3 — promote every file to the target lifecycle state.
 
-    The state must be resolved inside the *file* lifecycle definition, not the
-    item one, so we look up the first file and search its own definition.
-    ``state_id`` short-circuits that when the user sets the override field.
+    The state must be resolved inside the *file* lifecycle definition, not
+    the item one, so we look up the first file (by ``file_master_ids(...)[0]``)
+    and search its own definition. If a child sits in a different file
+    lifecycle than the top file, the id resolved from the top file may not
+    be the right one for it — that fails loudly against Vault rather than
+    silently guessing, and ``state_id`` exists as the override for exactly
+    that case. ``state_id`` short-circuits the lookup entirely when set.
+
+    ``api`` and ``vault_id`` are accepted but unused here — this step talks
+    to Vault only through the SDK bridge (``_sdk()``), never the REST API.
+    They are kept for signature uniformity with the other step engines,
+    which Task 12's dispatch table calls positionally; dropping them would
+    break that symmetry for no benefit.
     """
+    entries = _entries(compliance)
     masters = file_master_ids(compliance)
     if not masters:
+        if not entries:
+            return StepOutcome(
+                ok=True, summary="No files to release.",
+                lines=[("  [warn] No CAD files found to release.", TAG_WARN)],
+            )
+        # Files WERE found by step 1 — every one of them just failed to
+        # carry a usable master ID. Releasing 0 of N files found must not
+        # read the same as an assembly with zero CAD files: "nothing to do"
+        # and "everything was dropped" cannot share an outcome.
+        lines = [(f"  [fail] {len(entries)} file(s) found, but none carry a "
+                  f"usable file master ID — nothing can be released.",
+                  TAG_FAIL)]
+        for name, missing in unresolved_files(compliance):
+            if missing in ("master", "both"):
+                lines.append((f"      ! {name}: no file master ID", TAG_FAIL))
         return StepOutcome(
-            ok=True, summary="No files to release.",
-            lines=[("  [warn] No CAD files found to release.", TAG_WARN)],
+            ok=False,
+            summary=(f"Release Files: {len(entries)} file(s) found, 0 "
+                     f"usable — nothing was released."),
+            lines=lines,
         )
 
-    sdk = _sdk()
+    try:
+        sdk = _sdk()
+    except Exception as exc:  # noqa: BLE001 — the bridge module itself can
+        # fail to import; that must convert to a failed outcome too.
+        return StepOutcome(
+            ok=False, summary=f"Could not load the Vault SDK bridge: {exc}",
+            lines=[(f"  [fail] {exc}", TAG_FAIL)])
+
     resolved = state_id
     if resolved is None:
         try:
             first = sdk.lookup_file(masters[0])
+            if not first.get("found"):
+                msg = f"Could not look up file masterId={masters[0]}"
+                return StepOutcome(ok=False, summary=msg,
+                                   lines=[(f"  [fail] {msg}", TAG_FAIL)])
+            # find_state_id_for_file reaches the same PowerShell bridge as
+            # lookup_file — a non-zero exit, timeout, or bad JSON there must
+            # be caught here too, not just around the lookup that precedes it.
+            resolved = sdk.find_state_id_for_file(first, target_state)
         except Exception as exc:  # noqa: BLE001
             return StepOutcome(ok=False, summary=f"File lookup failed: {exc}",
                                lines=[(f"  [fail] {exc}", TAG_FAIL)])
-        if not first.get("found"):
-            msg = f"Could not look up file masterId={masters[0]}"
-            return StepOutcome(ok=False, summary=msg,
-                               lines=[(f"  [fail] {msg}", TAG_FAIL)])
-        resolved = sdk.find_state_id_for_file(first, target_state)
 
     if resolved is None:
         msg = (f"Could not resolve a lifecycle state id for {target_state!r} "
@@ -450,7 +567,19 @@ def run_release_files(
                 (f"      ! {name}: no file master ID — will NOT be released",
                  TAG_WARN))
 
+    applied_once = False
+
     def apply() -> StepOutcome:
+        nonlocal applied_once
+        if applied_once:
+            return StepOutcome(
+                ok=False,
+                summary=("Release Files: this preview was already applied "
+                         "— re-run step 3 for a fresh one."),
+                lines=[("  [warn] Already applied once this run — nothing "
+                        "changed again.", TAG_WARN)],
+            )
+        applied_once = True
         try:
             result = sdk.update_file_lifecycle_states(
                 masters, resolved,
@@ -459,10 +588,32 @@ def run_release_files(
         except Exception as exc:  # noqa: BLE001
             return StepOutcome(ok=False, summary=f"Release failed: {exc}",
                                lines=[(f"  [fail] {exc}", TAG_FAIL)])
-        moved = result.get("updated", len(masters))
+
+        # Never assume a full success from what the bridge didn't confirm.
+        # {"updated": 0} is directly reachable (vault_sdk.ps1's `$updated`
+        # can be empty); an empty dict, or an explicit None, means the
+        # bridge told us nothing at all — that must fail, not default to
+        # "everything requested moved". The denominator is always shown:
+        # "37 moved" gives no baseline, "37 of 40" does.
+        requested = len(masters)
+        moved = result.get("updated")
+        if moved is None:
+            msg = (f"Release Files: the Vault bridge did not report how "
+                   f"many file(s) moved (requested {requested}) — treating "
+                   f"as failed since it cannot be confirmed.")
+            return StepOutcome(
+                ok=False, summary=msg,
+                lines=[(f"  [fail] Bridge response carried no 'updated' "
+                        f"count (requested {requested}).", TAG_FAIL)],
+            )
+
+        ok = moved == requested
         return StepOutcome(
-            ok=True, summary=f"Released {moved} file(s) to '{target_state}'.",
-            lines=[(f"  [ok] Released {moved} file(s).", TAG_PASS)],
+            ok=ok,
+            summary=(f"Released {moved} of {requested} file(s) to "
+                     f"'{target_state}'."),
+            lines=[(f"  [{'ok' if ok else 'fail'}] Released {moved} of "
+                    f"{requested} file(s).", TAG_PASS if ok else TAG_FAIL)],
         )
 
     return StepOutcome(

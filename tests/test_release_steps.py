@@ -637,3 +637,385 @@ def test_release_preview_does_not_flag_a_file_missing_only_its_version_id(
 
     assert not any("NoVersion.ipt" in text and tag == release_steps.TAG_WARN
                    for text, tag in out.lines)
+
+
+# ===========================================================================
+# Stage-2 review fixes: three Criticals (absent data reading as success,
+# the fourth/fifth/sixth instance of that pattern in this project) plus
+# three Improvements and a set of minors.
+# ===========================================================================
+
+
+# --- C1: an unchecked top file must never render as a green PASS ----------
+
+
+def test_property_check_is_not_ok_when_the_top_file_has_no_rule_set(monkeypatch):
+    """``report`` is None — not {} — when no rule set matches the file's
+    category (check_file_properties.evaluate_against_rules / result_exit_code
+    returns 2 for this case). That must not read as 0 failures. This is the
+    same bug already fixed once in property_check_blocked; a green PASS here
+    is worse than a silent one, because it is what makes ticking 'Force past
+    compliance gate' at step 2 feel safe."""
+    unchecked = {
+        "file_name": "CD-001659.iam",
+        "info": {"file_version_id": "100", "file_id": "10", "properties": {}},
+        "report": None,
+        "children": [], "children_error": None,
+        "category_resolved": None, "category_raw": "Unrecognized",
+    }
+    monkeypatch.setattr(release_steps, "_check_file_name", lambda **kw: unchecked)
+
+    out = release_steps.run_property_check("CD-001659.iam")
+
+    assert out.ok is False
+    assert "nothing was checked" in out.summary.lower()
+    # Nothing about this outcome may look like a pass.
+    assert not any(tag == release_steps.TAG_PASS for _text, tag in out.lines)
+
+
+def test_property_check_unchecked_still_carries_the_result_for_force(monkeypatch):
+    """Unchecked is forceable (property_check_blocked already treats a
+    missing rule set as forceable) — step 1 must still hand the result
+    through so steps 2/3 can run under Force."""
+    unchecked = {
+        "file_name": "CD-001659.iam",
+        "info": {"file_version_id": "100", "file_id": "10", "properties": {}},
+        "report": None,
+        "children": [], "children_error": None,
+        "category_resolved": None, "category_raw": "Unrecognized",
+    }
+    monkeypatch.setattr(release_steps, "_check_file_name", lambda **kw: unchecked)
+
+    out = release_steps.run_property_check("CD-001659.iam")
+
+    assert out.result is unchecked
+
+
+# --- C2: step 3's apply must reflect what the bridge actually confirmed ---
+
+
+def _sdk_stub_with_update_response(monkeypatch, update_return):
+    """Minimal vault_sdk stub whose update_file_lifecycle_states returns
+    exactly ``update_return`` — for pinning C2's success math against every
+    shape the real PowerShell bridge can hand back."""
+    def lookup_file(master_id):
+        return {"found": True, "masterId": master_id}
+
+    def find_state_id_for_file(record, name):
+        return 42 if name == "Released" else None
+
+    def update_file_lifecycle_states(masters, state_id, comment=""):
+        return update_return
+
+    class VaultSDKError(Exception):
+        pass
+
+    monkeypatch.setattr(release_steps, "_sdk", lambda: type("SDK", (), {
+        "lookup_file": staticmethod(lookup_file),
+        "find_state_id_for_file": staticmethod(find_state_id_for_file),
+        "update_file_lifecycle_states": staticmethod(update_file_lifecycle_states),
+        "VaultSDKError": VaultSDKError,
+    }))
+
+
+@pytest.mark.parametrize(
+    "bridge_response, expect_ok, expect_in_summary",
+    [
+        ({"updated": 2}, True, "2 of 2"),        # full match — genuine success
+        ({"updated": 0}, False, "0 of 2"),       # nothing actually moved
+        ({}, False, "did not report"),           # no 'updated' key at all
+        ({"updated": None}, False, "did not report"),  # key present but None
+    ],
+    ids=["full-match", "zero-moved", "empty-response", "updated-is-none"],
+)
+def test_release_apply_ok_reflects_what_the_bridge_actually_confirmed(
+    monkeypatch, bridge_response, expect_ok, expect_in_summary,
+):
+    _sdk_stub_with_update_response(monkeypatch, bridge_response)
+    c = _compliance(children=[("200", "20")])   # masters [10, 20] -> requested=2
+
+    applied = release_steps.run_release_files(
+        None, "V1", c, target_state="Released").pending_apply()
+
+    assert applied.ok is expect_ok
+    assert expect_in_summary in applied.summary
+    # The denominator must always be visible — "2 moved" alone gives the
+    # engineer no baseline to judge it against.
+    assert "2" in applied.summary
+
+
+# --- C3: a total drop must fail, not read as "nothing to do" --------------
+
+
+def test_sync_reports_a_total_drop_as_a_failure_not_nothing_to_do():
+    """3 files were found by step 1, but every one of them lacks a usable
+    file-version ID. That is not the same as an assembly with zero CAD
+    files — it must not share that outcome's green tick."""
+    c = _compliance(top=("", "10"), children=[("", "20"), ("", "30")])
+
+    out = release_steps.run_sync_properties(NoWriteAPI(), "V1", c)
+
+    assert out.ok is False
+    assert out.pending_apply is None
+    assert "3" in out.summary
+
+
+def test_release_reports_a_total_drop_as_a_failure_not_nothing_to_do(fake_sdk):
+    c = _compliance(top=("100", ""), children=[("200", ""), ("300", "")])
+
+    out = release_steps.run_release_files(None, "V1", c, target_state="Released")
+
+    assert out.ok is False
+    assert out.pending_apply is None
+    assert "3" in out.summary
+    assert fake_sdk["updated"] == []
+
+
+def test_sync_with_truly_no_files_stays_ok_unlike_a_total_drop():
+    """Pin the boundary next to the total-drop case: zero entries at all
+    (nothing found) is still 'nothing to do', not a failure."""
+    out = release_steps.run_sync_properties(NoWriteAPI(), "V1", {})
+    assert out.ok is True
+    assert out.pending_apply is None
+
+
+# --- I1: step 2's apply must survive a mid-batch exception ----------------
+
+
+def test_sync_apply_survives_a_mid_batch_exception_and_still_reports_every_file():
+    class FlakyAPI:
+        def __init__(self):
+            self.calls = 0
+
+        async def submit_job(self, **kwargs):
+            self.calls += 1
+            if self.calls == 2:
+                raise ConnectionError("transport reset")
+            return {"error": False, "data": {"job": {"id": str(self.calls)}}}
+
+    c = _compliance(children=[("200", "20"), ("300", "30")])
+    applied = release_steps.run_sync_properties(
+        FlakyAPI(), "V1", c).pending_apply()
+
+    assert applied.ok is False
+    # One line per file — the raise on file 2 must not swallow the record of
+    # files 1 and 3, or two real submissions become invisible to the user.
+    assert len(applied.lines) == 3
+    assert any("transport reset" in text for text, _tag in applied.lines)
+    assert sum(1 for _t, tag in applied.lines
+               if tag == release_steps.TAG_PASS) == 2
+
+
+def test_sync_apply_does_not_crash_on_a_response_with_no_error_key():
+    """resp['error'] raises KeyError on a response missing that key; must
+    use resp.get('error') instead."""
+    class BareAPI:
+        async def submit_job(self, **kwargs):
+            return {"data": {"job": {"id": "9"}}}  # no "error" key at all
+
+    applied = release_steps.run_sync_properties(
+        BareAPI(), "V1", _compliance()).pending_apply()
+
+    assert applied.ok is True
+
+
+# --- I2: every bridge call in step 3 must be caught, not just the first ---
+
+
+def test_release_preview_converts_a_find_state_error_without_escaping(
+    monkeypatch,
+):
+    """find_state_id_for_file reaches the same PowerShell bridge as
+    lookup_file — a non-zero exit, timeout, or bad JSON there must convert
+    to a failed outcome exactly like a lookup_file failure does, not
+    escape out of run_release_files."""
+    class VaultSDKError(Exception):
+        pass
+
+    def lookup_file(master_id):
+        return {"found": True, "masterId": master_id}
+
+    def find_state_id_for_file(record, name):
+        raise VaultSDKError("vault_sdk.ps1 exited non-zero")
+
+    monkeypatch.setattr(release_steps, "_sdk", lambda: type("SDK", (), {
+        "lookup_file": staticmethod(lookup_file),
+        "find_state_id_for_file": staticmethod(find_state_id_for_file),
+        "update_file_lifecycle_states": staticmethod(
+            lambda *a, **k: {"updated": 0}),
+        "VaultSDKError": VaultSDKError,
+    }))
+
+    out = release_steps.run_release_files(
+        None, "V1", _compliance(), target_state="Released")
+
+    assert out.ok is False
+    assert out.pending_apply is None
+    assert "non-zero" in out.summary
+
+
+def test_release_preview_converts_an_sdk_import_error_without_escaping(
+    monkeypatch,
+):
+    """_sdk() itself can raise (e.g. the bridge module is missing) — that
+    must convert to a failed outcome too, never escape."""
+    def boom():
+        raise ImportError("no module named vault_sdk")
+    monkeypatch.setattr(release_steps, "_sdk", boom)
+
+    out = release_steps.run_release_files(
+        None, "V1", _compliance(), target_state="Released")
+
+    assert out.ok is False
+    assert out.pending_apply is None
+
+
+def test_release_apply_converts_an_sdk_write_exception_to_a_failed_outcome(
+    monkeypatch,
+):
+    """Pins step 3's apply try/except directly — deleting it entirely
+    survived the mutation pass because nothing exercised this path."""
+    def lookup_file(master_id):
+        return {"found": True, "masterId": master_id}
+
+    def find_state_id_for_file(record, name):
+        return 42
+
+    def update_file_lifecycle_states(masters, state_id, comment=""):
+        raise RuntimeError("vault_sdk.ps1 exited non-zero")
+
+    monkeypatch.setattr(release_steps, "_sdk", lambda: type("SDK", (), {
+        "lookup_file": staticmethod(lookup_file),
+        "find_state_id_for_file": staticmethod(find_state_id_for_file),
+        "update_file_lifecycle_states": staticmethod(update_file_lifecycle_states),
+        "VaultSDKError": Exception,
+    }))
+
+    applied = release_steps.run_release_files(
+        None, "V1", _compliance(), target_state="Released").pending_apply()
+
+    assert applied.ok is False
+    assert "exited non-zero" in applied.summary
+
+
+# --- I3: the top file must never read as "(unnamed)" ----------------------
+
+
+def test_release_preview_names_the_top_file_by_its_real_name_not_unnamed(
+    fake_sdk,
+):
+    """fetch_file's info dict carries no file_name of its own — that key
+    lives one level up, at compliance['file_name']. Without borrowing it,
+    the top file is the one file whose own drop always reads as
+    '(unnamed)' while every CAD BOM child gets its real name."""
+    c = _compliance(top=("100", ""), children=[("200", "20")])
+
+    out = release_steps.run_release_files(None, "V1", c, target_state="Released")
+
+    assert not any("(unnamed)" in text for text, _tag in out.lines)
+    assert any("CD-001659.iam" in text for text, _tag in out.lines)
+
+
+def test_sync_preview_names_the_top_file_by_its_real_name_not_unnamed():
+    c = _compliance(top=("", "10"), children=[("200", "20")])
+
+    out = release_steps.run_sync_properties(NoWriteAPI(), "V1", c)
+
+    assert not any("(unnamed)" in text for text, _tag in out.lines)
+    assert any("CD-001659.iam" in text for text, _tag in out.lines)
+
+
+# --- Minors -----------------------------------------------------------
+
+
+def test_sync_apply_refuses_a_second_call():
+    """The GUI prevents a double-click, but the engine is what's under
+    test and Tasks 8-10 will copy this shape — it must guard itself."""
+    api = RecordingAPI()
+    c = _compliance(children=[("200", "20")])
+    pending = release_steps.run_sync_properties(api, "V1", c).pending_apply
+
+    pending()
+    submitted_after_first = len(api.submitted)
+    second = pending()
+
+    assert len(api.submitted) == submitted_after_first   # nothing submitted again
+    assert second.ok is False
+    assert second.pending_apply is None
+
+
+def test_release_apply_refuses_a_second_call(fake_sdk):
+    c = _compliance(children=[("200", "20")])
+    pending = release_steps.run_release_files(
+        None, "V1", c, target_state="Released").pending_apply
+
+    pending()
+    second = pending()
+
+    assert len(fake_sdk["updated"]) == 1     # only wrote once
+    assert second.ok is False
+    assert second.pending_apply is None
+
+
+def test_release_preview_warns_that_the_change_cannot_be_undone(fake_sdk):
+    """A safety affordance on the only irreversible step — a mutation
+    deleting this sentence survived, so pin it directly."""
+    out = release_steps.run_release_files(
+        None, "V1", _compliance(), target_state="Released")
+    assert any("cannot be undone" in text.lower() for text, _tag in out.lines)
+
+
+def test_master_ids_logs_a_warning_for_unparseable_ids(caplog):
+    """logger.warning -> logger.debug survived the mutation pass; pin the
+    level directly."""
+    c = _compliance(children=[("200", "not-a-number")])
+    with caplog.at_level("WARNING", logger="release_steps"):
+        release_steps.file_master_ids(c)
+    assert any(r.levelname == "WARNING" for r in caplog.records)
+
+
+def test_property_check_only_emits_known_tags(monkeypatch):
+    monkeypatch.setattr(release_steps, "_check_file_name", lambda **kw: {
+        "file_name": "CD-001659.iam",
+        "info": {"file_version_id": "100", "file_id": "10", "properties": {}},
+        "report": {"total": 5, "passed": 3, "failed": 2, "results": [
+            {"property": "Revision", "passed": False, "value": "",
+             "failures": ["must not be empty"]}]},
+        "children": [{"file_name": "A.ipt", "file_version_id": "200",
+                      "file_id": "20", "category_resolved": "Part",
+                      "report": {"failed": 1, "results": [
+                          {"property": "Material", "passed": False,
+                           "value": "", "failures": ["x"]}]}}],
+        "children_error": None, "category_resolved": "Assembly",
+    })
+    out = release_steps.run_property_check("CD-001659.iam")
+    for _text, tag in out.lines:
+        assert tag in release_steps.ALL_TAGS, f"unknown tag {tag!r}"
+
+
+def test_sync_only_emits_known_tags():
+    c = _compliance(children=[("200", "20")])
+    preview = release_steps.run_sync_properties(RecordingAPI(), "V1", c)
+    applied = preview.pending_apply()
+    for outcome in (preview, applied):
+        for _text, tag in outcome.lines:
+            assert tag in release_steps.ALL_TAGS, f"unknown tag {tag!r}"
+
+
+def test_release_only_emits_known_tags(fake_sdk):
+    c = _compliance(children=[("200", "20")])
+    preview = release_steps.run_release_files(
+        None, "V1", c, target_state="Released")
+    applied = preview.pending_apply()
+    for outcome in (preview, applied):
+        for _text, tag in outcome.lines:
+            assert tag in release_steps.ALL_TAGS, f"unknown tag {tag!r}"
+
+
+def test_file_version_ids_handles_none_the_same_way_unresolved_files_does():
+    """The None guard lived only in unresolved_files; file_version_ids(None)
+    and file_master_ids(None) raised. Move the guard into _entries so all
+    three behave the same way instead of inviting a wrong assumption."""
+    assert release_steps.file_version_ids(None) == []
+    assert release_steps.file_master_ids(None) == []
+    assert release_steps.unresolved_files(None) == []
