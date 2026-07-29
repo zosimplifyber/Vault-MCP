@@ -335,8 +335,7 @@ def bom_dataframe_from_file(path: str):
 
     # The key: the CAD file name without its extension. Everything downstream
     # matches on this, so it is taken from the export's file-name column and
-    # nowhere else — a row without one has no key.
-    file_col = next((c for c in _FILE_NAME_COLUMNS if c in raw.columns), None)
+    # nowhere else — a row without one has no key. Same column resolved above.
     coerced["Name"] = (raw[file_col].map(_file_stem).values
                        if file_col is not None else None)
     return coerced, None

@@ -30,7 +30,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -56,6 +55,12 @@ from check_item_properties import (  # noqa: E402
 
 CONFIG_PATH = PROJECT_ROOT / "config.json"
 DEFAULT_RULES_PATH = PROJECT_ROOT / "file_property_rules.json"
+
+# One re-fetch per child is issued when grading at the latest version, and
+# vault_rest_api opens a fresh httpx client per request — so nothing else caps
+# this. Matches vault_state.MAX_CONCURRENCY: enough to finish a 300-part BOM in
+# seconds, few enough that Vault isn't hit with 300 sockets at once.
+MAX_CONCURRENCY = 8
 
 
 # ---------------------------------------------------------------------------
@@ -346,9 +351,13 @@ async def fetch_cad_children(
         })
 
     if use_latest and children:
-        await asyncio.gather(
-            *[_upgrade_child_to_latest(api, vault_id, c) for c in children]
-        )
+        sem = asyncio.Semaphore(MAX_CONCURRENCY)
+
+        async def upgrade(child: dict[str, Any]) -> None:
+            async with sem:
+                await _upgrade_child_to_latest(api, vault_id, child)
+
+        await asyncio.gather(*[upgrade(c) for c in children])
 
     children.sort(key=lambda c: c["file_name"].lower())
     return children

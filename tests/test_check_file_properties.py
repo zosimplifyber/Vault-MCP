@@ -645,6 +645,53 @@ def test_a_child_that_no_longer_resolves_is_an_error(uses_payload):
     assert all(c["error"] for c in children)
 
 
+def test_the_latest_version_lookups_are_concurrency_capped():
+    """A big assembly must not open one socket per child.
+
+    vault_rest_api builds a fresh httpx client per request, so nothing else
+    throttles this — an unbounded gather over a 200-part BOM hits Vault with
+    200 simultaneous connections.
+    """
+    import asyncio
+
+    children = [{
+        "childFile": {
+            "name": f"CD-{i:06d}.ipt", "id": str(500000 + i),
+            "file": {"id": str(i)}, "revision": "1", "state": "Released",
+            "category": "Part - Engineering",
+        },
+        "fileAssocType": "Dependency",
+    } for i in range(200)]
+
+    class FakeAPI(_UsesOnlyAPI):
+        def __init__(self):
+            super().__init__({
+                "results": children,
+                "included": {"propertyDefinition": {
+                    "1": {"displayName": "Source", "systemName": "Source"}}},
+            })
+            self.in_flight = 0
+            self.peak = 0
+
+        async def search_file_versions(self, **kwargs):
+            self.in_flight += 1
+            self.peak = max(self.peak, self.in_flight)
+            # Yield so every coroutine gather has already scheduled gets a
+            # chance to enter before the first one returns.
+            await asyncio.sleep(0)
+            self.in_flight -= 1
+            return {"error": False, "status_code": 200, "data": {"results": [
+                {"name": kwargs["query"], "id": "999", "file": {"id": "1"}},
+            ]}}
+
+    api = FakeAPI()
+    asyncio.run(cfp.fetch_cad_children(api, "1", "124814"))
+
+    assert api.peak <= cfp.MAX_CONCURRENCY, (
+        f"{api.peak} concurrent lookups; expected at most {cfp.MAX_CONCURRENCY}"
+    )
+
+
 def test_a_failed_bom_walk_raises_with_the_vault_message():
     import asyncio
 
