@@ -19,6 +19,7 @@ import asyncio
 import html as html_lib
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any, Callable, Optional
@@ -219,14 +220,20 @@ class ReconcileRow:
         return self.excluded or bool(self.chosen)
 
 
+_PUNCTUATION = re.compile(r"[^0-9A-Za-z]+")
+
+
 def vendor_key(value: str) -> str:
     """Normalized form for comparing and grouping supplier names.
 
-    Case, surrounding whitespace and runs of internal whitespace all collapse:
-    the reference BOM spells it McMASTER-CARR, and a supplier typed as
-    "machine  shop" is the same vendor as "Machine Shop".
+    Case, surrounding whitespace, runs of internal whitespace, and punctuation
+    all collapse: the reference BOM spells it McMASTER-CARR, a supplier typed
+    as "machine  shop" is the same vendor as "Machine Shop", and a real sheet
+    spelled the same shop "In House" on one row and "In-house" on another —
+    without punctuation folding those produced two separate one-part orders
+    for a single shop.
     """
-    return " ".join(_text(value).split()).casefold()
+    return _PUNCTUATION.sub(" ", _text(value)).strip().casefold()
 
 
 def _same_vendor(left: str, right: str) -> bool:
@@ -415,6 +422,10 @@ STAGE_PURCHASING = "Purchasing"
 STAGE_MANUFACTURING = "Manufacturing"
 STAGE_SHIPPING = "Shipping"
 
+# Supplier names that mean "our own shop" rather than a vendor. Compared
+# after vendor_key normalization, so punctuation and case do not matter.
+IN_HOUSE_KEYS = frozenset({"in house", "inhouse"})
+
 
 @dataclass
 class StageSchedule:
@@ -439,9 +450,24 @@ class SupplierOrder:
         return bool(self.make_parts)
 
     @property
+    def is_in_house(self) -> bool:
+        """Whether this order is our own shop rather than a vendor.
+
+        There is no PO to issue to yourself, so an in-house order has no
+        Purchasing stage.
+        """
+        return vendor_key(self.supplier) in IN_HOUSE_KEYS
+
+    @property
     def stages(self) -> list[str]:
         """The stages this order passes through. A Buy-only order skips
-        Manufacturing — nothing is made, the supplier ships from stock."""
+        Manufacturing — nothing is made, the supplier ships from stock. An
+        in-house order skips Purchasing — there is no PO to issue to your own
+        shop."""
+        if self.is_in_house:
+            # No PO to issue to your own shop. Shipping still means moving
+            # the finished part to where it is needed.
+            return ([STAGE_MANUFACTURING] if self.has_make else []) + [STAGE_SHIPPING]
         if self.has_make:
             return [STAGE_PURCHASING, STAGE_MANUFACTURING, STAGE_SHIPPING]
         return [STAGE_PURCHASING, STAGE_SHIPPING]
@@ -746,7 +772,7 @@ async def create_orders(
                 progress(f"  {title}: already exists - skipped")
             continue
 
-        owner = owners.get(STAGE_PURCHASING)
+        owner = owners.get(order.stages[0]) if order.stages else None
         parent_resp = await wrike.create_task(
             folder_id, title,
             description=render_description(order, STAGE_PARENT,

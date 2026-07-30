@@ -831,3 +831,85 @@ async def test_a_dependency_failure_leaves_the_tasks_in_place():
     assert result.orders_created == 1
     assert len(wrike.created) == 4
     assert result.dependency_failures
+
+
+# ------------------------------------------------------------- in-house
+
+
+def test_punctuation_does_not_split_a_supplier():
+    """A real sheet spelled the same shop "In House" and "In-house" and got
+    two separate one-part orders."""
+    assert wmt.vendor_key("In-house") == wmt.vendor_key("In House")
+    assert wmt.vendor_key("McMASTER-CARR") == wmt.vendor_key("McMaster Carr")
+
+
+def test_the_two_in_house_spellings_make_one_order():
+    rows = [_resolved("A", "In House", wmt.KIND_MAKE),
+            _resolved("B", "In-house", wmt.KIND_MAKE)]
+    orders = wmt.group_orders(rows)
+
+    assert len(orders) == 1
+    assert len(orders[0].parts) == 2
+
+
+def test_an_in_house_order_has_no_purchasing_task():
+    """There is no PO to issue to your own shop."""
+    rows = [_resolved("A", "In House", wmt.KIND_MAKE)]
+    order = wmt.group_orders(rows)[0]
+
+    assert order.is_in_house
+    assert order.stages == [wmt.STAGE_MANUFACTURING, wmt.STAGE_SHIPPING]
+
+
+def test_an_ordinary_supplier_still_gets_purchasing():
+    rows = [_resolved("A", "Xometry", wmt.KIND_MAKE)]
+    order = wmt.group_orders(rows)[0]
+
+    assert not order.is_in_house
+    assert order.stages[0] == wmt.STAGE_PURCHASING
+
+
+def test_an_in_house_order_numbers_its_stages_from_one():
+    rows = [_resolved("A", "In House", wmt.KIND_MAKE)]
+    order = wmt.schedule_orders(wmt.group_orders(rows), start=date(2026, 8, 3),
+                                durations=wmt.Durations())[0]
+
+    assert (wmt.stage_title("CD-001608", order, wmt.STAGE_MANUFACTURING)
+            == "CD-001608 In House - 1. Manufacturing")
+    assert (wmt.stage_title("CD-001608", order, wmt.STAGE_SHIPPING)
+            == "CD-001608 In House - 2. Shipping")
+
+
+def test_an_in_house_order_starts_manufacturing_on_the_start_date():
+    """With no Purchasing stage there is nothing to wait for."""
+    rows = [_resolved("A", "In House", wmt.KIND_MAKE, lead=5)]
+    order = wmt.schedule_orders(wmt.group_orders(rows), start=date(2026, 8, 3),
+                                durations=wmt.Durations())[0]
+
+    stages = {s.stage: s for s in order.schedule}
+    assert stages[wmt.STAGE_MANUFACTURING].start == date(2026, 8, 3)
+
+
+async def test_an_in_house_parent_takes_the_manufacturing_owner():
+    """The parent takes its first stage's owner, and in-house has no
+    Purchasing stage to take one from."""
+    rows = [_resolved("A", "In House", wmt.KIND_MAKE)]
+    order = wmt.schedule_orders(wmt.group_orders(rows), start=date(2026, 8, 3),
+                                durations=wmt.Durations())[0]
+    wrike = FakeWrike()
+    await _create([order], wrike)
+
+    assert wrike.created[0]["responsibles"] == ["KUAAM"]
+    assert [c["title"] for c in wrike.created] == [
+        "CD-001608 - In House",
+        "CD-001608 In House - 1. Manufacturing",
+        "CD-001608 In House - 2. Shipping",
+    ]
+
+
+async def test_an_ordinary_parent_still_takes_the_purchasing_owner():
+    order = _scheduled_order([wmt.OrderPart(title="CD-001200")])
+    wrike = FakeWrike()
+    await _create([order], wrike)
+
+    assert wrike.created[0]["responsibles"] == ["KUAAP"]

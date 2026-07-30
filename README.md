@@ -177,7 +177,7 @@ Reads a **generated purchasing workbook** — the output of BOM → Purchasing S
 
 Every supplier on the sheet gets **one order**: a parent task plus stage subtasks. Part count never changes task count — eleven screws from McMaster-Carr are one order with eleven line items, not eleven tasks. A supplier with both made and bought parts still gets one order, because that is still one PO; Manufacturing then lists only the made parts. Sub-assembly roll-up rows are excluded and their children ordered individually — an assembly's Sub Total is a SUM of its children, so ordering both would double-count.
 
-Stages are **Purchasing → Manufacturing → Shipping**, chained finish-to-start so a slip cascades on the Gantt. An order with nothing to make skips Manufacturing — a catalogue supplier ships from stock — and its lead time drives Shipping instead.
+Stages are **Purchasing → Manufacturing → Shipping**, chained finish-to-start so a slip cascades on the Gantt. An order with nothing to make skips Manufacturing — a catalogue supplier ships from stock — and its lead time drives Shipping instead. An order for `In House` or `Inhouse` skips Purchasing instead — there is no PO to issue to your own shop — so an in-house Make order is Manufacturing → Shipping and takes its Manufacturing owner as the parent's owner.
 
 **Supplier reconciliation** is the heart of it. Each part's supplier is recorded twice — the sheet's Vendor column and the Vault file's Vendor property — and the tool checks them against each other before anything can be previewed:
 
@@ -190,7 +190,7 @@ Stages are **Purchasing → Manufacturing → Shipping**, chained finish-to-star
 | Not in Vault, bought part | Sheet value proposed — a catalogue screw was probably never checked in |
 | Not in Vault, made part | Blocked — a missing CD-numbered part means a wrong name or an un-checked-in file |
 
-Comparison ignores case and whitespace, so `McMASTER-CARR` matches `McMaster-Carr`.
+Comparison ignores case, whitespace and punctuation, so `McMASTER-CARR` matches `McMaster-Carr` and `In-house` matches `In House` — a real sheet spelled the same shop both ways and, before punctuation was folded in, that split one shop into two one-part orders.
 
 Three gated steps guard against writing a board twice: **Load & Reconcile** → **Preview** (enabled only once nothing is unresolved) → **Create Tasks** (enabled only after a Preview, and disabled once used — a second run needs a fresh Preview).
 
