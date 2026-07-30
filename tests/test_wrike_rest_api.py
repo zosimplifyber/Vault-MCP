@@ -312,3 +312,37 @@ async def test_list_projects_drops_recycle_bin_folders():
     rows = result["data"]["data"]
     assert [r["id"] for r in rows] == ["F1"]
     assert result["data"]["count"] == 1
+
+
+# ---------------------------------------------------------------------------
+# folder_is_outside_zone (create-path warning, not the guard itself)
+# ---------------------------------------------------------------------------
+
+async def test_folder_is_outside_zone_is_false_when_no_allowlist():
+    """No allowlist means the guard is off, so nothing is outside it."""
+    def handler(request):
+        return httpx.Response(200, json={"data": []})
+    api = make_api(handler)
+    assert await api.folder_is_outside_zone("ANY") is False
+
+
+async def test_folder_is_outside_zone_covers_descendants():
+    """The zone includes children of the configured folders, so a project
+    nested under one is inside it."""
+    def handler(request):
+        return httpx.Response(200, json={"data": [
+            {"id": "ZONE", "childIds": ["CHILD"]},
+            {"id": "CHILD", "childIds": []},
+            {"id": "OTHER", "childIds": []},
+        ]})
+    api = make_api(handler)
+    api.allowed_folders = ["ZONE"]
+    assert await api.folder_is_outside_zone("CHILD") is False
+    assert await api.folder_is_outside_zone("ZONE") is False
+    assert await api.folder_is_outside_zone("OTHER") is True
+
+
+def test_zone_description_lists_configured_folder_ids():
+    api = make_api(lambda request: httpx.Response(200, json={"data": []}))
+    api.allowed_folders = ["F1", "F2"]
+    assert api.zone_description() == "F1, F2"

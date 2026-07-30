@@ -64,6 +64,11 @@ class WrikeMfgTasksGUI:
         self.contacts: list[dict[str, Any]] = []
         self._busy = False
         self._created = False
+        # Inputs resolved by _on_create, held until the async zone check
+        # (and, if the project is outside the safe zone, the user's
+        # yes/no) comes back and _on_zone_checked can pick up where it
+        # left off.
+        self._pending_create: Optional[dict[str, Any]] = None
 
         self.win = tk.Toplevel(master)
         self.win.title("BOM → Manufacturing Tasks")
@@ -298,6 +303,8 @@ class WrikeMfgTasksGUI:
                     self._report_created(payload)
                 elif kind == "metadata":
                     self._apply_metadata(payload)
+                elif kind == "zone_checked":
+                    self._on_zone_checked(payload)
         except queue.Empty:
             pass
         self.win.after(120, self._drain)
@@ -481,6 +488,20 @@ class WrikeMfgTasksGUI:
         self.btn_create.configure(state="normal")
 
     def _on_create(self) -> None:
+        """Resolve inputs, then dispatch an async safe-zone check before
+        writing anything.
+
+        ``create_task`` has no guard of its own — the folder allowlist is
+        enforced by callers checking first, and this dialog was the gap: it
+        populates the project picker from the unfiltered ``list_projects``,
+        so nothing stopped a silent create outside the configured zone.
+        The check itself is async and this method runs on the Tk thread, so
+        it goes through the same worker-thread + queue pattern as every
+        other engine call here (see ``_run``/``_drain``); the actual
+        yes/no prompt and the follow-up dispatch happen in
+        ``_on_zone_checked``, invoked from ``_drain`` on the Tk thread once
+        the result lands.
+        """
         if self._created:
             return
         folder_id = self._selected_id(self.projects, self.project_label)
@@ -494,13 +515,58 @@ class WrikeMfgTasksGUI:
         build = self.build.get().strip()
         source = os.path.basename(self.sheet_path.get().strip())
 
-        self.btn_create.configure(state="disabled")
+        self._pending_create = {
+            "folder_id": folder_id, "owners": owners,
+            "build": build, "source": source,
+        }
+        # Disable immediately so a second click can't queue a second check
+        # (or a second create) while this one is in flight; _created is the
+        # same latch _on_zone_checked clears on a decline so the button can
+        # be pressed again.
         self._created = True
-        self._save_settings(folder_id, owners)
+        self.btn_create.configure(state="disabled")
+        self._run(lambda: self.wrike.folder_is_outside_zone(folder_id),
+                  "zone_checked")
+
+    def _on_zone_checked(self, outside: bool) -> None:
+        pending = self._pending_create
+        self._pending_create = None
+        if pending is None:
+            return
+        # The worker that produced this result has already finished; its
+        # "idle" message is just still sitting behind this one in the
+        # queue (both were queued before this drain pass started). Clear
+        # busy now so the follow-up _run() below — dispatched from this
+        # same handler, before that queued "idle" is processed — isn't
+        # dropped by _run's own re-entrancy guard.
+        self._busy = False
+
+        if outside:
+            project = next(
+                (p for p in self.projects
+                 if p.get("id") == pending["folder_id"]), {})
+            title = self._label_of(project) or pending["folder_id"]
+            task_count = sum(len(o.stages) + 1 for o in self.orders)
+            proceed = messagebox.askyesno(
+                "Outside the safe zone",
+                f"'{title}' is OUTSIDE the configured Wrike safe zone "
+                f"({self.wrike.zone_description()}).\n\n"
+                f"{task_count} task(s) across {len(self.orders)} order(s) "
+                f"are about to be created there.\n\nProceed anyway?",
+                default=messagebox.NO, parent=self.win)
+            if not proceed:
+                self._say("Create cancelled: project is outside the "
+                          "configured safe zone.")
+                self._created = False
+                self.btn_create.configure(state="normal")
+                return
+
+        self._save_settings(pending["folder_id"], pending["owners"])
         self._run(
             lambda: wmt.create_orders(
-                self.wrike, folder_id=folder_id, build=build,
-                orders=self.orders, owners=owners, source_name=source,
+                self.wrike, folder_id=pending["folder_id"],
+                build=pending["build"], orders=self.orders,
+                owners=pending["owners"], source_name=pending["source"],
                 on_progress=lambda m: self.q.put(("log", m))),
             "created",
         )

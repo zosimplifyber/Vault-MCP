@@ -178,12 +178,32 @@ class WrikeRestAPI:
         return allowed
 
     def _blocked(self, what: str) -> Dict[str, Any]:
-        zone = ", ".join(self.allowed_folders)
+        zone = self.zone_description()
         return {"error": True, "status_code": 403, "data": (
             f"Blocked by folder guard: {what} is located exclusively OUTSIDE the "
             f"allowed folders ({zone}) and their subfolders. Ask the user to "
             "confirm this specific out-of-zone edit, then retry the call with "
             "allow_outside=true.")}
+
+    def zone_description(self) -> str:
+        """Human-readable summary of the configured safe zone, for messages
+        shown to the user. Folder ids, not titles — resolving titles would
+        take extra calls the caller (a UI confirmation prompt, an error
+        message) doesn't need to block on."""
+        return ", ".join(self.allowed_folders)
+
+    async def folder_is_outside_zone(self, folder_id: str) -> bool:
+        """Whether writing into this folder falls outside the safe zone.
+
+        False when no allowlist is configured — the guard is off, so nothing
+        is outside it. Callers that create tasks (rather than edit existing
+        ones) use this to warn before writing, since create_task itself is
+        unguarded: the allowlist is enforced by callers, not by the client.
+        """
+        if not self.allowed_folders:
+            return False
+        allowed = await self._ensure_allowed_set()
+        return folder_id not in allowed
 
     async def prime_folder_guard(self, task_ids: List[str]) -> None:
         """Pre-populate the membership cache for many tasks in one batched GET,
