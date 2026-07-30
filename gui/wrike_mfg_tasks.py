@@ -470,11 +470,13 @@ class WrikeMfgTasksGUI:
             self.plan.delete(item)
         for order in self.orders:
             by_stage = {s.stage: s for s in order.schedule}
+            parent_owner = (self.owner_labels[order.stages[0]].get()
+                           if order.stages else "")
             self.plan.insert("", "end", values=(
                 order.supplier, "(parent)",
                 order.start.isoformat() if order.start else "",
                 order.due.isoformat() if order.due else "",
-                self.owner_labels[wmt.STAGE_PURCHASING].get(), "new"))
+                parent_owner, "new"))
             for stage in order.stages:
                 sched = by_stage[stage]
                 self.plan.insert("", "end", values=(

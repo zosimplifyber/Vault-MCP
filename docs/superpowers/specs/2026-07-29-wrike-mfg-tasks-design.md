@@ -227,12 +227,27 @@ screws must not mean eleven clicks. Reds are never auto-resolved.
 ## Component: grouping
 
 Group key is the **chosen supplier alone**, normalized the same way the
-reconcile comparison normalizes it — case, surrounding whitespace, and runs of
-internal whitespace. A supplier typed as `xometry` on one row and `Xometry` on
-another is one order, not two. The group's display name is the spelling from
-its first row, which is what reaches the task title.
+reconcile comparison normalizes it — case, punctuation, surrounding
+whitespace, and runs of internal whitespace. A supplier typed as `xometry` on
+one row and `Xometry` on another is one order, not two. Punctuation counts
+because a real sheet spelled the same shop `In House` on one row and
+`In-house` on another, which split it into two orders until the normalizer
+stopped treating a hyphen as meaningful. The group's display name is the
+spelling from its first row, which is what reaches the task title.
 
 A supplier with both Make and Buy parts gets one order, because that is one PO.
+
+### In-house work is not a purchase
+
+A supplier that normalizes to `in house` is your own shop, not a vendor.
+There is no PO to issue to yourself, so an in-house order has **no Purchasing
+task** — its stages are Manufacturing → Shipping, and Shipping means moving
+the finished part to where it is needed. An in-house order carrying only
+bought parts is a data oddity rather than a real case; it gets Shipping alone.
+
+Because the first stage of an order is no longer always Purchasing, the parent
+task takes the owner of whatever its **first stage** is, rather than the
+Purchasing owner by name.
 
 - The Manufacturing task exists when the group contains at least one Make part,
   and lists only those parts.
@@ -509,7 +524,67 @@ Re-runs:
 - An existing parent that is **completed** is still detected — the status
   filter regression
 
+## Live verification, 2026-07-30 (read-only half)
+
+Run against the production Vault (`Simplifyber`) with a real generated sheet,
+`CD-001608-MFG Order 2 BOM-PurchasingExport.xlsx`. Load, reconcile, group and
+schedule only — nothing was created in Wrike.
+
+```
+19 line items   make=7  buy=12   all 19 carry a sheet vendor
+reconcile: 14 matched, 5 sheet only, 0 unresolved after Accept all
+```
+
+Everything the fixtures could not exercise showed up here and behaved:
+
+- `CD-001613` and `CD-001621` were excluded as roll-ups and their children
+  ordered individually.
+- `ISO 4762 - M6 x 20 - Stainless Steel` appeared on several rows and
+  collapsed to one line item of qty 27.
+- Every Buy row matched Vault spelling `McMASTER-CARR` against the sheet's
+  `McMASTER-CARR` — the case-insensitive comparison earning its keep on real
+  data.
+- All five Make parts came back `sheet only`: Vault carries no `Vendor` on
+  them. That is the amber path, and **Accept all proposals** cleared it in one
+  click. Had those been red, the tool would have been unusable on this sheet.
+- `MiSUMi` is Buy-only and correctly produced Purchasing → Shipping with no
+  Manufacturing task.
+
+Two things the run exposed that the design had not accounted for:
+
+1. **The same shop split into two orders.** The sheet spells it `In House` on
+   one row and `In-house` on another, and `vendor_key` normalized case and
+   whitespace but not punctuation. Fixed — punctuation is now stripped before
+   comparing, which also means the reconcile matcher tolerates it.
+2. **In-house work was getting a Purchasing task.** There is no PO to issue to
+   your own shop. Fixed — see *In-house work is not a purchase* above.
+
+After both fixes, the same sheet yields:
+
+```
+McMASTER-CARR   12 parts  367 pcs   4 tasks   Purchasing -> Manufacturing -> Shipping
+SendCutSend      3 parts    4 pcs   4 tasks   Purchasing -> Manufacturing -> Shipping
+In House         2 parts    2 pcs   3 tasks   Manufacturing -> Shipping
+in3dtec          1 part     1 pc    4 tasks   Purchasing -> Manufacturing -> Shipping
+MiSUMi           1 part     4 pcs   3 tasks   Purchasing -> Shipping
+
+5 orders, 18 tasks
+```
+
+Two observations recorded rather than fixed, because both are data rather than
+code:
+
+- `McMASTER-CARR` gets a Manufacturing stage, because one of its twelve parts
+  is flagged `Make` on the sheet. The mixed-supplier rule handled it correctly
+  — one order, Manufacturing listing only that part — but a made part against
+  a catalogue vendor is worth checking in the BOM.
+- Most orders price at `$0.00`; only `in3dtec` and `MiSUMi` carry costs. The
+  `Cost Per` column is simply empty for those rows on this sheet.
+
+**Still outstanding:** the creation half. No tasks have been created in Wrike
+by the tool itself — only by `scripts/probes/probe_wrike_dependency.py`, which
+created two throwaway tasks and deleted them.
+
 ## Open questions
 
-None. The Wrike dependency request body is unconfirmed but is resolved by the
-first implementation step (a live probe), not by a design decision.
+None.
