@@ -13,6 +13,7 @@ Fire and forget: jobs are queued, not polled. Watch them in Vault Explorer.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import queue
 import sys
@@ -36,6 +37,13 @@ from gui.release_workflow import (  # noqa: E402
 # ``gui.publish_bom``, so the names do not collide.
 import publish_bom  # noqa: E402
 from supplier_pricing.normalize import file_stem  # noqa: E402
+
+# ASCII rather than Unicode ballot boxes: those render inconsistently across
+# Windows fonts, and this table already uses ASCII hyphens for that reason.
+CHECKED = "[x]"
+UNCHECKED = "[ ]"
+
+logger = logging.getLogger(__name__)
 
 
 class PublishBOMGUI:
@@ -65,6 +73,16 @@ class PublishBOMGUI:
         self.bom_path = tk.StringVar()
         self.top_assembly = tk.StringVar()
         self.summary_text = tk.StringVar(value="Pick a BOM and click Scan.")
+        self.queue_text = tk.StringVar(value="")
+        self.want_pdf = tk.BooleanVar(value=True)
+        self.want_step = tk.BooleanVar(value=True)
+        # Part stems the user wants published. Stems rather than row indices:
+        # that is what lets a selection survive a re-scan.
+        self.selected: set[str] = set()
+        self._prev_stems: set[str] = set()
+        # Latched once a run has been submitted; a second run needs a fresh
+        # Scan. Cleared by _on_scan and _invalidate_scan.
+        self._submitted = False
 
         self._build_ui()
 
@@ -112,6 +130,15 @@ class PublishBOMGUI:
 
         actions = tk.Frame(self.win, bg=LIGHT_GRAY, padx=16)
         actions.pack(fill="x")
+        tk.Label(actions, text="Generate:", bg=LIGHT_GRAY, fg=DARK_BLUE,
+                 font=("Arial", 9, "bold")).pack(side="left", padx=(0, 6))
+        for text, var in (("PDF drawings", self.want_pdf),
+                          ("STEP files", self.want_step)):
+            tk.Checkbutton(
+                actions, text=text, variable=var, bg=LIGHT_GRAY,
+                fg=DARK_GRAY, font=("Arial", 9), activebackground=LIGHT_GRAY,
+                selectcolor=WHITE, command=self._update_queue_line,
+            ).pack(side="left", padx=(0, 10))
         self.scan_btn = tk.Button(
             actions, text="  Scan  ", command=self._on_scan,
             bg=DARK_BLUE, fg=WHITE, font=("Arial", 10, "bold"),
@@ -126,30 +153,62 @@ class PublishBOMGUI:
         )
         self.submit_btn.pack(side="left", padx=(10, 0))
 
+        bulk = tk.Frame(self.win, bg=LIGHT_GRAY, padx=16)
+        bulk.pack(fill="x", pady=(6, 0))
+        tk.Label(bulk, text="Select:", bg=LIGHT_GRAY, fg=DARK_BLUE,
+                 font=("Arial", 9, "bold")).pack(side="left", padx=(0, 6))
+        for text, command in (
+            ("All", self._select_all),
+            ("None", self._select_none),
+            ("Invert", self._select_invert),
+            ("Missing drawing", self._select_missing_drawing),
+            ("Both files", self._select_both_files),
+        ):
+            tk.Button(bulk, text=text, command=command, font=("Arial", 8),
+                      relief="groove", padx=6, pady=1,
+                      cursor="hand2").pack(side="left", padx=(0, 4))
+
         table_frame = tk.Frame(self.win, bg=WHITE, padx=16, pady=10)
         table_frame.pack(fill="both", expand=True)
-        columns = ("part", "description", "model", "drawing", "status")
+        columns = ("sel", "part", "description", "model", "drawing", "status")
         self.tree = ttk.Treeview(
             table_frame, columns=columns, show="headings", height=10)
-        for key, label, width in (
-            ("part", "Part", 130),
-            ("description", "Description", 200),
-            ("model", "Model", 170),
-            ("drawing", "Drawing", 170),
-            ("status", "Status", 170),
+        # These widths sum to under the tree's width at the window's declared
+        # 760 minsize, so nothing is clipped there. `stretch` only shares out
+        # SURPLUS width — it never shrinks a column below its set width — so
+        # oversized defaults would push Status off the right edge no matter
+        # what stretch said. The horizontal scrollbar below is the backstop
+        # for a user who drags a column wider.
+        for key, label, width, anchor, stretch in (
+            ("sel", "", 34, "center", False),
+            ("part", "Part", 105, "w", False),
+            ("description", "Description", 150, "w", True),
+            ("model", "Model", 135, "w", True),
+            ("drawing", "Drawing", 135, "w", True),
+            ("status", "Status", 140, "w", True),
         ):
             self.tree.heading(key, text=label)
-            self.tree.column(key, width=width, anchor="w")
+            self.tree.column(key, width=width, minwidth=width,
+                             anchor=anchor, stretch=stretch)
         vsb = ttk.Scrollbar(table_frame, orient="vertical",
                             command=self.tree.yview)
-        self.tree.configure(yscrollcommand=vsb.set)
+        hsb = ttk.Scrollbar(table_frame, orient="horizontal",
+                            command=self.tree.xview)
+        self.tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
         vsb.pack(side="right", fill="y")
+        hsb.pack(side="bottom", fill="x")
         self.tree.pack(side="left", fill="both", expand=True)
         self.tree.tag_configure("gap", foreground=RUST_ORANGE)
+        self.tree.bind("<Button-1>", self._on_tree_click)
+        self.tree.bind("<space>", self._on_space)
 
         tk.Label(self.win, textvariable=self.summary_text, bg=PALE_BLUE,
                  fg=DARK_BLUE, font=("Arial", 9, "bold"), anchor="w",
                  padx=16, pady=5).pack(fill="x")
+
+        tk.Label(self.win, textvariable=self.queue_text, bg=PALE_BLUE,
+                 fg=OLIVE_GREEN, font=("Arial", 9, "bold"), anchor="w",
+                 padx=16).pack(fill="x", pady=(0, 4))
 
         log_frame = tk.Frame(self.win, bg=LIGHT_GRAY)
         log_frame.pack(fill="both", padx=16, pady=(8, 12))
@@ -191,13 +250,24 @@ class PublishBOMGUI:
                     self._set_busy(False)
         except queue.Empty:
             pass
-        # Matches gui/release_workflow.py — stop re-arming once the window is
-        # gone rather than relying on Tk to drop the pending callback.
-        try:
-            if self.win.winfo_exists():
-                self.win.after(100, self._drain_queue)
-        except tk.TclError:
-            pass
+        except Exception:  # noqa: BLE001 — see below
+            # A handler that raises must not take the pump down with it. The
+            # re-arm lives in `finally` for the same reason: without it, one
+            # exception here stops the dialog processing any further log line,
+            # scan result or submit result, and _set_busy(False) never runs —
+            # a permanent freeze with only Close working.
+            logger.exception("publish-bom queue handler failed")
+            self._log("Internal error handling a background result; "
+                      "see the log file.", "err")
+            self._set_busy(False)
+        finally:
+            # Matches gui/release_workflow.py — stop re-arming once the window
+            # is gone rather than relying on Tk to drop the pending callback.
+            try:
+                if self.win.winfo_exists():
+                    self.win.after(100, self._drain_queue)
+            except tk.TclError:
+                pass
 
     def _set_busy(self, busy: bool) -> None:
         self._busy = busy
@@ -205,13 +275,129 @@ class PublishBOMGUI:
 
     def _invalidate_scan(self, *_args) -> None:
         """Drop a scan that no longer matches what the fields say."""
-        if self._busy or not self.scan_result:
+        if self._busy:
+            return
+
+        # Cleared before the has-results guard below, not after. A failed scan
+        # leaves scan_result empty while selected and _prev_stems still hold
+        # intent from the *previous* BOM; bailing early would carry that
+        # intent onto the next assembly and silently untick a part there.
+        self.selected = set()
+        self._prev_stems = set()
+        self._submitted = False
+        self.queue_text.set("")
+        self.submit_btn.configure(state="disabled")
+
+        if not self.scan_result:
             return
         self.scan_result = []
         for iid in self.tree.get_children():
             self.tree.delete(iid)
-        self.submit_btn.configure(state="disabled")
         self.summary_text.set("BOM changed - click Scan again.")
+
+    # ----- Selection --------------------------------------------------------
+
+    def _on_tree_click(self, event) -> None:
+        """Toggle when the checkbox cell itself is clicked.
+
+        Scoped to column #1 so clicking any other cell still selects the row
+        normally for reading.
+        """
+        if self.tree.identify_region(event.x, event.y) != "cell":
+            return
+        if self.tree.identify_column(event.x) != "#1":
+            return
+        iid = self.tree.identify_row(event.y)
+        if iid:
+            self._toggle([iid])
+
+    def _on_space(self, _event) -> str:
+        """Toggle every selected row.
+
+        Treeview already supports shift-click and ctrl-click ranges, so this
+        turns 'tick these fifteen' into drag-then-space.
+        """
+        rows = self.tree.selection()
+        if rows:
+            self._toggle(rows)
+        return "break"
+
+    def _toggle(self, stems) -> None:
+        for stem in stems:
+            if stem in self.selected:
+                self.selected.discard(stem)
+            else:
+                self.selected.add(stem)
+        self._refresh_checks()
+
+    def _refresh_checks(self) -> None:
+        """Repaint the glyphs and recompute what Submit would queue."""
+        for iid in self.tree.get_children():
+            self.tree.set(
+                iid, "sel", CHECKED if iid in self.selected else UNCHECKED)
+        self._update_queue_line()
+
+    def _update_queue_line(self) -> None:
+        rows = [r for r in self.scan_result if r.stem in self.selected]
+        counts = publish_bom.count_planned_jobs(
+            rows,
+            include_pdf=self.want_pdf.get(),
+            include_step=self.want_step.get(),
+        )
+        if self._submitted:
+            # Past tense, and never a live count: this run is over, and a
+            # present-tense "Queueing N" beside "DONE - N job(s) queued"
+            # reads as though something were still pending.
+            self.queue_text.set("Submitted - click Scan to start a new run.")
+        elif self.scan_result:
+            self.queue_text.set(
+                f"Queueing {counts['total']} job(s): {counts['pdf']} PDF + "
+                f"{counts['step']} STEP  "
+                f"({len(rows)} of {len(self.scan_result)} parts)"
+            )
+        else:
+            self.queue_text.set("")
+        # _submitted is consulted here, not only in _render_submit, because
+        # this method is the sole authority on the button's state. Disabling
+        # the button over there alone would be undone by the next tick, type
+        # toggle or bulk click — and re-queueing a whole run against the job
+        # server is not something a stray click should be able to do.
+        self.submit_btn.configure(
+            state="normal" if (counts["total"] and not self._busy
+                               and not self._submitted) else "disabled"
+        )
+
+    def _set_selection(self, stems: set[str]) -> None:
+        self.selected = stems
+        self._refresh_checks()
+
+    def _select_all(self) -> None:
+        self._set_selection({r.stem for r in self.scan_result})
+
+    def _select_none(self) -> None:
+        self._set_selection(set())
+
+    def _select_invert(self) -> None:
+        self._set_selection({r.stem for r in self.scan_result
+                             if r.stem not in self.selected})
+
+    def _select_missing_drawing(self) -> None:
+        """Exactly the parts that need a drawing made — the gap report.
+
+        Prefix match: an ambiguous stem carries a '(multiple matches)' suffix,
+        and comparing the whole string would skip those rows silently.
+        """
+        self._set_selection({
+            r.stem for r in self.scan_result
+            if r.status.startswith(publish_bom.STATUS_MODEL_ONLY)
+        })
+
+    def _select_both_files(self) -> None:
+        """Exactly the parts that can produce a PDF and a STEP."""
+        self._set_selection({
+            r.stem for r in self.scan_result
+            if r.model_version_id and r.drawing_version_id
+        })
 
     # ----- Actions ----------------------------------------------------------
 
@@ -248,6 +434,11 @@ class PublishBOMGUI:
 
         self.submit_btn.configure(state="disabled")
         self.scan_result = []
+        # A run is over once a new scan starts, and the queue line describes a
+        # result that no longer exists — leaving it up during a ten-search scan
+        # states a present-tense intention that is not true.
+        self._submitted = False
+        self.queue_text.set("")
         for iid in self.tree.get_children():
             self.tree.delete(iid)
 
@@ -277,12 +468,25 @@ class PublishBOMGUI:
         threading.Thread(target=runner, daemon=True, name="publish-bom-scan").start()
 
     def _render_scan(self, rows: list[publish_bom.ScanRow]) -> None:
+        # Clear the table here rather than relying on the caller having done
+        # it. tree.insert(iid=...) raises on a duplicate id, and this runs
+        # inside the queue pump — an escaping TclError would kill the pump.
+        for iid in self.tree.get_children():
+            self.tree.delete(iid)
+
+        new_stems = {r.stem for r in rows}
+        self.selected = publish_bom.merge_selection(
+            self.selected, self._prev_stems, new_stems)
+        self._prev_stems = new_stems
         self.scan_result = rows
+
         for row in rows:
             part = f"{row.stem} (top)" if row.is_top else row.stem
             tags = () if row.status == publish_bom.STATUS_BOTH else ("gap",)
-            self.tree.insert("", "end", values=(
-                part, row.description or "-",
+            # The stem is the row id: it is already unique per scan, so there
+            # is no separate iid-to-stem table to keep in sync.
+            self.tree.insert("", "end", iid=row.stem, values=(
+                UNCHECKED, part, row.description or "-",
                 row.model_name or "-", row.drawing_name or "-", row.status,
             ), tags=tags)
 
@@ -291,7 +495,7 @@ class PublishBOMGUI:
             f"{s['rows']} part(s)",
             f"{s['models']} model(s)",
             f"{s['drawings']} drawing(s)",
-            f"{s['jobs']} job(s) to queue",
+            f"{s['jobs']} job(s)",
             f"{s['missing_drawing']} missing a drawing",
             f"{s['not_found']} not in Vault",
         ]
@@ -303,17 +507,34 @@ class PublishBOMGUI:
             if count:
                 parts.append(f"{count} {label}")
         self.summary_text.set(" - ".join(parts))
-        self._log(f"Scan complete: {s['jobs']} job(s) ready to queue.", "ok")
+
+        self._log(f"Scan complete: {s['jobs']} job(s) available to queue.", "ok")
+        # Clear busy before repainting: _update_queue_line consults _busy when
+        # deciding whether Submit may be enabled.
         self._set_busy(False)
-        self.submit_btn.configure(state="normal" if s["jobs"] else "disabled")
+        self._refresh_checks()
 
     def _on_submit(self) -> None:
         if self._busy or not self.scan_result or not self._require_session():
             return
-        s = publish_bom.summarize(self.scan_result)
+        rows = [r for r in self.scan_result if r.stem in self.selected]
+        # Read the toggles ONCE, here, and close over the result. Reading them
+        # again on the worker thread would let a flip made while the
+        # confirmation dialog is open submit something other than what was
+        # confirmed — and cross-thread Tk reads raise outright if the
+        # interpreter is torn down mid-submit.
+        want_pdf = self.want_pdf.get()
+        want_step = self.want_step.get()
+        counts = publish_bom.count_planned_jobs(
+            rows, include_pdf=want_pdf, include_step=want_step)
+        if not counts["total"]:
+            self._log("Nothing selected to queue.", "dim")
+            return
         if not messagebox.askyesno(
             "Queue jobs?",
-            f"Queue {s['jobs']} job(s) on the Vault job server?\n\n"
+            f"Queue {counts['total']} job(s) "
+            f"({counts['pdf']} PDF, {counts['step']} STEP) for "
+            f"{len(rows)} part(s) on the Vault job server?\n\n"
             "Jobs are submitted and not tracked from here — watch their "
             "progress in Vault Explorer.",
             parent=self.win,
@@ -322,15 +543,15 @@ class PublishBOMGUI:
 
         self._set_busy(True)
         self.submit_btn.configure(state="disabled")
-        self._log(f"Submitting {s['jobs']} job(s)...")
-
-        rows = list(self.scan_result)
+        self._log(f"Submitting {counts['total']} job(s)...")
 
         def runner() -> None:
             try:
                 result = asyncio.run(publish_bom.submit_jobs(
                     self.api, self.vault_id, rows,
                     on_progress=lambda m: self.q.put(("log", m)),
+                    include_pdf=want_pdf,
+                    include_step=want_step,
                 ))
                 self.q.put(("submit_done", result))
             except Exception as exc:  # noqa: BLE001
@@ -345,8 +566,13 @@ class PublishBOMGUI:
         if result["failed"]:
             self._log(f"  {result['failed']} submission(s) failed.", "err")
         self._log("Watch the queue in Vault Explorer.", "dim")
-        self._set_busy(False)
         # A second run needs a fresh Scan — the guard against queueing twice.
+        # Latched rather than merely disabling the button, because
+        # _update_queue_line owns that button and would re-enable it on the
+        # next tick or type toggle.
+        self._submitted = True
+        self.queue_text.set("")
+        self._set_busy(False)
         self.submit_btn.configure(state="disabled")
 
 

@@ -11,7 +11,14 @@
         "host": "0.0.0.0",
         "port": 8766,
         "readonly": false,
-        "allowed_folders": []
+        "allowed_folders": [],
+        "mfg_tasks": {
+            "project_id": "",
+            "owners": {},
+            "purchasing_days": 2,
+            "manufacturing_days": 10,
+            "shipping_days": 3
+        }
     },
     "purchasing_reference": {
         "source": "mslist",

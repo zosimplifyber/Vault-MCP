@@ -762,14 +762,24 @@ async def test_submit_with_step_disabled_queues_only_pdf_jobs():
 
 @pytest.mark.asyncio
 async def test_submit_with_both_types_disabled_does_nothing_at_all():
-    """Not even the advisory queue check — there is no work to annotate."""
-    api = FakeAPI()
+    """Not even the advisory queue check — there is no work to annotate.
+
+    The queue check's only observable effect is its warning, so a disabled
+    queue plus a silent progress log is what proves the early return sits
+    above the check rather than below it. Asserting only on ``api.submitted``
+    would pass either way, and would not be testing this docstring at all.
+    """
+    messages = []
+    api = FakeAPI(queue_enabled=False)
     result = await publish_bom.submit_jobs(api, "1", [_scanned()],
+                                           on_progress=messages.append,
                                            include_pdf=False,
                                            include_step=False)
 
     assert api.submitted == []
     assert result == {"submitted": 0, "failed": 0, "jobs": []}
+    assert messages == [], (
+        "the queue was checked despite there being nothing to submit")
 
 
 @pytest.mark.asyncio
@@ -781,3 +791,106 @@ async def test_submit_defaults_still_queue_both_kinds():
     kinds = {("PDF" if "PDF" in j["job_type"] else "STEP")
              for j in api.submitted}
     assert kinds == {"PDF", "STEP"}
+
+
+def test_count_planned_jobs_breaks_down_by_kind():
+    rows = [
+        _scanned(),                                          # model + drawing
+        _scanned(stem="CD-2", drawing="", drawing_id=""),    # model only
+        _scanned(stem="CD-3", model="", model_id="",
+                 drawing="", drawing_id=""),                 # nothing
+    ]
+    assert publish_bom.count_planned_jobs(rows) == {
+        "pdf": 1, "step": 2, "total": 3}
+
+
+def test_count_planned_jobs_honors_the_type_flags():
+    rows = [_scanned(), _scanned(stem="CD-2", drawing="", drawing_id="")]
+
+    assert publish_bom.count_planned_jobs(rows, include_pdf=False) == {
+        "pdf": 0, "step": 2, "total": 2}
+    assert publish_bom.count_planned_jobs(rows, include_step=False) == {
+        "pdf": 1, "step": 0, "total": 1}
+    assert publish_bom.count_planned_jobs(
+        rows, include_pdf=False, include_step=False) == {
+        "pdf": 0, "step": 0, "total": 0}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("include_pdf,include_step", [
+    (True, True), (True, False), (False, True), (False, False),
+])
+async def test_the_predicted_count_matches_what_is_actually_submitted(
+    include_pdf, include_step
+):
+    """The label and the behavior must not be able to disagree.
+
+    A previous defect in this module had summarize() counting one way while
+    the code behaved another. This pins the count to reality across every
+    flag combination rather than trusting that they were written to match.
+    """
+    rows = [
+        _scanned(),
+        _scanned(stem="CD-2", model="CD-2.iam", model_id="7",
+                 drawing="", drawing_id=""),
+        _scanned(stem="CD-3", model="", model_id="",
+                 drawing="CD-3.idw", drawing_id="8"),
+    ]
+    predicted = publish_bom.count_planned_jobs(
+        rows, include_pdf=include_pdf, include_step=include_step)
+
+    api = FakeAPI()
+    result = await publish_bom.submit_jobs(
+        api, "1", rows, include_pdf=include_pdf, include_step=include_step)
+
+    assert result["submitted"] == predicted["total"]
+    assert len(api.submitted) == predicted["total"]
+    actual_pdf = sum(1 for j in api.submitted if "PDF" in j["job_type"])
+    actual_step = sum(1 for j in api.submitted if "STEP" in j["job_type"])
+    assert actual_pdf == predicted["pdf"]
+    assert actual_step == predicted["step"]
+
+
+def test_merge_selection_keeps_each_part_as_the_user_left_it():
+    """CD-1 was ticked and stays ticked; CD-2 was not and stays not."""
+    result = publish_bom.merge_selection(
+        previous={"CD-1"}, previous_stems={"CD-1", "CD-2"},
+        new_stems={"CD-1", "CD-2"})
+    assert result == {"CD-1"}
+
+
+def test_merge_selection_does_not_mutate_what_it_was_given():
+    """The dialog holds these sets; returning a fresh one keeps it honest."""
+    previous = {"CD-1"}
+    previous_stems = {"CD-1", "CD-2"}
+    new_stems = {"CD-1", "CD-2", "CD-3"}
+
+    result = publish_bom.merge_selection(previous, previous_stems, new_stems)
+
+    assert previous == {"CD-1"}
+    assert previous_stems == {"CD-1", "CD-2"}
+    assert new_stems == {"CD-1", "CD-2", "CD-3"}
+    assert result is not previous
+
+
+def test_merge_selection_ticks_a_part_that_is_new_this_scan():
+    """A part that just appeared must not be silently excluded."""
+    result = publish_bom.merge_selection(
+        previous={"CD-1"}, previous_stems={"CD-1", "CD-2"},
+        new_stems={"CD-1", "CD-2", "CD-3"})
+    assert "CD-3" in result
+
+
+def test_merge_selection_drops_a_part_that_is_gone():
+    result = publish_bom.merge_selection(
+        previous={"CD-1", "CD-2"}, previous_stems={"CD-1", "CD-2"},
+        new_stems={"CD-1"})
+    assert result == {"CD-1"}
+
+
+def test_merge_selection_ticks_everything_on_a_first_scan():
+    """No previous scan means no prior intent to respect."""
+    result = publish_bom.merge_selection(
+        previous=set(), previous_stems=set(),
+        new_stems={"CD-1", "CD-2"})
+    assert result == {"CD-1", "CD-2"}

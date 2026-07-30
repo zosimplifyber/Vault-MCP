@@ -84,6 +84,12 @@ def load_config(path: Path) -> dict:
         if not vault.get(key):
             sys.exit(f"[ERROR] config.json is missing vault.{key}")
 
+    # Record where this came from so tools that persist a preference write
+    # back to the file actually in use, not whichever config.json happens to
+    # sit next to the code. app.py --config <other> must not silently update
+    # the default.
+    cfg["__path__"] = os.path.abspath(path)
+
     return cfg
 
 

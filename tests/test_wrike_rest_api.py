@@ -218,3 +218,131 @@ async def test_get_subtasks_reads_subtask_ids_then_batches():
     assert result["error"] is False
     ids = [r["id"] for r in result["data"]["data"]]
     assert ids == ["S1", "S2"]
+
+
+async def test_create_task_sends_super_tasks_when_given_a_parent():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = request.content.decode()
+        return httpx.Response(200, json={"data": [{"id": "IEAASUB"}]})
+
+    api = make_api(handler)
+    await api.create_task("IEAF1", "1. Purchasing", super_task_ids=["IEAAPARENT"])
+
+    assert "superTasks=%5B%22IEAAPARENT%22%5D" in seen["body"]
+
+
+async def test_create_task_omits_super_tasks_when_not_given():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = request.content.decode()
+        return httpx.Response(200, json={"data": [{"id": "IEAA1"}]})
+
+    api = make_api(handler)
+    await api.create_task("IEAF1", "Standalone")
+
+    assert "superTasks" not in seen["body"]
+
+
+async def test_add_dependency_posts_to_the_successor():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["body"] = request.content.decode()
+        return httpx.Response(200, json={"data": [{"id": "IEAG1"}]})
+
+    api = make_api(handler)
+    result = await api.add_dependency("IEAASUCC", "IEAAPRED")
+
+    assert result["error"] is False
+    assert seen["url"].endswith("/tasks/IEAASUCC/dependencies")
+    assert "predecessorId=IEAAPRED" in seen["body"]
+    assert "relationType=FinishToStart" in seen["body"]
+
+
+async def test_add_dependency_surfaces_an_api_error():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"errorDescription": "bad relation"})
+
+    api = make_api(handler)
+    result = await api.add_dependency("IEAASUCC", "IEAAPRED")
+
+    assert result["error"] is True
+    assert "bad relation" in result["data"]
+
+
+async def test_list_projects_asks_for_projects_not_a_fields_selector():
+    """Wrike answers 400 to fields=project on /folders. The parameter that
+    works is project=true."""
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        return httpx.Response(200, json={"data": [
+            {"id": "F1", "title": "Live", "scope": "WsFolder",
+             "project": {"status": "Green"}},
+        ]})
+
+    api = make_api(handler)
+    result = await api.list_projects()
+
+    assert result["error"] is False
+    assert "project=true" in seen["url"]
+    assert "fields" not in seen["url"]
+
+
+async def test_list_projects_drops_recycle_bin_folders():
+    """A deleted project keeps its project object but moves to RbFolder
+    scope. Offering one in a picker would create tasks in the bin."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": [
+            {"id": "F1", "title": "Live", "scope": "WsFolder",
+             "project": {"status": "Green"}},
+            {"id": "F2", "title": "Deleted", "scope": "RbFolder",
+             "project": {"status": "Green"}},
+            {"id": "F3", "title": "Not a project", "scope": "WsFolder"},
+        ]})
+
+    api = make_api(handler)
+    result = await api.list_projects()
+
+    rows = result["data"]["data"]
+    assert [r["id"] for r in rows] == ["F1"]
+    assert result["data"]["count"] == 1
+
+
+# ---------------------------------------------------------------------------
+# folder_is_outside_zone (create-path warning, not the guard itself)
+# ---------------------------------------------------------------------------
+
+async def test_folder_is_outside_zone_is_false_when_no_allowlist():
+    """No allowlist means the guard is off, so nothing is outside it."""
+    def handler(request):
+        return httpx.Response(200, json={"data": []})
+    api = make_api(handler)
+    assert await api.folder_is_outside_zone("ANY") is False
+
+
+async def test_folder_is_outside_zone_covers_descendants():
+    """The zone includes children of the configured folders, so a project
+    nested under one is inside it."""
+    def handler(request):
+        return httpx.Response(200, json={"data": [
+            {"id": "ZONE", "childIds": ["CHILD"]},
+            {"id": "CHILD", "childIds": []},
+            {"id": "OTHER", "childIds": []},
+        ]})
+    api = make_api(handler)
+    api.allowed_folders = ["ZONE"]
+    assert await api.folder_is_outside_zone("CHILD") is False
+    assert await api.folder_is_outside_zone("ZONE") is False
+    assert await api.folder_is_outside_zone("OTHER") is True
+
+
+def test_zone_description_lists_configured_folder_ids():
+    api = make_api(lambda request: httpx.Response(200, json={"data": []}))
+    api.allowed_folders = ["F1", "F2"]
+    assert api.zone_description() == "F1, F2"

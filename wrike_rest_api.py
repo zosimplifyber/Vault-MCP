@@ -178,12 +178,32 @@ class WrikeRestAPI:
         return allowed
 
     def _blocked(self, what: str) -> Dict[str, Any]:
-        zone = ", ".join(self.allowed_folders)
+        zone = self.zone_description()
         return {"error": True, "status_code": 403, "data": (
             f"Blocked by folder guard: {what} is located exclusively OUTSIDE the "
             f"allowed folders ({zone}) and their subfolders. Ask the user to "
             "confirm this specific out-of-zone edit, then retry the call with "
             "allow_outside=true.")}
+
+    def zone_description(self) -> str:
+        """Human-readable summary of the configured safe zone, for messages
+        shown to the user. Folder ids, not titles — resolving titles would
+        take extra calls the caller (a UI confirmation prompt, an error
+        message) doesn't need to block on."""
+        return ", ".join(self.allowed_folders)
+
+    async def folder_is_outside_zone(self, folder_id: str) -> bool:
+        """Whether writing into this folder falls outside the safe zone.
+
+        False when no allowlist is configured — the guard is off, so nothing
+        is outside it. Callers that create tasks (rather than edit existing
+        ones) use this to warn before writing, since create_task itself is
+        unguarded: the allowlist is enforced by callers, not by the client.
+        """
+        if not self.allowed_folders:
+            return False
+        allowed = await self._ensure_allowed_set()
+        return folder_id not in allowed
 
     async def prime_folder_guard(self, task_ids: List[str]) -> None:
         """Pre-populate the membership cache for many tasks in one batched GET,
@@ -259,14 +279,27 @@ class WrikeRestAPI:
     async def get_folder(self, folder_id: str) -> Dict[str, Any]:
         return await self._request("GET", f"/folders/{folder_id}")
 
+    # Folders that live in the Recycle Bin keep their project object, so a
+    # scope check is what separates a real project from a deleted one.
+    WORKSPACE_SCOPE_PREFIX = "Ws"
+
     async def list_projects(self) -> Dict[str, Any]:
-        """Folders carrying a ``project`` object. Wrike's /folders tree only
-        includes ``project`` when requested via ``fields``; filter client-side."""
-        result = await self._get_all("/folders", {"fields": ["project"]})
+        """Folders carrying a ``project`` object, excluding the Recycle Bin.
+
+        ``project=true`` is the filter Wrike honours here — passing
+        ``fields=project`` instead returns 400 "Fields parameter value
+        'project' not allowed". The response already carries the project
+        object, so no second call is needed.
+        """
+        result = await self._get_all("/folders", {"project": True})
         if result["error"]:
             return result
         rows = result["data"]["data"]
-        projects = [r for r in rows if isinstance(r, dict) and r.get("project")]
+        projects = [
+            r for r in rows
+            if isinstance(r, dict) and r.get("project")
+            and str(r.get("scope", "")).startswith(self.WORKSPACE_SCOPE_PREFIX)
+        ]
         return {"error": False, "status_code": 200,
                 "data": {"data": projects, "count": len(projects)}}
 
@@ -309,7 +342,12 @@ class WrikeRestAPI:
         responsibles: Optional[List[str]] = None,
         custom_fields: Optional[List[Dict[str, str]]] = None,
         effort_hours: Optional[float] = None,
+        super_task_ids: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
+        """Create a task in ``folder_id``. Pass ``super_task_ids`` to create it
+        as a subtask of those existing tasks — Wrike has no separate
+        "create subtask" endpoint; parentage is set at creation via
+        ``superTasks``."""
         fields: Dict[str, Any] = {
             "title": title, "description": description,
             "status": status, "importance": importance,
@@ -327,6 +365,10 @@ class WrikeRestAPI:
         ea = self._effort_allocation(effort_hours)
         if ea is not None:
             fields["effortAllocation"] = ea
+        if super_task_ids:
+            # Makes the new task a subtask of each id. Wrike has no separate
+            # "create subtask" endpoint — parentage is set at creation.
+            fields["superTasks"] = list(super_task_ids)
         return await self._request("POST", f"/folders/{folder_id}/tasks", data=fields)
 
     async def update_task(
@@ -422,6 +464,35 @@ class WrikeRestAPI:
         return await self._request("PUT", f"/tasks/{task_id}", data={
             "addParents": add_parents, "removeParents": remove_parents,
         })
+
+    # Confirmed against the live API by
+    # scripts/probes/probe_wrike_dependency.py — Wrike rejects other
+    # spellings of relationType outright.
+    DEPENDENCY_FINISH_TO_START = "FinishToStart"
+
+    async def add_dependency(
+        self,
+        task_id: str,
+        predecessor_id: str,
+        relation_type: str = DEPENDENCY_FINISH_TO_START,
+    ) -> Dict[str, Any]:
+        """Make ``task_id`` depend on ``predecessor_id``.
+
+        The POST goes to the *successor* — the task that waits. A
+        finish-to-start link is what makes a slip in one stage cascade to the
+        stages after it on the Wrike Gantt.
+
+        **Both tasks must already have dates.** Wrike rejects a dependency
+        between two undated tasks with ``400: Operation is not allowed due to
+        invalid task scheduling type``, which is a different failure from a
+        bad ``relation_type`` (``400: Parameter 'relationType' value is
+        invalid``). Create the tasks with their start and due dates first.
+        """
+        return await self._request(
+            "POST", f"/tasks/{task_id}/dependencies",
+            data={"predecessorId": predecessor_id,
+                  "relationType": relation_type},
+        )
 
     async def create_folder(
         self, parent_id: str, title: str, description: Optional[str] = None,

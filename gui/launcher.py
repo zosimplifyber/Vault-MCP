@@ -637,6 +637,16 @@ class LauncherGUI:
         )
         self._tool_row(
             body,
+            "BOM → Manufacturing Tasks",
+            "Load a generated purchasing sheet, confirm each part's supplier "
+            "against Vault, and create a Wrike task per supplier order — "
+            "purchasing, manufacturing and shipping, chained and dated.",
+            "Open Task Builder",
+            self._on_open_wrike_mfg_tasks,
+            primary=False,
+        )
+        self._tool_row(
+            body,
             "Open Reports Folder",
             "Browse saved Markdown readiness reports and MCP server logs.",
             "Open Folder",
@@ -1054,6 +1064,42 @@ class LauncherGUI:
             cfg=self.cfg, parent=self.root,
         )
         self.status_var.set("Launching BOM → Publish Deliverables…")
+
+    def _on_open_wrike_mfg_tasks(self) -> None:
+        if not (self.api and self.vault_id):
+            messagebox.showwarning(
+                "Not signed in",
+                "Click Reconnect first — the task builder checks each part's "
+                "supplier against Vault.",
+                parent=self.root,
+            )
+            return
+        wrike_cfg = self.cfg.get("wrike") or {}
+        token = wrike_cfg.get("token")
+        if not token or token.startswith("your-wrike"):
+            messagebox.showwarning(
+                "Wrike not configured",
+                "Add a wrike block with a permanent access token to "
+                "config.json before creating tasks.",
+                parent=self.root,
+            )
+            return
+        try:
+            from wrike_rest_api import WrikeRestAPI, DEFAULT_BASE_URL
+            from gui.wrike_mfg_tasks import launch_gui as launch_task_gui
+        except ImportError as exc:
+            messagebox.showerror(
+                "Task builder unavailable", str(exc), parent=self.root,
+            )
+            return
+        wrike = WrikeRestAPI(
+            token=token,
+            base_url=wrike_cfg.get("base_url", DEFAULT_BASE_URL),
+            allowed_folders=wrike_cfg.get("allowed_folders") or None,
+        )
+        launch_task_gui(api=self.api, vault_id=self.vault_id, wrike=wrike,
+                        cfg=self.cfg, parent=self.root)
+        self.status_var.set("Launching BOM → Manufacturing Tasks…")
 
     def _on_open_logs(self) -> None:
         log_dir = PROJECT_ROOT / "Log"

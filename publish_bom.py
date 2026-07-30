@@ -389,6 +389,51 @@ def _planned_jobs(
     return jobs
 
 
+def count_planned_jobs(
+    rows: list[ScanRow],
+    *,
+    include_pdf: bool = True,
+    include_step: bool = True,
+) -> dict[str, int]:
+    """How many jobs ``submit_jobs`` would queue for ``rows``.
+
+    Implemented by calling ``_planned_jobs`` rather than re-deriving the rule,
+    so the number shown to the user cannot drift from the number submitted.
+    """
+    counts = {"pdf": 0, "step": 0, "total": 0}
+    for row in rows:
+        for kind, _name, _fvid in _planned_jobs(
+            row, include_pdf=include_pdf, include_step=include_step
+        ):
+            if kind == "PDF":
+                counts["pdf"] += 1
+            elif kind == "STEP":
+                counts["step"] += 1
+            else:  # pragma: no cover — a third kind would need a bucket
+                raise ValueError(f"unknown job kind {kind!r}")
+            counts["total"] += 1
+    return counts
+
+
+def merge_selection(
+    previous: set[str],
+    previous_stems: set[str],
+    new_stems: set[str],
+) -> set[str]:
+    """Carry a user's part selection across a re-scan.
+
+    A stem the user already saw keeps whatever state they left it in. A stem
+    that is new this scan arrives selected, because a part that just appeared
+    should not be silently excluded from the run. A stem that has gone is
+    dropped.
+
+    Pure set logic over stems, kept here rather than in a widget callback so
+    it can be tested without Tk. A first scan has no prior intent to respect,
+    so everything comes back selected.
+    """
+    return {s for s in new_stems if s not in previous_stems or s in previous}
+
+
 def _job_spec(kind: str, name: str, fvid: str) -> Optional[tuple[str, dict[str, str]]]:
     """JobType and Params for one job, or None if the extension doesn't fit.
 

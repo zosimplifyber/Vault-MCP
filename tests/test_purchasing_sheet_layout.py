@@ -13,7 +13,16 @@ if ROOT not in sys.path:
 
 import bom_purchasing as bp  # noqa: E402
 
-HDR_ROW = 3          # Purchasing tab: title, date, then headers
+
+def test_the_layout_constants_are_module_level():
+    """The reader in read_purchasing_sheet() has to agree with the writer
+    about where the header row is and how the trailing note starts. Sharing
+    the constants is what keeps them from drifting apart."""
+    assert bp.HDR_ROW == 3
+    assert bp.UNMATCHED_NOTE_PREFIX == "Unmatched ("
+
+
+HDR_ROW = bp.HDR_ROW          # Purchasing tab: title, date, then headers
 
 
 def _df(rows: list[dict]) -> pd.DataFrame:
