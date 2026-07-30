@@ -581,9 +581,45 @@ code:
 - Most orders price at `$0.00`; only `in3dtec` and `MiSUMi` carry costs. The
   `Cost Per` column is simply empty for those rows on this sheet.
 
-**Still outstanding:** the creation half. No tasks have been created in Wrike
-by the tool itself — only by `scripts/probes/probe_wrike_dependency.py`, which
-created two throwaway tasks and deleted them.
+## Live verification, 2026-07-30 (creation half)
+
+One order — `In House` — created into the `Step Test` project
+(`MQAAAAELcTdz`), then read back from Wrike and deleted. The out-of-zone
+check returned `True` for that project, as expected.
+
+```
+MAAAAAENkisx  CD-001608-MFG Order 2 BOM - In House       (parent)
+              start 2026-08-03  due 2026-08-21  subTaskIds = 3 children
+MAAAAAENkis3    ... - 1. Purchasing      08-03 -> 08-04
+MAAAAAENkis8    ... - 2. Manufacturing   08-05 -> 08-18
+MAAAAAENkitD    ... - 3. Shipping        08-19 -> 08-21
+
+MAAAAAENkis3 --FinishToStart--> MAAAAAENkis8
+MAAAAAENkis8 --FinishToStart--> MAAAAAENkitD
+```
+
+Parentage, dates, per-stage owner and both finish-to-start dependencies were
+confirmed by reading the tasks back, not inferred from the create responses.
+All eight tasks from this run (it was executed twice — see below) were
+deleted afterwards; the project's four pre-existing tasks were untouched.
+
+This run predated the in-house merge, so the order shows a Purchasing stage
+and one part rather than the two-part, Purchasing-free shape the current code
+produces. What it verifies is the creation path itself.
+
+### Wrike's task search does not index immediately
+
+The run's second pass **created a duplicate instead of skipping**. The guard
+is not at fault: calling `_title_exists` against the same title a few minutes
+later returns `(True, None)` and finds both copies. Wrike's task search simply
+cannot see tasks that are seconds old.
+
+So the re-run guard has a real, narrow blind spot: creating an order and
+re-running within the same minute can duplicate it. In the intended use — a
+BOM revises, someone re-runs hours or days later — the window has long since
+passed. Documented in the README rather than coded around; closing it would
+mean caching created titles in memory for the session, which buys little
+against the actual failure mode.
 
 ## Open questions
 

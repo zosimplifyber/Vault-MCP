@@ -202,6 +202,8 @@ Dates run forward from a start date you set, in business days, weekends skipped,
 
 **Re-runs are safe.** Before creating, the tool looks for a task with exactly the order's title in the target project and skips suppliers that already have one — Wrike's own title filter is a substring match, so the exact comparison happens locally. If the existence check itself errors, the order is skipped as a precaution rather than risk a duplicate board — Wrike has no rollback — and that is reported as its own outcome rather than as "already exists," so a run where the API failed can't read back as a clean no-op.
 
+One caveat, confirmed live: **Wrike's task search does not index a new task immediately.** Creating an order and then re-running within the same minute can duplicate it, because the search that backs the guard cannot see tasks that are seconds old. A few minutes later the same check finds them and skips correctly. In normal use — re-running after a BOM revision — the window has long since passed.
+
 **Folder safe zone.** If `wrike.allowed_folders` is configured, picking a project outside it raises a confirmation naming the project and the zone before anything is created. All projects stay selectable; nothing is created without an explicit yes.
 
 Requires a live Vault session (for the supplier check) and a configured `wrike` block.
