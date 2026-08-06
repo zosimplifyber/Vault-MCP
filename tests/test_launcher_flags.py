@@ -29,12 +29,15 @@ def _make_gui():
     return root, gui
 
 
-def test_mfg_package_is_still_flagged_broken():
-    """MFG Order Package still resolves parts through Vault items."""
+def test_mfg_package_row_is_gone():
+    """The item-based MFG Order Package builder is off the dashboard.
+
+    It was flagged BROKEN when the Item Master was retired; the row is now
+    removed rather than shown disabled.
+    """
     root, gui = _make_gui()
     try:
-        btn = gui.tool_buttons["MFG Order Package"]
-        assert str(btn["state"]) == "disabled"
+        assert "MFG Order Package" not in gui.tool_buttons
     finally:
         root.destroy()
 

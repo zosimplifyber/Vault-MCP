@@ -96,7 +96,7 @@ If no `wrike` block (or token) is present, the launcher shows the Wrike panel as
 python app.py
 ```
 
-This opens the **Vault Integration launcher** (Tk dashboard) and auto-starts the SSE MCP server on `http://127.0.0.1:8765/sse` inside the same process. From the dashboard you can also launch the Release Workflow wizard, BOM → Purchasing sheet, MFG Order Package builder, Property Check, BOM → Publish Deliverables, and BOM → Manufacturing Tasks — all sharing the same Vault session as the MCP server. One sign-in, one audit trail.
+This opens the **Vault Integration launcher** (Tk dashboard) and auto-starts the SSE MCP server on `http://127.0.0.1:8765/sse` inside the same process. From the dashboard you can also launch the Release Workflow wizard, BOM → Purchasing sheet, Property Check, BOM → Publish Deliverables, and BOM → Manufacturing Tasks — all sharing the same Vault session as the MCP server. One sign-in, one audit trail.
 
 The server endpoints:
 - Dashboard: opens automatically (no URL — it's a desktop window)

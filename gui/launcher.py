@@ -606,17 +606,6 @@ class LauncherGUI:
         )
         self._tool_row(
             body,
-            "MFG Order Package",
-            "Build a manufacturing-order folder: MFG BOM, watermarked "
-            "PDFs (RELEASED / FOR REVIEW), and STEP files — all in one "
-            "clean folder under Downloads.",
-            "Open Builder",
-            self._on_open_mfg_package,
-            primary=False,
-            broken=True,
-        )
-        self._tool_row(
-            body,
             "Property Check",
             "Type a file name (e.g. CD-001659.iam) to pull its properties "
             "from Vault and flag anything out of compliance. Optionally "
@@ -663,33 +652,23 @@ class LauncherGUI:
             primary=False,
         )
 
-    def _tool_row(self, parent, title, desc, btn_text, command, *,
-                  primary, broken=False):
+    def _tool_row(self, parent, title, desc, btn_text, command, *, primary):
         row = tk.Frame(parent, bg=WHITE, pady=8)
         row.pack(fill="x")
         text = tk.Frame(row, bg=WHITE)
         text.pack(side="left", fill="x", expand=True)
 
-        title_text = title if not broken else f"{title}   ⛔ BROKEN — Item Master retired"
         tk.Label(
-            text, text=title_text, bg=WHITE,
-            fg=(RUST_ORANGE if broken else DARK_BLUE),
+            text, text=title, bg=WHITE, fg=DARK_BLUE,
             font=("Arial", 11, "bold"), anchor="w",
         ).pack(fill="x")
 
-        shown_desc = desc if not broken else (
-            "Disabled — depends on the retired Item Master. A CAD/iProperty "
-            "rewrite is planned."
-        )
         tk.Label(
-            text, text=shown_desc, bg=WHITE,
-            fg=(RUST_ORANGE if broken else DARK_GRAY),
+            text, text=desc, bg=WHITE, fg=DARK_GRAY,
             font=("Arial", 9), anchor="w", justify="left", wraplength=400,
         ).pack(fill="x", pady=(2, 0))
 
         btn = self._brand_button(row, f"  {btn_text}  ", command, primary=primary)
-        if broken:
-            btn.configure(state="disabled")
         btn.pack(side="right", padx=(12, 0))
         self.tool_buttons[title] = btn
 
@@ -1006,28 +985,6 @@ class LauncherGUI:
             return
         launch_bom_list_sync_gui(cfg=self.cfg, parent=self.root)
         self.status_var.set("Launching BOM → Purchased Parts List…")
-
-    def _on_open_mfg_package(self) -> None:
-        if not (self.api and self.vault_id):
-            messagebox.showwarning(
-                "Not signed in",
-                "Click Reconnect first — the MFG Package builder needs an "
-                "authenticated Vault session.",
-                parent=self.root,
-            )
-            return
-        try:
-            from gui.mfg_package import launch_gui as launch_mfg_gui
-        except ImportError as exc:
-            messagebox.showerror(
-                "MFG Package tool unavailable", str(exc), parent=self.root,
-            )
-            return
-        launch_mfg_gui(
-            api=self.api, vault_id=self.vault_id,
-            cfg=self.cfg, parent=self.root,
-        )
-        self.status_var.set("Launching MFG Package Builder…")
 
     def _on_open_property_check(self) -> None:
         # File-based property compliance check (gui/file_property_check.py).
