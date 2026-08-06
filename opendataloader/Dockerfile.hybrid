@@ -1,0 +1,33 @@
+# The hybrid tier: Docling plus OCR, for PDFs with no text layer.
+# Large and slow on CPU by design — it exists so that scanned documents are
+# possible, not cheap. Kept in a separate image so the fast path never loads it.
+#
+# NOTE: this image has not been built yet. The fast tier was shipped first
+# because it covers every document that already carries a text layer, and the
+# service degrades to a local parse when this container is absent. Build it
+# when scanned documents actually need ingesting, and check the CMD flags
+# against `opendataloader-pdf-hybrid --help` at that point — they come from
+# upstream documentation, and the installed version is the authority.
+FROM python:3.11-slim-bookworm
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    HF_HOME=/models \
+    TORCH_HOME=/models
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl libgl1 libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY opendataloader/requirements.hybrid.txt /app/requirements.txt
+RUN pip install --upgrade pip && pip install -r /app/requirements.txt
+
+# Models land here and the compose file mounts a named volume over it, so the
+# first-run download survives restarts.
+RUN mkdir -p /models
+
+EXPOSE 5002
+
+CMD ["opendataloader-pdf-hybrid", "--host", "0.0.0.0", "--port", "5002", \
+     "--force-ocr", "--ocr-lang", "en", "--device", "cpu"]

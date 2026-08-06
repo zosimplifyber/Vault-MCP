@@ -1,0 +1,4 @@
+# Runtime dependencies for the odl-hybrid image. The hybrid backend is the
+# Docling/OCR server; it is pure Python and never invokes Java, so this image
+# deliberately has no JRE — only the client side (odl-api) runs the engine.
+opendataloader-pdf[hybrid]>=2.0.0
