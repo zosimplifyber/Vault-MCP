@@ -1,0 +1,35 @@
+# The API tier: a JRE plus the OpenDataLoader engine and a thin HTTP shim.
+# Deliberately free of ML models — this is the fast path, and every megabyte of
+# model here would be loaded for documents that never need one.
+FROM eclipse-temurin:17-jre-jammy
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3 python3-pip python3-venv curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+WORKDIR /app
+COPY opendataloader/requirements.api.txt /app/requirements.txt
+RUN pip install --upgrade pip && pip install -r /app/requirements.txt
+
+COPY opendataloader/__init__.py /app/opendataloader/__init__.py
+COPY opendataloader/service /app/opendataloader/service
+
+EXPOSE 5060
+
+# The healthcheck mirrors what RAGFlow's client calls, so a container reporting
+# healthy means RAGFlow's check would also succeed.
+#
+# This plain curl sends no Authorization header, which is exactly why /health
+# does not require the bearer token even when ODL_API_KEY is set. Requiring it
+# would leave the container permanently unhealthy while /file_parse worked fine.
+# /health reveals nothing worth protecting; do not "harden" it.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD curl -fsS http://127.0.0.1:5060/health || exit 1
+
+CMD ["uvicorn", "opendataloader.service.app:app", "--host", "0.0.0.0", "--port", "5060"]

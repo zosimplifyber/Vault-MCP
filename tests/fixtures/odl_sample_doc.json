@@ -1,0 +1,1541 @@
+{
+  "file name": "iso4014.pdf",
+  "number of pages": 5,
+  "author": null,
+  "title": "hex head bolts | McMaster-Carr",
+  "creation date": "D:20260724133003Z",
+  "modification date": "D:20260724093023-04'00'",
+  "kids": [
+    {
+      "type": "heading",
+      "pdfua_tag": "H1",
+      "id": 57,
+      "level": "Doctitle",
+      "page number": 1,
+      "bounding box": [
+        86.12,
+        694.843,
+        268.315,
+        707.302
+      ],
+      "heading level": 1,
+      "font": "Arial-BoldMT",
+      "font size": 11.152,
+      "text color": "[0.2, 0.4, 0.2]",
+      "content": "About Hex Head Screws and Bolts"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 59,
+      "level": "1",
+      "page number": 1,
+      "bounding box": [
+        94.793,
+        683.24,
+        448.153,
+        691.546
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "Choose a hex head fastener with the right threading, thread size, material, and strength for your equipment."
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 60,
+      "page number": 1,
+      "bounding box": [
+        28.5,
+        648.036,
+        93.962,
+        654.851
+      ],
+      "font": "HelveticaNeueeTextPro-Roman",
+      "font size": 6.815,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "P E R F O R M A N C E"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 70,
+      "page number": 1,
+      "bounding box": [
+        358.109,
+        648.036,
+        387.438,
+        654.851
+      ],
+      "font": "HelveticaNeueeTextPro-Roman",
+      "font size": 6.815,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "C O L O R"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 63,
+      "page number": 1,
+      "bounding box": [
+        78.065,
+        597.098,
+        172.216,
+        635.635
+      ],
+      "font": "HelveticaNeueeTextPro-Roman",
+      "font size": 7.435,
+      "text color": "[0.4, 0.4, 0.4]",
+      "content": "High Strength Bear the burden of heavy loads and high stress without breaking"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 67,
+      "page number": 1,
+      "bounding box": [
+        242.87,
+        627.986,
+        319.062,
+        635.635
+      ],
+      "font": null,
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "Corrosion Resistant"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 73,
+      "page number": 1,
+      "bounding box": [
+        407.674,
+        597.098,
+        495.102,
+        635.635
+      ],
+      "font": "HelveticaNeueeTextPro-Roman",
+      "font size": 7.435,
+      "text color": "[0.4, 0.4, 0.4]",
+      "content": "Blue A distinctive blue color helps you identify them fast"
+    },
+    {
+      "type": "image",
+      "pdfua_tag": "Figure",
+      "id": 62,
+      "page number": 1,
+      "bounding box": [
+        35.935,
+        604.891,
+        73.109,
+        631.533
+      ],
+      "alt_source": "missing",
+      "source": "iso4014_images/imageFile1.png"
+    },
+    {
+      "type": "image",
+      "pdfua_tag": "Figure",
+      "id": 72,
+      "page number": 1,
+      "bounding box": [
+        365.543,
+        604.891,
+        402.717,
+        630.913
+      ],
+      "alt_source": "missing",
+      "source": "iso4014_images/imageFile2.png"
+    },
+    {
+      "type": "image",
+      "pdfua_tag": "Figure",
+      "id": 66,
+      "page number": 1,
+      "bounding box": [
+        200.739,
+        605.511,
+        237.913,
+        630.913
+      ],
+      "alt_source": "missing",
+      "source": "iso4014_images/imageFile3.png"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 68,
+      "page number": 1,
+      "bounding box": [
+        242.87,
+        597.098,
+        324.256,
+        623.74
+      ],
+      "font": "HelveticaNeueeTextPro-Roman",
+      "font size": 7.435,
+      "text color": "[0.4, 0.4, 0.4]",
+      "content": "Stand up to moisture, chemicals, and harsh weather"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 64,
+      "page number": 1,
+      "bounding box": [
+        78.065,
+        583.734,
+        115.776,
+        589.93
+      ],
+      "font": "HelveticaNeueeTextPro-Roman",
+      "font size": 6.196,
+      "text color": "[0.4, 0.4, 0.4]",
+      "content": "89 products"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 69,
+      "page number": 1,
+      "bounding box": [
+        242.87,
+        583.734,
+        280.581,
+        589.93
+      ],
+      "font": "HelveticaNeueeTextPro-Roman",
+      "font size": 6.196,
+      "text color": "[0.4, 0.4, 0.4]",
+      "content": "47 products"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 74,
+      "page number": 1,
+      "bounding box": [
+        407.674,
+        583.734,
+        445.385,
+        589.93
+      ],
+      "font": "HelveticaNeueeTextPro-Roman",
+      "font size": 6.196,
+      "text color": "[0.4, 0.4, 0.4]",
+      "content": "18 products"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 75,
+      "page number": 1,
+      "bounding box": [
+        28.5,
+        549.658,
+        158.171,
+        561.17
+      ],
+      "font": null,
+      "font size": 11.152,
+      "text color": "[0.2, 0.4, 0.2]",
+      "content": "Steel Hex Head Screws"
+    },
+    {
+      "type": "image",
+      "pdfua_tag": "Figure",
+      "id": 85,
+      "page number": 1,
+      "bounding box": [
+        28.5,
+        500.185,
+        90.457,
+        544.174
+      ],
+      "alt_source": "missing",
+      "source": "iso4014_images/imageFile4.png"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 76,
+      "page number": 1,
+      "bounding box": [
+        105.326,
+        396.863,
+        531.714,
+        543.196
+      ],
+      "font": "HelveticaNeueeTextPro-Roman",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "Our most popular hex head screws. These have a head with six flat sides to keep wrenches and sockets from slipping and rounding off the drive. Length is measured from under the head. Medium-Strength Fastener—Your go-to screws for fastening most machinery and equipment. They have tensile strengths from 90,000 to 120,000 psi. High-Strength Fastener—Commonly used to fasten components in valves, pumps, motors, and other high-stress applications. These screws have a tensile strength of 125,000 to 160,000 psi. Zinc-Plated Steel—A common choice for areas with occasional exposure to moisture. Zinc-Yellow-Chromate-Plated Steel—With slightly better corrosion resistance than zinc-plated steel screws, these stand up to more frequent exposure to moisture. Steel—Unfinished steel screws are best for dry environments, since moisture will cause them to rust. They require little surface prep before applying a finish, so you can apply your own paint or coating. Dyed Steel—The distinctive blue color makes it easy to tell these metric-sized screws apart from inch screws."
+    },
+    {
+      "type": "caption",
+      "pdfua_tag": "Caption",
+      "id": 86,
+      "page number": 1,
+      "bounding box": [
+        32.14,
+        488.674,
+        86.812,
+        496.109
+      ],
+      "linked content id": 87,
+      "font": "HelveticaNeueeTextPro-Roman",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "Fully Threaded"
+    },
+    {
+      "type": "image",
+      "pdfua_tag": "Figure",
+      "id": 87,
+      "page number": 1,
+      "bounding box": [
+        28.5,
+        433.891,
+        90.457,
+        477.88
+      ],
+      "alt_source": "missing",
+      "source": "iso4014_images/imageFile5.png"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 88,
+      "page number": 1,
+      "bounding box": [
+        41.734,
+        412.468,
+        77.216,
+        429.816
+      ],
+      "font": "HelveticaNeueeTextPro-Roman",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "Partially Threaded"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 77,
+      "page number": 1,
+      "bounding box": [
+        105.326,
+        364.761,
+        520.031,
+        392.146
+      ],
+      "font": "HelveticaNeueeTextPro-Roman",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "Zinc-Flake-Coated Steel—The coating is tested to extreme standards, including at least 720 hours of salt spray resistance, to hold up in wet and outdoor environments. An embedded lubricant makes these screws easier to install than corrosion-resistant-coated screws."
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 121,
+      "page number": 1,
+      "bounding box": [
+        149.364,
+        335.044,
+        169.203,
+        352.644
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "Head, mm"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 115,
+      "page number": 1,
+      "bounding box": [
+        112.761,
+        312.74,
+        221.904,
+        330.339
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "Lg., mm Wd. Ht. Threading"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 116,
+      "page number": 1,
+      "bounding box": [
+        263.499,
+        312.74,
+        290.367,
+        330.339
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "Thread Spacing"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 117,
+      "page number": 1,
+      "bounding box": [
+        312.871,
+        312.74,
+        372.382,
+        330.339
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "Fastener Strength Grade/Class"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 118,
+      "page number": 1,
+      "bounding box": [
+        379.823,
+        312.74,
+        435.202,
+        330.339
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "Tensile Strength, psi"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 119,
+      "page number": 1,
+      "bounding box": [
+        442.641,
+        312.74,
+        541.449,
+        330.339
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "Pkg. Qty. Pkg."
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 78,
+      "page number": 1,
+      "bounding box": [
+        107.804,
+        285.341,
+        238.737,
+        307.265
+      ],
+      "font": null,
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "Medium-Strength Zinc-Plated Steel M5 × 0.8 mm"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 79,
+      "page number": 1,
+      "bounding box": [
+        116.914,
+        257.598,
+        541.452,
+        283.872
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "65 8 3.5 Partially Threaded Coarse Class 8.8 110,000 25 91280A249 $17.49 70 8 3.5 Partially Threaded Coarse Class 8.8 110,000 25 91280A254 12.38 80 8 3.5 Partially Threaded Coarse Class 8.8 110,000 25 91280A264 14.58"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 80,
+      "page number": 1,
+      "bounding box": [
+        112.761,
+        245.689,
+        153.583,
+        253.363
+      ],
+      "font": null,
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "M6 × 1 mm"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 81,
+      "page number": 1,
+      "bounding box": [
+        116.914,
+        172.718,
+        541.45,
+        243.6
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "55 10 4 Partially Threaded Coarse Class 8.8 110,000 50 91280A348 20.77 60 10 4 Partially Threaded Coarse Class 8.8 110,000 25 91280A350 10.13 65 10 4 Partially Threaded Coarse Class 8.8 110,000 25 91280A351 12.09 70 10 4 Partially Threaded Coarse Class 8.8 110,000 25 91280A352 10.12 75 10 4 Partially Threaded Coarse Class 8.8 110,000 5 91280A163 14.18 80 10 4 Partially Threaded Coarse Class 8.8 110,000 25 91280A354 13.24 85 10 4 Partially Threaded Coarse Class 8.8 110,000 25 91280A172 13.43 90 10 4 Partially Threaded Coarse Class 8.8 110,000 25 91280A356 20.57"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 82,
+      "page number": 1,
+      "bounding box": [
+        112.761,
+        134.167,
+        541.45,
+        172.35
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "100 10 4 Partially Threaded Coarse Class 8.8 110,000 25 91280A358 20.98 110 10 4 Partially Threaded Coarse Class 8.8 110,000 10 91280A368 7.89 120 10 4 Partially Threaded Coarse Class 8.8 110,000 25 91280A173 19.75 M8 × 1.25 mm"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 83,
+      "page number": 1,
+      "bounding box": [
+        116.914,
+        52.522,
+        541.45,
+        132.078
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "55 13 5.3 Partially Threaded Coarse Class 8.8 110,000 25 91280A548 12.36 60 13 5.3 Partially Threaded Coarse Class 8.8 110,000 25 91280A550 12.62 65 13 5.3 Partially Threaded Coarse Class 8.8 110,000 25 91280A552 16.13 70 13 5.3 Partially Threaded Coarse Class 8.8 110,000 25 91280A554 17.11 75 13 5.3 Partially Threaded Coarse Class 8.8 110,000 25 91280A557 23.54 80 13 5.3 Partially Threaded Coarse Class 8.8 110,000 25 91280A558 19.18 85 13 5.3 Partially Threaded Coarse Class 8.8 110,000 10 91280A559 9.95 90 13 5.3 Partially Threaded Coarse Class 8.8 110,000 10 91280A560 9.48 95 13 5.3 Partially Threaded Coarse Class 8.8 110,000 10 91280A174 9.65"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 84,
+      "page number": 1,
+      "bounding box": [
+        112.78,
+        34.555,
+        541.45,
+        52.154
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "100 13 5.3 Partially Threaded Coarse Class 8.8 110,000 10 91280A562 9.07 110 13 5.3 Partially Threaded Coarse Class 8.8 110,000 10 91280A565 11.80"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 127,
+      "page number": 2,
+      "bounding box": [
+        112.761,
+        654.602,
+        541.45,
+        719.426
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "120 13 5.3 Partially Threaded Coarse Class 8.8 110,000 10 91280A567 23.80 130 13 5.3 Partially Threaded Coarse Class 8.8 110,000 10 91280A569 24.64 140 13 5.3 Partially Threaded Coarse Class 8.8 110,000 10 91280A571 24.69 150 13 5.3 Partially Threaded Coarse Class 8.8 110,000 10 91280A574 26.24 160 13 5.3 Partially Threaded Coarse Class 8.8 110,000 10 91280A577 26.50 180 13 5.3 Partially Threaded Coarse Class 8.8 110,000 5 91280A580 12.62 M12 × 1.75 mm"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 128,
+      "page number": 2,
+      "bounding box": [
+        116.914,
+        582.251,
+        541.45,
+        652.513
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "60 19 7.5 Partially Threaded Coarse Class 8.8 110,000 10 91280A728 15.95 65 19 7.5 Partially Threaded Coarse Class 8.8 110,000 10 91280A730 17.01 70 19 7.5 Partially Threaded Coarse Class 8.8 110,000 10 91280A732 17.36 75 19 7.5 Partially Threaded Coarse Class 8.8 110,000 10 91280A734 17.93 80 19 7.5 Partially Threaded Coarse Class 8.8 110,000 10 91280A735 18.87 85 19 7.5 Partially Threaded Coarse Class 8.8 110,000 10 91280A183 18.55 90 19 7.5 Partially Threaded Coarse Class 8.8 110,000 10 91280A737 20.86 95 19 7.5 Partially Threaded Coarse Class 8.8 110,000 5 91280A184 10.95"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 129,
+      "page number": 2,
+      "bounding box": [
+        112.78,
+        475.066,
+        541.45,
+        581.263
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "100 19 7.5 Partially Threaded Coarse Class 8.8 110,000 5 91280A739 11.12 110 19 7.5 Partially Threaded Coarse Class 8.8 110,000 5 91280A740 16.20 120 19 7.5 Partially Threaded Coarse Class 8.8 110,000 5 91280A741 11.11 130 19 7.5 Partially Threaded Coarse Class 8.8 110,000 5 91280A745 21.11 140 19 7.5 Partially Threaded Coarse Class 8.8 110,000 5 91280A747 22.55 150 19 7.5 Partially Threaded Coarse Class 8.8 110,000 5 91280A185 16.22 160 19 7.5 Partially Threaded Coarse Class 8.8 110,000 5 91280A752 23.46 170 19 7.5 Partially Threaded Coarse Class 8.8 110,000 5 91280A186 18.39 180 19 7.5 Partially Threaded Coarse Class 8.8 110,000 5 91280A755 24.01 190 19 7.5 Partially Threaded Coarse Class 8.8 110,000 1 91280A187 3.88 200 19 7.5 Partially Threaded Coarse Class 8.8 110,000 5 91280A758 26.54 210 19 7.5 Partially Threaded Coarse Class 8.8 110,000 1 91280A188 6.20"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 130,
+      "page number": 2,
+      "bounding box": [
+        107.804,
+        447.667,
+        194.099,
+        469.591
+      ],
+      "font": null,
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "Medium-Strength Steel M6 × 1 mm"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 131,
+      "page number": 2,
+      "bounding box": [
+        116.914,
+        401.957,
+        541.45,
+        446.198
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "60 10 4.2 Partially Threaded Coarse Class 8.8 110,000 50 91280A275 11.34 70 10 4.2 Partially Threaded Coarse Class 8.8 110,000 50 91280A276 13.18 75 10 4 Partially Threaded Coarse Class 8.8 110,000 50 91180A111 14.36 80 10 4.2 Partially Threaded Coarse Class 8.8 110,000 25 91280A277 7.74 90 10 4.2 Partially Threaded Coarse Class 8.8 110,000 25 91280A278 10.70"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 132,
+      "page number": 2,
+      "bounding box": [
+        112.78,
+        375.316,
+        541.45,
+        401.589
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "100 10 4.2 Partially Threaded Coarse Class 8.8 110,000 25 91280A279 11.12 110 10 4.2 Partially Threaded Coarse Class 8.8 110,000 25 91280A280 11.73 120 10 4 Partially Threaded Coarse Class 8.8 110,000 25 91180A112 14.01"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 133,
+      "page number": 2,
+      "bounding box": [
+        112.761,
+        362.787,
+        164.804,
+        370.461
+      ],
+      "font": null,
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "M8 × 1.25 mm"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 134,
+      "page number": 2,
+      "bounding box": [
+        116.914,
+        272.468,
+        541.45,
+        361.317
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "50 13 5.3 Partially Threaded Coarse Class 8.8 110,000 50 91180A227 18.20 55 13 5.4 Partially Threaded Coarse Class 8.8 110,000 25 91280A281 10.94 60 13 5.4 Partially Threaded Coarse Class 8.8 110,000 25 91280A282 9.50 65 13 5.4 Partially Threaded Coarse Class 8.8 110,000 25 91280A283 12.41 70 13 5.4 Partially Threaded Coarse Class 8.8 110,000 25 91280A284 11.20 75 13 5.4 Partially Threaded Coarse Class 8.8 110,000 25 91280A285 12.66 80 13 5.4 Partially Threaded Coarse Class 8.8 110,000 25 91280A286 11.72 85 13 5.4 Partially Threaded Coarse Class 8.8 110,000 25 91280A287 13.68 90 13 5.4 Partially Threaded Coarse Class 8.8 110,000 10 91280A288 6.76 95 13 5.3 Partially Threaded Coarse Class 8.8 110,000 10 91180A132 10.68"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 135,
+      "page number": 2,
+      "bounding box": [
+        112.78,
+        210.511,
+        541.45,
+        272.1
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "100 13 5.4 Partially Threaded Coarse Class 8.8 110,000 10 91280A289 7.92 110 13 5.3 Partially Threaded Coarse Class 8.8 110,000 25 91180A228 22.05 120 13 5.4 Partially Threaded Coarse Class 8.8 110,000 10 91280A290 8.01 130 13 5.4 Partially Threaded Coarse Class 8.8 110,000 10 91280A291 8.18 140 13 5.4 Partially Threaded Coarse Class 8.8 110,000 10 91280A292 10.99 150 13 5.4 Partially Threaded Coarse Class 8.8 110,000 10 91280A293 11.22 160 13 5.4 Partially Threaded Coarse Class 8.8 110,000 10 91280A294 13.35"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 136,
+      "page number": 2,
+      "bounding box": [
+        107.804,
+        183.113,
+        264.621,
+        204.417
+      ],
+      "font": null,
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "Medium-Strength Zinc-Flake-Coated Steel M8 × 1.25 mm"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 137,
+      "page number": 2,
+      "bounding box": [
+        116.914,
+        154.751,
+        541.449,
+        181.024
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "35 13 5.3 Partially Threaded Coarse Class 8.8 110,000 10 91180A151 7.97 40 13 5.3 Partially Threaded Coarse Class 8.8 110,000 10 91180A152 8.64 50 13 5.3 Partially Threaded Coarse Class 8.8 110,000 10 91180A153 9.55"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 138,
+      "page number": 2,
+      "bounding box": [
+        107.804,
+        127.352,
+        225.948,
+        149.276
+      ],
+      "font": null,
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "High-Strength Zinc-Plated Steel M8 × 1.25 mm"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 139,
+      "page number": 2,
+      "bounding box": [
+        116.914,
+        99.609,
+        541.449,
+        125.883
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "45 13 5.5 Partially Threaded Coarse Class 10.9 150,000 10 91310A812 4.08 50 13 5.5 Partially Threaded Coarse Class 10.9 150,000 10 91310A813 7.14 60 13 5.5 Partially Threaded Coarse Class 10.9 150,000 10 91310A814 4.98"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 140,
+      "page number": 2,
+      "bounding box": [
+        107.804,
+        72.21,
+        293.155,
+        94.135
+      ],
+      "font": null,
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "High-Strength Zinc-Yellow-Chromate-Plated Steel M6 × 1 mm"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 141,
+      "page number": 2,
+      "bounding box": [
+        116.914,
+        35.174,
+        541.45,
+        70.741
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "30 10 4 Partially Threaded Coarse Class 10.9 150,000 50 95327A521 18.38 40 10 4 Partially Threaded Coarse Class 10.9 150,000 25 95327A528 11.42 45 10 4 Partially Threaded Coarse Class 10.9 150,000 25 95327A531 15.80 50 10 4 Partially Threaded Coarse Class 10.9 150,000 25 95327A535 19.19"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 171,
+      "page number": 3,
+      "bounding box": [
+        112.761,
+        699.21,
+        541.45,
+        719.426
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "70 10 4 Partially Threaded Coarse Class 10.9 150,000 25 90854A413 19.94 M8 × 1.25 mm"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 172,
+      "page number": 3,
+      "bounding box": [
+        116.914,
+        590.924,
+        541.45,
+        697.122
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "30 13 5.3 Partially Threaded Coarse Class 10.9 150,000 25 95327A562 17.70 35 13 5.3 Partially Threaded Coarse Class 10.9 150,000 25 95327A566 15.07 40 13 5.3 Partially Threaded Coarse Class 10.9 150,000 25 95327A569 26.13 45 13 5.3 Partially Threaded Coarse Class 10.9 150,000 25 95327A573 23.32 50 13 5.3 Partially Threaded Coarse Class 10.9 150,000 10 95327A577 10.74 55 13 5.3 Partially Threaded Coarse Class 10.9 150,000 10 95327A581 14.19 60 13 5.3 Partially Threaded Coarse Class 10.9 150,000 10 95327A585 12.74 65 13 5.3 Partially Threaded Coarse Class 10.9 150,000 10 90854A415 12.20 70 13 5.3 Partially Threaded Coarse Class 10.9 150,000 10 95327A589 14.34 75 13 5.3 Partially Threaded Coarse Class 10.9 150,000 10 95327A591 11.62 80 13 5.3 Partially Threaded Coarse Class 10.9 150,000 10 95327A594 20.02 90 13 5.3 Partially Threaded Coarse Class 10.9 150,000 10 95327A598 22.59"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 173,
+      "page number": 3,
+      "bounding box": [
+        112.761,
+        552.373,
+        541.45,
+        590.557
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "100 13 5.3 Partially Threaded Coarse Class 10.9 150,000 10 95327A603 21.73 110 13 5.3 Partially Threaded Coarse Class 10.9 150,000 10 90854A156 19.13 120 13 5.3 Partially Threaded Coarse Class 10.9 150,000 5 90854A157 12.84 M12 × 1.75 mm"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 174,
+      "page number": 3,
+      "bounding box": [
+        116.914,
+        444.087,
+        541.45,
+        550.285
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "40 19 7.5 Partially Threaded Coarse Class 10.9 150,000 10 95327A673 18.16 45 19 7.5 Partially Threaded Coarse Class 10.9 150,000 10 95327A678 23.15 50 19 7.5 Partially Threaded Coarse Class 10.9 150,000 5 95327A681 10.14 55 19 7.5 Partially Threaded Coarse Class 10.9 150,000 5 95327A684 13.34 60 19 7.5 Partially Threaded Coarse Class 10.9 150,000 5 95327A688 13.52 65 19 7.5 Partially Threaded Coarse Class 10.9 150,000 5 95327A692 13.60 70 19 7.5 Partially Threaded Coarse Class 10.9 150,000 5 95327A695 15.67 75 19 7.5 Partially Threaded Coarse Class 10.9 150,000 5 95327A698 22.12 80 19 7.5 Partially Threaded Coarse Class 10.9 150,000 5 95327A701 18.54 85 19 7.5 Partially Threaded Coarse Class 10.9 150,000 5 90854A294 20.04 90 19 7.5 Partially Threaded Coarse Class 10.9 150,000 5 95327A704 18.92 95 19 7.5 Partially Threaded Coarse Class 10.9 150,000 1 90854A295 4.13"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 175,
+      "page number": 3,
+      "bounding box": [
+        112.78,
+        399.479,
+        541.45,
+        443.1
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "100 19 7.5 Partially Threaded Coarse Class 10.9 150,000 5 95327A708 20.03 110 19 7.5 Partially Threaded Coarse Class 10.9 150,000 1 95327A712 3.96 120 19 7.5 Partially Threaded Coarse Class 10.9 150,000 1 95327A716 5.11 130 19 7.5 Partially Threaded Coarse Class 10.9 150,000 1 90854A296 5.50 140 19 7.5 Partially Threaded Coarse Class 10.9 150,000 1 90854A297 5.87"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 176,
+      "page number": 3,
+      "bounding box": [
+        107.804,
+        372.08,
+        181.31,
+        393.385
+      ],
+      "font": null,
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "High-Strength Steel M6 × 1 mm"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 177,
+      "page number": 3,
+      "bounding box": [
+        116.914,
+        326.37,
+        541.45,
+        369.991
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "25 10 4 Partially Threaded Coarse Class 10.9 150,000 50 91310A334 12.80 30 10 4 Partially Threaded Coarse Class 10.9 150,000 50 91310A438 19.85 40 10 4 Partially Threaded Coarse Class 10.9 150,000 50 91310A442 22.90 45 10 4 Partially Threaded Coarse Class 10.9 150,000 50 91310A444 24.75 50 10 4 Partially Threaded Coarse Class 10.9 150,000 50 91310A446 26.25"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 178,
+      "page number": 3,
+      "bounding box": [
+        112.761,
+        313.841,
+        164.804,
+        321.515
+      ],
+      "font": null,
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "M8 × 1.25 mm"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 179,
+      "page number": 3,
+      "bounding box": [
+        116.914,
+        223.522,
+        541.45,
+        312.372
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "30 13 5.3 Partially Threaded Coarse Class 10.9 150,000 25 91310A538 11.75 40 13 5.3 Partially Threaded Coarse Class 10.9 150,000 25 91310A542 20.30 45 13 5.3 Partially Threaded Coarse Class 10.9 150,000 25 91310A544 21.55 50 13 5.3 Partially Threaded Coarse Class 10.9 150,000 25 91310A546 23.00 55 13 5.3 Partially Threaded Coarse Class 10.9 150,000 25 91310A548 24.25 60 13 5.3 Partially Threaded Coarse Class 10.9 150,000 25 91310A550 25.70 70 13 5.3 Partially Threaded Coarse Class 10.9 150,000 25 91310A554 29.35 75 13 5.3 Partially Threaded Coarse Class 10.9 150,000 10 91310A556 17.30 80 13 5.3 Partially Threaded Coarse Class 10.9 150,000 10 91310A558 11.19 90 13 5.3 Partially Threaded Coarse Class 10.9 150,000 10 91310A562 17.34"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 180,
+      "page number": 3,
+      "bounding box": [
+        112.761,
+        202.319,
+        541.45,
+        223.154
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "100 13 5.3 Partially Threaded Coarse Class 10.9 150,000 10 91310A566 15.33 M12 × 1.75 mm"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 181,
+      "page number": 3,
+      "bounding box": [
+        116.914,
+        121.294,
+        541.45,
+        200.85
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "40 19 7.5 Partially Threaded Coarse Class 10.9 150,000 10 91310A720 15.56 45 19 7.5 Partially Threaded Coarse Class 10.9 150,000 10 91310A722 20.55 50 19 7.5 Partially Threaded Coarse Class 10.9 150,000 10 91310A724 21.70 55 19 7.5 Partially Threaded Coarse Class 10.9 150,000 10 91310A726 22.85 60 19 7.5 Partially Threaded Coarse Class 10.9 150,000 10 91310A728 24.00 65 19 7.5 Partially Threaded Coarse Class 10.9 150,000 10 91310A730 14.69 70 19 7.5 Partially Threaded Coarse Class 10.9 150,000 10 91310A732 15.60 80 19 7.5 Partially Threaded Coarse Class 10.9 150,000 10 91310A736 28.17 90 19 7.5 Partially Threaded Coarse Class 10.9 150,000 5 91310A740 18.10"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 182,
+      "page number": 3,
+      "bounding box": [
+        112.78,
+        94.653,
+        541.45,
+        120.307
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "100 19 7.5 Partially Threaded Coarse Class 10.9 150,000 5 91310A742 20.60 110 19 7.5 Partially Threaded Coarse Class 10.9 150,000 5 91310A746 22.65 120 19 7.5 Partially Threaded Coarse Class 10.9 150,000 5 91310A750 21.01"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 183,
+      "page number": 3,
+      "bounding box": [
+        107.804,
+        67.254,
+        266.338,
+        88.559
+      ],
+      "font": null,
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "High-Strength Blue-Dyed Zinc-Plated Steel M6 × 1 mm"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 184,
+      "page number": 3,
+      "bounding box": [
+        116.914,
+        30.218,
+        541.45,
+        65.165
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "30 10 4 Partially Threaded Coarse Class 10.9 150,000 25 90180A614 10.85 35 10 4 Partially Threaded Coarse Class 10.9 150,000 25 90180A615 11.93 40 10 4 Partially Threaded Coarse Class 10.9 150,000 25 90180A616 13.25 50 10 4 Partially Threaded Coarse Class 10.9 150,000 25 90180A617 12.95"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 214,
+      "page number": 4,
+      "bounding box": [
+        112.761,
+        707.884,
+        164.804,
+        715.559
+      ],
+      "font": null,
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "M8 × 1.25 mm"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 215,
+      "page number": 4,
+      "bounding box": [
+        116.914,
+        653.501,
+        541.45,
+        706.415
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "35 13 5.3 Partially Threaded Coarse Class 10.9 150,000 10 90180A623 9.62 40 13 5.3 Partially Threaded Coarse Class 10.9 150,000 10 90180A624 9.94 50 13 5.3 Partially Threaded Coarse Class 10.9 150,000 10 90180A625 10.04 60 13 5.3 Partially Threaded Coarse Class 10.9 150,000 10 90180A626 12.86 70 13 5.3 Partially Threaded Coarse Class 10.9 150,000 10 90180A627 14.15 80 13 5.3 Partially Threaded Coarse Class 10.9 150,000 10 90180A628 15.88"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 216,
+      "page number": 4,
+      "bounding box": [
+        112.761,
+        640.971,
+        169.306,
+        648.646
+      ],
+      "font": null,
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "M12 × 1.75 mm"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 217,
+      "page number": 4,
+      "bounding box": [
+        116.914,
+        595.261,
+        541.45,
+        639.502
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "50 19 7.5 Partially Threaded Coarse Class 10.9 150,000 5 90180A651 12.56 60 19 7.5 Partially Threaded Coarse Class 10.9 150,000 5 90180A652 14.49 70 19 7.5 Partially Threaded Coarse Class 10.9 150,000 5 90180A653 16.35 80 19 7.5 Partially Threaded Coarse Class 10.9 150,000 1 90180A654 3.84 90 19 7.5 Partially Threaded Coarse Class 10.9 150,000 1 90180A655 3.86"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 218,
+      "page number": 4,
+      "bounding box": [
+        112.78,
+        568.62,
+        541.449,
+        594.894
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "100 19 7.5 Partially Threaded Coarse Class 10.9 150,000 1 90180A656 4.67 110 19 7.5 Partially Threaded Coarse Class 10.9 150,000 1 90180A657 4.70 120 19 7.5 Partially Threaded Coarse Class 10.9 150,000 1 90180A658 5.10"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 219,
+      "page number": 4,
+      "bounding box": [
+        107.804,
+        541.221,
+        251.831,
+        563.146
+      ],
+      "font": null,
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "High-Strength Zinc-Flake-Coated Steel M6 × 1 mm"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 220,
+      "page number": 4,
+      "bounding box": [
+        112.761,
+        518.917,
+        541.45,
+        539.752
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "25 10 4 Fully Threaded Coarse Class 10.9 150,000 25 91310A238 14.33 M8 × 1.25 mm"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 221,
+      "page number": 4,
+      "bounding box": [
+        116.914,
+        499.848,
+        541.45,
+        517.448
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "30 13 5.3 Fully Threaded Coarse Class 10.9 150,000 10 91310A243 12.60 50 13 5.3 Partially Threaded Coarse Class 10.9 150,000 10 91310A244 18.47"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 222,
+      "page number": 4,
+      "bounding box": [
+        28.5,
+        470.973,
+        212.375,
+        482.485
+      ],
+      "font": null,
+      "font size": 11.152,
+      "text color": "[0.2, 0.4, 0.2]",
+      "content": "Stainless Steel Hex Head Screws"
+    },
+    {
+      "type": "image",
+      "pdfua_tag": "Figure",
+      "id": 258,
+      "page number": 4,
+      "bounding box": [
+        28.5,
+        425.837,
+        83.641,
+        464.869
+      ],
+      "alt_source": "missing",
+      "source": "iso4014_images/imageFile6.png"
+    },
+    {
+      "type": "caption",
+      "pdfua_tag": "Caption",
+      "id": 259,
+      "page number": 4,
+      "bounding box": [
+        38.326,
+        405.033,
+        73.808,
+        421.761
+      ],
+      "linked content id": 258,
+      "font": "HelveticaNeueeTextPro-Roman",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "Partially Threaded"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 223,
+      "page number": 4,
+      "bounding box": [
+        98.511,
+        409.37,
+        523.885,
+        463.892
+      ],
+      "font": "HelveticaNeueeTextPro-Roman",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "Won't rust or corrode when exposed to moisture and chemicals. These screws have a head with six flat sides to keep wrenches and sockets from slipping and rounding off the drive. Length is measured from under the head. 18-8 Stainless Steel—The choice for wet and outdoor environments, these screws won't rust. However, they don't hold up to the harsh chemicals that 316 stainless steel screws can."
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 298,
+      "page number": 4,
+      "bounding box": [
+        142.548,
+        380.272,
+        567.892,
+        397.252
+      ],
+      "font": "Arial-BoldMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "Head, mm Imported United States Origin"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 292,
+      "page number": 4,
+      "bounding box": [
+        105.946,
+        357.968,
+        215.088,
+        375.567
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "Lg., mm Wd. Ht. Threading"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 293,
+      "page number": 4,
+      "bounding box": [
+        256.684,
+        357.968,
+        283.552,
+        375.567
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "Thread Spacing"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 294,
+      "page number": 4,
+      "bounding box": [
+        306.056,
+        357.968,
+        361.435,
+        375.567
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "Tensile Strength, psi"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 295,
+      "page number": 4,
+      "bounding box": [
+        368.874,
+        357.968,
+        467.682,
+        375.567
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "Pkg. Qty. Pkg."
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 296,
+      "page number": 4,
+      "bounding box": [
+        482.554,
+        357.968,
+        581.769,
+        375.567
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "Pkg. Qty. Pkg."
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 224,
+      "page number": 4,
+      "bounding box": [
+        100.989,
+        330.569,
+        174.451,
+        352.494
+      ],
+      "font": null,
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "18-8 Stainless Steel M5 × 0.8 mm"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 225,
+      "page number": 4,
+      "bounding box": [
+        105.946,
+        308.265,
+        581.772,
+        329.1
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "80 8 3.5 Partially Threaded Coarse 100,000 10 91287A711 $13.49 — ——— M6 × 1 mm"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 226,
+      "page number": 4,
+      "bounding box": [
+        110.099,
+        262.555,
+        581.772,
+        306.796
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "30 10 4 Partially Threaded Coarse 80,000 25 91287A903 6.84 — ——— 40 10 4 Partially Threaded Coarse 100,000 — ——— — 25 91287A142 $17.56 70 10 4 Partially Threaded Coarse 100,000 — ——— — 10 91287A252 9.94 80 10 4 Partially Threaded Coarse 100,000 — ——— — 10 91287A254 11.67 90 10 4 Partially Threaded Coarse 100,000 — ——— — 10 91287A256 13.59"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 227,
+      "page number": 4,
+      "bounding box": [
+        105.946,
+        206.037,
+        581.77,
+        262.187
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "100 10 4 Partially Threaded Coarse 100,000 — ——— — 5 91287A258 8.43 120 10 4 Partially Threaded Coarse 100,000 — ——— — 5 91287A262 11.04 130 10 4 Partially Threaded Coarse 100,000 — ——— — 5 91287A264 8.58 140 10 4 Partially Threaded Coarse 100,000 — ——— — 5 91287A266 8.85 150 10 4 Partially Threaded Coarse 100,000 — ——— — 5 91287A268 11.63 M8 × 1.25 mm"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 228,
+      "page number": 4,
+      "bounding box": [
+        110.099,
+        133.066,
+        581.772,
+        203.948
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "40 13 5.3 Partially Threaded Coarse 100,000 — ——— — 10 91287A156 12.59 50 13 5.3 Partially Threaded Coarse 100,000 — ——— — 10 91287A158 14.61 60 13 5.3 Partially Threaded Coarse 100,000 — ——— — 10 91287A160 17.66 70 13 5.3 Partially Threaded Coarse 100,000 — ——— — 10 91287A162 19.89 75 13 5.3 Partially Threaded Coarse 100,000 10 91287A714 11.61 — ——— 80 13 5.3 Partially Threaded Coarse 100,000 — ——— — 5 91287A164 11.39 85 13 5.3 Partially Threaded Coarse 100,000 10 91287A715 12.95 — ——— 90 13 5.3 Partially Threaded Coarse 100,000 — ——— — 5 91287A165 11.20"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 229,
+      "page number": 4,
+      "bounding box": [
+        105.946,
+        41.232,
+        581.772,
+        132.698
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "100 13 5.3 Partially Threaded Coarse 100,000 — ——— — 5 91287A166 13.95 110 13 5.3 Partially Threaded Coarse 100,000 5 91287A317 9.37 — ——— 120 13 5.3 Partially Threaded Coarse 100,000 5 91287A319 10.46 — ——— 130 13 5.3 Partially Threaded Coarse 100,000 5 91287A321 9.89 — ——— 160 13 5.3 Partially Threaded Coarse 100,000 1 91287A322 4.28 — ——— 170 13 5.3 Partially Threaded Coarse 100,000 1 91287A323 5.08 — ——— 180 13 5.3 Partially Threaded Coarse 100,000 1 91287A325 5.53 — ——— 190 13 5.3 Partially Threaded Coarse 100,000 1 91287A326 5.87 — ——— 200 13 5.3 Partially Threaded Coarse 100,000 1 91287A327 5.70 — ——— M12 × 1.75 mm"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 230,
+      "page number": 4,
+      "bounding box": [
+        110.099,
+        30.838,
+        581.77,
+        39.144
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "70 19 7.5 Partially Threaded Coarse 100,000 — ——— — 5 91287A198 24.64"
+    },
+    {
+      "type": "heading",
+      "pdfua_tag": "H3",
+      "id": 343,
+      "level": "Subtitle",
+      "page number": 5,
+      "bounding box": [
+        146.275,
+        745.196,
+        567.892,
+        753.502
+      ],
+      "heading level": 3,
+      "font": "Arial-BoldMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "mm Imported United States Origin"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 337,
+      "page number": 5,
+      "bounding box": [
+        105.946,
+        722.892,
+        215.088,
+        739.872
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "Lg., mm Wd. Ht. Threading"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 338,
+      "page number": 5,
+      "bounding box": [
+        256.684,
+        722.892,
+        283.552,
+        739.872
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "Thread Spacing"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 339,
+      "page number": 5,
+      "bounding box": [
+        306.056,
+        722.892,
+        361.435,
+        739.872
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "Tensile Strength, psi"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 340,
+      "page number": 5,
+      "bounding box": [
+        368.874,
+        722.892,
+        467.682,
+        739.872
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "Pkg. Qty. Pkg."
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 341,
+      "page number": 5,
+      "bounding box": [
+        482.554,
+        722.892,
+        581.769,
+        739.872
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "Pkg. Qty. Pkg."
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 303,
+      "page number": 5,
+      "bounding box": [
+        110.099,
+        693.772,
+        581.772,
+        719.426
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "75 19 7.5 Partially Threaded Coarse 100,000 5 91287A719 13.64 — ——— 80 19 7.5 Partially Threaded Coarse 100,000 — ——— — 1 91287A199 5.25 90 19 7.5 Partially Threaded Coarse 100,000 — ——— — 1 91287A201 4.87"
+    },
+    {
+      "type": "paragraph",
+      "pdfua_tag": "P",
+      "id": 304,
+      "page number": 5,
+      "bounding box": [
+        105.965,
+        613.229,
+        581.772,
+        692.785
+      ],
+      "font": "ArialMT",
+      "font size": 7.435,
+      "text color": "[0.2, 0.2, 0.2]",
+      "content": "100 19 7.5 Partially Threaded Coarse 100,000 — ——— — 1 91287A202 5.41 110 19 7.5 Partially Threaded Coarse 100,000 — ——— — 1 91287A203 5.92 120 19 7.5 Partially Threaded Coarse 100,000 — ——— — 1 91287A204 6.03 130 19 7.5 Partially Threaded Coarse 100,000 — ——— — 1 91287A400 6.50 160 19 7.5 Partially Threaded Coarse 100,000 1 91287A439 7.05 — ——— 170 19 7.5 Partially Threaded Coarse 100,000 1 91287A440 8.55 — ——— 180 19 7.5 Partially Threaded Coarse 100,000 1 91287A441 7.96 — ——— 190 19 7.5 Partially Threaded Coarse 100,000 1 91287A442 8.37 — ——— 200 19 7.5 Partially Threaded Coarse 100,000 1 91287A443 8.78 — ——— —"
+    }
+  ]
+}
