@@ -1,0 +1,13 @@
+{
+  "_comment": "Characterized presses for the Formed Fiber design-to-process handoff tool. Picking a machine in the tool fills Vacuum Pressure and Hot Press Pressing Pressure from its entry here, so the two values that belong to the press rather than the part are never retyped. Reloaded on every run -- edits take effect without restarting the tool.\n\nPressures are STRINGS, not numbers, and carry their own unit: the document's field is labelled 'bar or barg', so '-0.9 barg' and '120 bar' both need to print exactly as written.\n\n'characterized': false means the press has not been characterized yet. The tool still generates the handoff, but shows a warning, because the document states that an uncharacterized machine must be characterized before the first production run. Absent means true.\n\nA machine with no 'name' is skipped -- it could not be picked from the dropdown.",
+
+  "machines": [
+    {
+      "name": "EXAMPLE — replace with a real press",
+      "vacuum_pressure": "-0.9 barg",
+      "press_pressure": "120 bar",
+      "characterized": true,
+      "notes": "Not printed on the document. Delete this entry once real presses are added."
+    }
+  ]
+}

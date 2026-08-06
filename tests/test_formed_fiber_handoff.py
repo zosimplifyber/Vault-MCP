@@ -133,3 +133,64 @@ def test_missing_fields_lists_every_blank_row_by_label():
     assert "Dryness [%]" in missing
     # 3 machine + 8 production + 2 file = 13 rows, one of which is filled.
     assert len(missing) == 12
+
+
+# ------------------------------------------------------------ machine library
+
+import json  # noqa: E402
+import pytest  # noqa: E402
+
+
+def _write_machines(tmp_path, payload):
+    path = tmp_path / "machines.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+def test_load_machines_reads_every_profile(tmp_path):
+    path = _write_machines(tmp_path, {"machines": [
+        {"name": "Beckwood 150T", "vacuum_pressure": "-0.9 barg",
+         "press_pressure": "120 bar", "characterized": True},
+        {"name": "Wabash 50T", "vacuum_pressure": "-0.8 barg",
+         "press_pressure": "60 bar", "characterized": False},
+    ]})
+    machines = engine.load_machines(path)
+    assert [m.name for m in machines] == ["Beckwood 150T", "Wabash 50T"]
+    assert machines[0].vacuum_pressure == "-0.9 barg"
+    assert machines[0].press_pressure == "120 bar"
+    assert machines[1].characterized is False
+
+
+def test_load_machines_never_raises(tmp_path):
+    """A broken library must not stop a handoff being written by hand."""
+    missing = tmp_path / "nope.json"
+    assert engine.load_machines(missing) == []
+
+    malformed = tmp_path / "bad.json"
+    malformed.write_text("{not json", encoding="utf-8")
+    assert engine.load_machines(malformed) == []
+
+    wrong_shape = _write_machines(tmp_path, {"machines": "not a list"})
+    assert engine.load_machines(wrong_shape) == []
+
+
+def test_load_machines_skips_unusable_rows(tmp_path):
+    path = _write_machines(tmp_path, {"machines": [
+        {"name": ""},               # no name -- cannot appear in a dropdown
+        "not a dict",
+        {"name": "Real Press"},
+    ]})
+    assert [m.name for m in engine.load_machines(path)] == ["Real Press"]
+
+
+def test_machines_default_to_characterized(tmp_path):
+    """Absent flag means characterized. Warning on a machine nobody has
+    flagged either way would cry wolf on every existing entry."""
+    path = _write_machines(tmp_path, {"machines": [{"name": "Press"}]})
+    assert engine.load_machines(path)[0].characterized is True
+
+
+def test_shipped_machines_json_is_loadable():
+    """The file we ship must actually parse."""
+    machines = engine.load_machines(engine.MACHINES_PATH)
+    assert isinstance(machines, list)

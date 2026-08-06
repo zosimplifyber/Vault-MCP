@@ -185,3 +185,65 @@ def missing_fields(data: HandoffData) -> list[str]:
     """
     rows = machine_rows(data) + production_rows(data) + file_rows(data)
     return [label for label, value in rows if value == EM_DASH]
+
+
+# ---------------------------------------------------------------------------
+# Machine library
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class Machine:
+    """One characterized press.
+
+    Pressures are strings, not numbers: the document's own unit is "bar or
+    barg", so the value carries its unit rather than the code assuming one.
+    """
+
+    name: str
+    vacuum_pressure: str = ""
+    press_pressure: str = ""
+    characterized: bool = True
+
+
+def load_machines(path: Path | str = MACHINES_PATH) -> list[Machine]:
+    """Every machine profile in ``machines.json``, or [] if it cannot be read.
+
+    Never raises. A missing or malformed library must not stop a handoff
+    being written -- the form degrades the machine fields to free text and
+    says so in the status bar.
+    """
+    try:
+        with open(path, encoding="utf-8") as fh:
+            payload = json.load(fh)
+    except (OSError, ValueError):
+        return []
+
+    rows = payload.get("machines") if isinstance(payload, dict) else None
+    if not isinstance(rows, list):
+        return []
+
+    machines: list[Machine] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("name") or "").strip()
+        if not name:
+            continue
+        machines.append(Machine(
+            name=name,
+            vacuum_pressure=str(row.get("vacuum_pressure") or "").strip(),
+            press_pressure=str(row.get("press_pressure") or "").strip(),
+            # Absent means characterized -- warning on every unflagged entry
+            # would cry wolf.
+            characterized=bool(row.get("characterized", True)),
+        ))
+    return machines
+
+
+def find_machine(machines: list[Machine], name: str) -> Machine | None:
+    """The profile with this exact name, or None."""
+    wanted = str(name or "").strip()
+    for machine in machines:
+        if machine.name == wanted:
+            return machine
+    return None
