@@ -98,6 +98,33 @@ def test_machine_and_file_sections_print_their_rows():
     assert len(engine.file_rows(data)) == 2
 
 
+def test_machine_and_file_labels_are_pinned():
+    """Sections 1 and 3 pin their literal text the way section 2 does.
+
+    These strings print on a customer-facing document, and the whole point of
+    building rows in the engine is that the wording is provable without
+    opening a PDF. Asserting only row [0] and a count would let a typo in the
+    other labels ship silently.
+    """
+    data = engine.HandoffData()
+    assert [label for label, _ in engine.machine_rows(data)] == [
+        "Machine – Brand and Model",
+        "Vacuum Pressure [bar or barg]",
+        "Hot Press Pressing Pressure [bar]",
+    ]
+    assert [label for label, _ in engine.file_rows(data)] == [
+        "General Assembly Filename",
+        "Final Pressed Part Filename",
+    ]
+
+
+def test_render_text_does_not_treat_a_legitimate_zero_as_blank():
+    """The `str(text or "")` shorthand would render 0 as an em dash."""
+    assert engine.render_text("0") == "0"
+    assert engine.render_text(0) == "0"
+    assert engine.render_text(None) == engine.EM_DASH
+
+
 def test_missing_fields_lists_every_blank_row_by_label():
     data = engine.HandoffData(machine="Beckwood 150T")
     missing = engine.missing_fields(data)

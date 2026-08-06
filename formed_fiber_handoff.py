@@ -125,9 +125,16 @@ FILE_FIELDS: tuple[tuple[str, str], ...] = (
 )
 
 
-def render_text(text: Any) -> str:
-    """A plain string as it prints -- em dash when there is nothing."""
-    value = str(text or "").strip()
+def render_text(text: str) -> str:
+    """A plain string as it prints -- em dash when there is nothing.
+
+    Typed ``str`` because that is what every caller has: a HandoffData field
+    or a Tk StringVar's value. None is tolerated defensively, but the obvious
+    ``str(text or "")`` shorthand is avoided on purpose -- it treats every
+    falsy value as blank, so a legitimate 0 or False would print as an em
+    dash. Same falsy-value trap ``standard_dry_weight`` guards against above.
+    """
+    value = "" if text is None else str(text).strip()
     return value or EM_DASH
 
 
@@ -140,11 +147,14 @@ def render_value(value: Value) -> str:
 
 
 def machine_rows(data: HandoffData) -> list[tuple[str, str]]:
+    """Section 1 rows, in document order."""
     return [(label, render_text(getattr(data, name)))
             for name, label in MACHINE_FIELDS]
 
 
 def production_rows(data: HandoffData) -> list[tuple[str, str]]:
+    """Section 2 rows, in document order: material, volume, then the six
+    markable values."""
     rows = [
         (MATERIAL_LABEL, render_text(data.material)),
         (VOLUME_LABEL, render_text(data.volume)),
@@ -155,6 +165,7 @@ def production_rows(data: HandoffData) -> list[tuple[str, str]]:
 
 
 def file_rows(data: HandoffData) -> list[tuple[str, str]]:
+    """Section 3 rows, in document order."""
     return [(label, render_text(getattr(data, name)))
             for name, label in FILE_FIELDS]
 
@@ -165,6 +176,12 @@ def missing_fields(data: HandoffData) -> list[str]:
     The document says to complete every field, so the form warns before
     generating -- but does not block. A partly-filled handoff is sometimes
     exactly what is wanted.
+
+    Blankness is detected by rendering and comparing to EM_DASH rather than
+    by a separate emptiness test, so this can never disagree with what
+    actually prints. The trade is that a field holding a literal em dash as
+    real content would read as blank -- not a value any of these fields
+    (numbers, filenames, material names) plausibly takes.
     """
     rows = machine_rows(data) + production_rows(data) + file_rows(data)
     return [label for label, value in rows if value == EM_DASH]
