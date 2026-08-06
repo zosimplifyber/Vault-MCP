@@ -1,20 +1,40 @@
 """
-Inventor COM automation helpers used by the release workflow.
+Inventor COM automation helpers. Two callers, two jobs.
 
-Drives a running (or freshly launched) Inventor instance to:
+**The release workflow** (``scripts/release_workflow.py``) drives a running
+(or freshly launched) Inventor instance to:
   * open an assembly from a local working-folder path
   * trigger the Vault add-in to "Get Latest" on the file (so all referenced
     parts are pulled local before the rebuild)
   * rebuild / Update2 the assembly
   * save the assembly (which lets the Vault add-in mark it dirty for check-in)
 
+**The formed fiber handoff tool** (``gui/formed_fiber_handoff.py``) reads a
+part's computed mass and volume — ``read_part_physical_properties`` — to fill
+the Bone Dry Weight and Part Volume fields on its document.
+
 Why COM and not REST?
 ---------------------
-The Vault REST v2 API can download file *bytes* directly, but it cannot
-restore a working-folder layout (relative paths, library paths, custom
-content centre links) the way the Vault add-in does. The Inventor add-in
-also handles linked-file resolution. So for any release that needs the
-assembly to actually open and rebuild correctly, we drive Inventor.
+For the release workflow: the Vault REST v2 API can download file *bytes*
+directly, but it cannot restore a working-folder layout (relative paths,
+library paths, custom content centre links) the way the Vault add-in does.
+The Inventor add-in also handles linked-file resolution. So for any release
+that needs the assembly to actually open and rebuild correctly, we drive
+Inventor.
+
+For the handoff tool: Vault simply has no such properties. None of its 125
+property definitions is Mass, Volume, Density or Thickness, so there is
+nothing for a REST call to return. Adding a Vault UDP mapped to Inventor's
+Mass was the alternative, and was rejected — it needs a Vault Settings change
+plus a re-index before existing files carry it.
+
+A caller on a worker thread
+---------------------------
+The release workflow calls from the CLI's main thread; the handoff GUI calls
+from a worker thread, where COM must be initialised explicitly.
+``read_part_physical_properties`` therefore handles its own
+``CoInitialize``/``CoUninitialize``. The older entry points do not, and are
+main-thread only.
 
 Requires `pywin32` (`pip install pywin32`) and a local Inventor install.
 The module is import-safe on machines without Inventor — every entry point
@@ -251,6 +271,41 @@ class PhysicalProperties:
     volume_cm3: float
 
 
+def _read_mass_properties(file_path: str | Path) -> tuple[float, float]:
+    """``(mass_kg, volume_cm3)`` straight off the model, as plain floats.
+
+    Split out from ``read_part_physical_properties`` for COM lifetime, not
+    for tidiness. Every COM pointer this touches -- the Application, the
+    Document, the MassProperties object -- is a local of THIS frame, so all
+    of them are released when it returns. The caller can then safely call
+    ``CoUninitialize``. Holding them in the same frame as the ``finally``
+    would release them after the apartment had already been torn down, which
+    for an out-of-process server like Inventor can drop the Release, strand
+    a refcount in the server, and print `Exception ignored in __del__` noise.
+    No test with fake COM objects can catch that -- fakes are plain Python.
+    """
+    # get_inventor_app's default visible=True is deliberate. Passing False
+    # sets Visible on the APPLICATION, and since it prefers attaching to an
+    # already-running Inventor, that would hide the user's own window
+    # mid-session. The document is opened invisibly instead.
+    app = get_inventor_app()
+    resolved = Path(file_path).expanduser().resolve()
+    with open_document(app, resolved, open_visible=False) as doc:
+        try:
+            mass_properties = doc.ComponentDefinition.MassProperties
+            return float(mass_properties.Mass), float(mass_properties.Volume)
+        except Exception as exc:  # noqa: BLE001
+            # Wide on purpose, but only three lines wide. COM raises
+            # pywintypes.com_error (unimportable at module scope off
+            # Windows); an assembly instead of a part raises AttributeError;
+            # an unexpected VARIANT raises TypeError from float(). One
+            # domain error beats three raw tracebacks.
+            raise InventorAutomationError(
+                f"Could not read mass properties from {resolved}. Is it a "
+                f"part (.ipt) rather than an assembly? ({exc})"
+            ) from exc
+
+
 def read_part_physical_properties(file_path: str | Path) -> PhysicalProperties:
     """Return the part's computed mass in grams and volume in cm³.
 
@@ -269,6 +324,13 @@ def read_part_physical_properties(file_path: str | Path) -> PhysicalProperties:
     that points nowhere near the real cause. ``scripts/release_workflow.py``
     calls from the main thread, where this is a harmless no-op.
 
+    Note what this does NOT verify: that the mass is the part's bone dry
+    weight. That holds only if the assigned material's density is the dried
+    fibre density. Inventor substitutes a default material rather than
+    failing, so a wrong density yields a plausible wrong number, not an
+    error. The handoff form keeps the field editable and labels it as read
+    from the model for exactly this reason.
+
     Raises ``InventorUnavailableError`` (no Inventor, no pywin32) or
     ``InventorAutomationError`` (open failed, not a part document, properties
     unreadable).
@@ -276,22 +338,12 @@ def read_part_physical_properties(file_path: str | Path) -> PhysicalProperties:
     pythoncom, _ = _import_win32()
     pythoncom.CoInitialize()
     try:
-        # Note: get_inventor_app's default visible=True is deliberate here.
-        # Passing False would hide the user's already-running Inventor window.
-        app = get_inventor_app()
-        with open_document(app, file_path, open_visible=False) as doc:
-            try:
-                mass_properties = doc.ComponentDefinition.MassProperties
-                mass_kg = float(mass_properties.Mass)
-                volume_cm3 = float(mass_properties.Volume)
-            except Exception as exc:  # noqa: BLE001
-                raise InventorAutomationError(
-                    f"Could not read mass properties from {file_path}. Is it a "
-                    f"part (.ipt) with a material assigned? ({exc})"
-                ) from exc
-        return PhysicalProperties(mass_g=mass_kg * 1000.0, volume_cm3=volume_cm3)
+        # Every COM pointer lives and dies inside this call, so all of them
+        # are released before CoUninitialize runs below. See its docstring.
+        mass_kg, volume_cm3 = _read_mass_properties(file_path)
     finally:
         pythoncom.CoUninitialize()
+    return PhysicalProperties(mass_g=mass_kg * 1000.0, volume_cm3=volume_cm3)
 
 
 __all__ = [
