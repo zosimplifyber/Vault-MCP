@@ -197,6 +197,7 @@ edits no files; the README documents both.
 | Hybrid backend unreachable | `hybrid_fallback=True` degrades to local extraction; warning logged |
 | JSON missing, markdown present | Return `md_text`, log the single-section degradation loudly |
 | Neither produced | `502` — never an empty success |
+| PDF is password-protected, or its encryption is unsupported | `400`, before any conversion — no tier can read it, and routing it to OCR would cost ~27 minutes (540 s x 3 RAGFlow retries) to return nothing |
 | Conversion exceeds `ODL_TIMEOUT` | `504`, raised before RAGFlow's own timeout fires |
 | `ODL_API_KEY` set and bearer absent or wrong | `401` |
 
