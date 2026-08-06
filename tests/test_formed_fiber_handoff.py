@@ -394,3 +394,100 @@ async def test_load_assembly_without_a_version_id_cannot_walk_the_bom(monkeypatc
 
     assert result["children"] == []
     assert "file-version ID" in result["children_error"]
+
+
+# ------------------------------------------------------------------- the PDF
+
+def _filled_handoff():
+    return engine.HandoffData(
+        machine="Beckwood 150T",
+        vacuum_pressure="-0.9 barg",
+        press_pressure="120 bar",
+        material="Cellulose Fibre",
+        volume="512.50",
+        dry_thickness=engine.Value("2.4", True),
+        wet_thickness=engine.Value("6.1", False),
+        wet_weight=engine.Value("410.0", False),
+        bone_dry_weight=engine.Value("105.26", False),
+        standard_dry_weight=engine.Value("110.80", False),
+        dryness=engine.Value("", False),          # left blank on purpose
+        ga_filename="CD-001659.iam (Rev 3)",
+        part_filename="CD-001660.ipt (Rev 2)",
+    )
+
+
+def _pdf_text(path):
+    from pypdf import PdfReader
+    return "\n".join(page.extract_text() or "" for page in PdfReader(str(path)).pages)
+
+
+def test_render_writes_a_pdf(tmp_path):
+    from formed_fiber_pdf import render_handoff_pdf
+    out = tmp_path / "CD-001659-DesignToProcessHandoff.pdf"
+    written = render_handoff_pdf(_filled_handoff(), out)
+    assert written == out
+    assert out.is_file()
+    assert out.stat().st_size > 1000
+
+
+def test_rendered_pdf_carries_the_three_section_headings(tmp_path):
+    from formed_fiber_pdf import render_handoff_pdf
+    out = tmp_path / "h.pdf"
+    render_handoff_pdf(_filled_handoff(), out)
+    text = _pdf_text(out)
+    assert "Machine and Process Details" in text
+    assert "Production Details" in text
+    assert "File References" in text
+
+
+def test_rendered_pdf_carries_every_entered_value(tmp_path):
+    from formed_fiber_pdf import render_handoff_pdf
+    out = tmp_path / "h.pdf"
+    render_handoff_pdf(_filled_handoff(), out)
+    text = _pdf_text(out)
+    for expected in ("Beckwood 150T", "-0.9 barg", "120 bar", "Cellulose Fibre",
+                     "512.50", "6.1", "410.0", "105.26", "110.80",
+                     "CD-001659.iam", "CD-001660.ipt"):
+        assert expected in text, f"{expected!r} missing from the PDF"
+
+
+def test_rendered_pdf_marks_targets_and_only_targets(tmp_path):
+    from formed_fiber_pdf import render_handoff_pdf
+    out = tmp_path / "h.pdf"
+    render_handoff_pdf(_filled_handoff(), out)
+    text = _pdf_text(out)
+    assert "2.4 (TARGET)" in text          # dry thickness is a target
+    assert "6.1 (TARGET)" not in text      # wet thickness is not
+
+
+def test_rendered_pdf_shows_the_new_volume_row(tmp_path):
+    """Part Volume is not on the paper form -- it was added deliberately."""
+    from formed_fiber_pdf import render_handoff_pdf
+    out = tmp_path / "h.pdf"
+    render_handoff_pdf(_filled_handoff(), out)
+    assert "Part Volume" in _pdf_text(out)
+
+
+def test_rendered_pdf_renders_a_blank_as_an_em_dash(tmp_path):
+    from formed_fiber_pdf import render_handoff_pdf
+    out = tmp_path / "h.pdf"
+    render_handoff_pdf(_filled_handoff(), out)
+    assert engine.EM_DASH in _pdf_text(out)
+
+
+def test_render_survives_a_missing_logo(tmp_path, monkeypatch):
+    """The header degrades to text, the way the GUIs already do."""
+    import formed_fiber_pdf
+    monkeypatch.setattr(formed_fiber_pdf, "_logo_path", lambda: tmp_path / "nope.png")
+    out = tmp_path / "h.pdf"
+    formed_fiber_pdf.render_handoff_pdf(_filled_handoff(), out)
+    assert out.is_file()
+    assert "SIMPLIFYBER" in _pdf_text(out)
+
+
+def test_render_copes_with_a_completely_empty_handoff(tmp_path):
+    """The form can generate before anything is picked."""
+    from formed_fiber_pdf import render_handoff_pdf
+    out = tmp_path / "h.pdf"
+    render_handoff_pdf(engine.HandoffData(), out)
+    assert out.is_file()
