@@ -322,3 +322,75 @@ def test_workspace_root_from_config_falls_back_to_the_default():
     assert engine.workspace_root_from_config({}) == engine.DEFAULT_WORKSPACE_ROOT
     assert engine.workspace_root_from_config(
         {"handoff": {"workspace_root": r"D:\WS"}}) == r"D:\WS"
+
+
+# ------------------------------------------------------------- vault lookup
+
+import formed_fiber_vault as vault_lookup  # noqa: E402
+
+
+def _props(**overrides):
+    base = {
+        "File Name": "CD-001659.iam", "Revision": "3", "State": "Released",
+        "Material": "", "Folder Path": "$/DESIGNS/Mold 12",
+        "Category Name": "Assembly - Engineering",
+    }
+    base.update(overrides)
+    return base
+
+
+async def test_load_assembly_summarises_the_assembly_and_its_children(monkeypatch):
+    async def fake_fetch_file(api, vault_id, file_name):
+        return {"properties": _props(), "file_version_id": "v-1"}
+
+    async def fake_fetch_children(api, vault_id, version_id, **kwargs):
+        assert version_id == "v-1"
+        return [{"properties": _props(
+            **{"File Name": "CD-001660.ipt", "Revision": "2",
+               "Material": "Cellulose Fibre", "Folder Path": "$/DESIGNS/Parts",
+               "Category Name": "Part - Engineering"})}]
+
+    monkeypatch.setattr(vault_lookup, "fetch_file", fake_fetch_file)
+    monkeypatch.setattr(vault_lookup, "fetch_cad_children", fake_fetch_children)
+
+    result = await vault_lookup.load_assembly(object(), "1", "CD-001659.iam")
+
+    assert result["assembly"]["file_name"] == "CD-001659.iam"
+    assert result["assembly"]["revision"] == "3"
+    assert result["assembly"]["folder_path"] == "$/DESIGNS/Mold 12"
+    assert result["children_error"] == ""
+    child = result["children"][0]
+    assert child["file_name"] == "CD-001660.ipt"
+    assert child["material"] == "Cellulose Fibre"
+    assert child["folder_path"] == "$/DESIGNS/Parts"
+
+
+async def test_load_assembly_reports_a_bom_walk_failure_without_raising(monkeypatch):
+    """A failed BOM walk must still return the assembly -- the filenames are
+    half the document, and they are already in hand."""
+    async def fake_fetch_file(api, vault_id, file_name):
+        return {"properties": _props(), "file_version_id": "v-1"}
+
+    async def fake_fetch_children(api, vault_id, version_id, **kwargs):
+        raise RuntimeError("CAD BOM walk failed: boom")
+
+    monkeypatch.setattr(vault_lookup, "fetch_file", fake_fetch_file)
+    monkeypatch.setattr(vault_lookup, "fetch_cad_children", fake_fetch_children)
+
+    result = await vault_lookup.load_assembly(object(), "1", "CD-001659.iam")
+
+    assert result["assembly"]["file_name"] == "CD-001659.iam"
+    assert result["children"] == []
+    assert "boom" in result["children_error"]
+
+
+async def test_load_assembly_without_a_version_id_cannot_walk_the_bom(monkeypatch):
+    async def fake_fetch_file(api, vault_id, file_name):
+        return {"properties": _props(), "file_version_id": ""}
+
+    monkeypatch.setattr(vault_lookup, "fetch_file", fake_fetch_file)
+
+    result = await vault_lookup.load_assembly(object(), "1", "CD-001659.iam")
+
+    assert result["children"] == []
+    assert "file-version ID" in result["children_error"]
