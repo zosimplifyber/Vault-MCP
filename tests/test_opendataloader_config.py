@@ -54,17 +54,18 @@ def test_a_malformed_number_falls_back_to_the_default():
 def test_zero_or_negative_falls_back_to_the_default_for_fields_with_a_floor():
     # Semaphore(0) never admits a request, Semaphore(-1) raises at construction,
     # and wait_for(timeout=0) times out instantly — none of these are usable,
-    # so they must not survive config loading.
-    defaults = load_settings({})
+    # so they must not survive config loading. Expected values are hardcoded
+    # rather than read back from load_settings({}) so a wrong default can't
+    # hide behind comparing the same code path to itself.
     fields = {
-        "ODL_TEXT_LAYER_SAMPLE_PAGES": "sample_pages",
-        "ODL_MAX_CONCURRENCY": "max_concurrency",
-        "ODL_TIMEOUT": "timeout_seconds",
+        "ODL_TEXT_LAYER_SAMPLE_PAGES": ("sample_pages", 5),
+        "ODL_MAX_CONCURRENCY": ("max_concurrency", 4),
+        "ODL_TIMEOUT": ("timeout_seconds", 540),
     }
-    for env_key, attr in fields.items():
+    for env_key, (attr, expected_default) in fields.items():
         for value in ("0", "-1"):
             s = load_settings({env_key: value})
-            assert getattr(s, attr) == getattr(defaults, attr)
+            assert getattr(s, attr) == expected_default
 
 
 def test_min_chars_per_page_allows_zero_but_not_negative():
@@ -72,6 +73,66 @@ def test_min_chars_per_page_allows_zero_but_not_negative():
     # other integer fields, it must be preserved rather than treated as unset.
     assert load_settings({"ODL_TEXT_LAYER_MIN_CHARS_PER_PAGE": "0"}).min_chars_per_page == 0
     assert load_settings({"ODL_TEXT_LAYER_MIN_CHARS_PER_PAGE": "-1"}).min_chars_per_page == 50
+
+
+def test_empty_string_is_treated_as_unset_for_every_field_type():
+    # Compose's `VAR: "${VAR}"` with the host variable unset, and a bare
+    # `VAR=` line in .env, both produce an empty string — that has to mean
+    # "not supplied" for every field type, not just the string ones.
+    s = load_settings({
+        "ODL_HYBRID_BACKEND": "",
+        "ODL_ENABLE_HYBRID": "",
+        "ODL_MAX_CONCURRENCY": "",
+    })
+    assert s.hybrid_backend == "docling-fast"
+    assert s.enable_hybrid is True
+    assert s.max_concurrency == 4
+
+
+def test_none_value_is_treated_as_unset_for_every_field_type():
+    # An explicit None in the env mapping (as opposed to an absent key) must
+    # resolve to the default too, the same as it does for the string fields.
+    s = load_settings({
+        "ODL_HYBRID_BACKEND": None,
+        "ODL_ENABLE_HYBRID": None,
+        "ODL_MAX_CONCURRENCY": None,
+    })
+    assert s.hybrid_backend == "docling-fast"
+    assert s.enable_hybrid is True
+    assert s.max_concurrency == 4
+
+
+def test_hybrid_url_empty_string_uses_the_default_not_a_blank_url():
+    # Pinning a deliberate behaviour change: the first hardening commit
+    # preserved "" here as a literal blank URL. This commit makes "" mean
+    # "not supplied," consistent with every other field.
+    assert load_settings({"ODL_HYBRID_URL": ""}).hybrid_url == "http://odl-hybrid:5002"
+
+
+def test_a_clean_load_emits_no_warnings(caplog):
+    with caplog.at_level("WARNING", logger="opendataloader.service.config"):
+        load_settings({})
+    assert caplog.records == []
+
+
+def test_a_malformed_number_logs_a_warning(caplog):
+    with caplog.at_level("WARNING", logger="opendataloader.service.config"):
+        load_settings({"ODL_MAX_CONCURRENCY": "lots"})
+    assert any(r.levelname == "WARNING" for r in caplog.records)
+
+
+def test_empty_string_does_not_log_a_warning(caplog):
+    # Same defect class as the malformed-input warning, just moved: a
+    # correctly configured container must not warn about settings nobody
+    # misconfigured.
+    with caplog.at_level("WARNING", logger="opendataloader.service.config"):
+        load_settings({
+            "ODL_HYBRID_BACKEND": "",
+            "ODL_ENABLE_HYBRID": "",
+            "ODL_MAX_CONCURRENCY": "",
+            "ODL_TIMEOUT": "",
+        })
+    assert caplog.records == []
 
 
 def test_settings_are_frozen():

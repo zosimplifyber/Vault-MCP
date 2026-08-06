@@ -28,18 +28,29 @@ class Settings:
     timeout_seconds: int  # ODL_TIMEOUT — asyncio.wait_for timeout per request, in seconds
 
 
+def _is_unset(raw: str | None) -> bool:
+    # Compose's `VAR: "${VAR}"` with the host variable unset, and a bare
+    # `VAR=` line in .env, both produce an empty string — that has to mean
+    # "not supplied," the same as the key being absent entirely, not operator
+    # error. Every helper below routes through here so they agree on that.
+    return raw is None or not str(raw).strip()
+
+
 def _str(env: Mapping[str, str], key: str, default: str) -> str:
-    # `or default` (not a str() coercion) so an explicit None in the env mapping
-    # falls back to the default instead of becoming the literal string "None".
-    return str(env.get(key) or default).strip()
+    raw = env.get(key)
+    return default if _is_unset(raw) else str(raw).strip()
 
 
 def _int(env: Mapping[str, str], key: str, default: int, minimum: int = 1) -> int:
     # A typo in compose should degrade to the default, not crash the service on
     # import — the container would crash-loop with a stack trace nobody reads.
-    # Absent keys fall straight through to `default`, which is always a valid
-    # int, so the warnings below only fire when the operator supplied a value.
-    raw = env.get(key, default)
+    # Silence on a clean start depends on every default already satisfying its
+    # own minimum (50 >= 0, 5/4/540 >= 1) — a future field whose default sits
+    # below its own minimum would warn on every startup though nothing here
+    # was misconfigured.
+    raw = env.get(key)
+    if _is_unset(raw):
+        return default
     try:
         value = int(str(raw).strip())
     except ValueError:
@@ -58,7 +69,7 @@ def _int(env: Mapping[str, str], key: str, default: int, minimum: int = 1) -> in
 
 def _bool(env: Mapping[str, str], key: str, default: bool) -> bool:
     raw = env.get(key)
-    if raw is None:
+    if _is_unset(raw):
         return default
     normalized = str(raw).strip().lower()
     if normalized in _TRUE:
