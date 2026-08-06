@@ -73,15 +73,40 @@ def _read_first(output_dir: Path, suffix: str) -> str | None:
     # input and we would rather not depend on that rule. Sorting makes the
     # choice deterministic (rglob order is otherwise filesystem-dependent),
     # but "alphabetically first" is still a guess at "the main document" if
-    # the engine ever emits more than one file per suffix — see the report.
-    for path in sorted(output_dir.rglob(f"*{suffix}")):
+    # the engine ever emits more than one file per suffix — log it so that
+    # guess is visible instead of silently returning page-001 every time.
+    matches = sorted(output_dir.rglob(f"*{suffix}"))
+    if len(matches) > 1:
+        logger.warning(
+            "[convert] %d %s candidates, using %s", len(matches), suffix, matches[0]
+        )
+    for path in matches:
         try:
             text = path.read_text(encoding="utf-8", errors="replace").strip()
-        except OSError:
+        except OSError as exc:
+            # The only fully silent path in this module otherwise sits upstream
+            # of the least useful error: without this, a file the engine wrote
+            # but we can't read surfaces as "conversion produced no usable
+            # output", which blames the engine for what is actually a
+            # filesystem fault on our side.
+            logger.warning("[convert] could not read %s: %s", path, exc)
             continue
         if text:
             return text
     return None
+
+
+# The service's own contract, not something a caller-supplied form field may
+# redirect: `format` is what makes JSON (the real output) come back at all,
+# the hybrid_* keys and `threads` encode the tier decision this module just
+# made. `options` may tune the engine (sanitize, image_output) — not steer it
+# to a different endpoint or silently drop the structured output while still
+# returning 200. There is no consumer yet (app.py, Task 4) that would
+# whitelist request fields before they reach here, so this module has to
+# defend its own invariants rather than assume one will exist.
+_RESERVED_KWARGS = frozenset(
+    {"format", "hybrid", "hybrid_url", "hybrid_timeout", "hybrid_fallback", "threads"}
+)
 
 
 def run_convert(
@@ -89,7 +114,7 @@ def run_convert(
     filename: str,
     tier: Tier,
     settings: Settings,
-    options: dict,
+    options: dict[str, Any],
 ) -> ConvertResult:
     workdir = Path(tempfile.mkdtemp(prefix="odl-"))
     try:
@@ -111,19 +136,35 @@ def run_convert(
         if tier is Tier.HYBRID:
             kwargs["hybrid"] = settings.hybrid_backend
             kwargs["hybrid_url"] = settings.hybrid_url
-            kwargs["hybrid_timeout"] = str(settings.timeout_seconds * 1000)
-            # Degrade to a local parse when the hybrid container is stopped.
+            # Deliberately less than the caller's full budget: the remaining
+            # time is what hybrid_fallback needs to produce a local parse. At
+            # the full budget, the outer asyncio.wait_for(timeout_seconds)
+            # around this whole call has already given up by the moment
+            # hybrid times out, so fallback only ever fires when hybrid is
+            # down (fails fast) and never when it is merely slow — the more
+            # common failure on a CPU-only host.
+            kwargs["hybrid_timeout"] = str(int(settings.timeout_seconds * 1000 * 0.7))
+            # Degrade to a local parse when the hybrid container is stopped
+            # or too slow to answer within its share of the budget above.
             kwargs["hybrid_fallback"] = True
         else:
             kwargs["hybrid"] = "off"
-        kwargs.update(options)
+
+        overridden = _RESERVED_KWARGS & options.keys()
+        for key in sorted(overridden):
+            logger.warning("[convert] ignoring caller override of %r", key)
+        kwargs.update({k: v for k, v in options.items() if k not in _RESERVED_KWARGS})
 
         # The wall-clock timeout is enforced by the caller (app.py wraps this in
         # asyncio.wait_for); the JVM offers no cancellation hook of its own.
         try:
             _call_convert(str(pdf_path), str(out), **kwargs)
         except Exception as exc:
-            raise ConvertError(f"conversion failed: {exc}") from exc
+            # quiet=True above suppresses the engine's own diagnostics, so this
+            # string is nearly all an operator gets — several exception types
+            # (e.g. a bare RuntimeError with no args) stringify to "", which
+            # would otherwise leave "conversion failed: " and nothing else.
+            raise ConvertError(f"conversion failed: {type(exc).__name__}: {exc}") from exc
 
         raw_json = _read_first(out, ".json")
         md_text = _read_first(out, ".md")
@@ -133,7 +174,7 @@ def run_convert(
             try:
                 json_doc = json.loads(raw_json)
             except ValueError as exc:
-                logger.warning("[convert] output JSON was unreadable: %s", exc)
+                logger.warning("[convert] output JSON for %s was unreadable: %s", filename, exc)
 
         if json_doc is None and not md_text:
             raise ConvertError("conversion produced no usable output")
@@ -144,6 +185,15 @@ def run_convert(
                 filename,
             )
 
+        # workdir (and any image sidecars the engine wrote alongside the JSON,
+        # when image_output != "none") is removed in `finally` below — file
+        # paths the engine embedded inside json_doc/md_text will dangle. That
+        # is by design: RAGFlow asked for text and structure back, not files.
         return ConvertResult(json_doc=json_doc, md_text=md_text)
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
+        if workdir.exists():
+            # rmtree(ignore_errors=True) fails silently — in a long-running
+            # container that can leak temp directories until the disk fills,
+            # with nothing in the logs to explain why.
+            logger.warning("[convert] temp dir survived removal: %s", workdir)

@@ -36,16 +36,48 @@ def test_the_local_tier_disables_hybrid(monkeypatch):
     run_convert(PDF, "doc.pdf", Tier.LOCAL, load_settings({}), {})
     assert seen["hybrid"] == "off"
     assert seen["format"] == "markdown,json"
+    # One JVM thread per conversion — the service's own asyncio.Semaphore is
+    # what bounds concurrency, not the engine; quiet suppresses engine output
+    # that would otherwise interleave across concurrent requests.
+    assert seen["threads"] == "1"
+    assert seen["quiet"] is True
 
 
 def test_the_hybrid_tier_passes_the_backend_url_and_fallback(monkeypatch):
     seen = _capture(monkeypatch, {"doc.json": '{"type": "document"}'})
-    run_convert(PDF, "doc.pdf", Tier.HYBRID, load_settings({}), {})
+    settings = load_settings({})
+    run_convert(PDF, "doc.pdf", Tier.HYBRID, settings, {})
     assert seen["hybrid"] == "docling-fast"
     assert seen["hybrid_url"] == "http://odl-hybrid:5002"
+    # 70% of the outer asyncio.wait_for budget, not the full budget: the
+    # remaining 30% is what hybrid_fallback needs to actually run a local
+    # parse. At the full budget the caller's own timeout would already have
+    # abandoned the call by the moment hybrid times out, so fallback would
+    # only ever fire when hybrid is down, never when it's merely slow.
+    assert seen["hybrid_timeout"] == str(int(settings.timeout_seconds * 1000 * 0.7))
     # Without fallback, a stopped hybrid container turns every scan into an
     # error instead of a degraded-but-useful local parse.
     assert seen["hybrid_fallback"] is True
+
+
+def test_reserved_options_cannot_override_the_tier_or_output_contract(monkeypatch):
+    # `options` comes straight from HTTP form fields on an eventual
+    # /file_parse request. Without this, a caller could redirect hybrid PDF
+    # bytes to a host of their choosing (hybrid_url), defeat routing on a
+    # HYBRID-tier request (hybrid), or silently drop the JSON output while
+    # still getting a 200 back (format) — the exact silent degradation this
+    # service exists to prevent.
+    seen = _capture(monkeypatch, {"doc.json": "{}"})
+    run_convert(
+        PDF,
+        "doc.pdf",
+        Tier.HYBRID,
+        load_settings({}),
+        {"format": "markdown", "hybrid_url": "http://evil", "hybrid": "off"},
+    )
+    assert seen["format"] == "markdown,json"
+    assert seen["hybrid_url"] == "http://odl-hybrid:5002"
+    assert seen["hybrid"] == "docling-fast"
 
 
 def test_json_output_is_returned_as_json_doc(monkeypatch):
@@ -96,21 +128,42 @@ def test_a_failing_conversion_becomes_a_converterror(monkeypatch):
         raise RuntimeError("jvm exploded")
 
     monkeypatch.setattr(convert_mod, "_call_convert", boom)
-    with pytest.raises(ConvertError):
+    with pytest.raises(ConvertError) as excinfo:
         run_convert(PDF, "doc.pdf", Tier.LOCAL, load_settings({}), {})
+    # Chained, not swallowed: quiet=True suppresses the engine's own
+    # diagnostics, so the original exception is nearly all an operator gets.
+    assert isinstance(excinfo.value.__cause__, RuntimeError)
 
 
 def test_the_temporary_directory_is_removed(monkeypatch):
     seen = _capture(monkeypatch, {"doc.json": "{}"})
     run_convert(PDF, "doc.pdf", Tier.LOCAL, load_settings({}), {})
-    assert not Path(seen["output_dir"]).exists()
+    # The whole per-request temp root, not just its "out" subdirectory — a
+    # partial cleanup that only removed "out" would still pass a narrower
+    # assertion here.
+    assert not Path(seen["output_dir"]).parent.exists()
 
 
 def test_the_temporary_directory_is_removed_even_on_failure(monkeypatch):
     seen = _capture(monkeypatch, {})
     with pytest.raises(ConvertError):
         run_convert(PDF, "doc.pdf", Tier.LOCAL, load_settings({}), {})
-    assert not Path(seen["output_dir"]).exists()
+    assert not Path(seen["output_dir"]).parent.exists()
+
+
+def test_nested_output_files_are_still_found(monkeypatch):
+    # image_output can land engine output in a subdirectory of output_dir;
+    # this pins rglob (recursive) over glob (top-level only) as the
+    # deliberate choice — nothing else in this suite would catch a
+    # regression to a non-recursive glob.
+    def fake_call(input_path, output_dir, **kwargs):
+        nested = Path(output_dir, "doc")
+        nested.mkdir()
+        (nested / "doc.json").write_text('{"type": "document"}', encoding="utf-8")
+
+    monkeypatch.setattr(convert_mod, "_call_convert", fake_call)
+    result = run_convert(PDF, "doc.pdf", Tier.LOCAL, load_settings({}), {})
+    assert result.json_doc == {"type": "document"}
 
 
 # `Path(filename).name` alone does not defang every hostile filename: a name
