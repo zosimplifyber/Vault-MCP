@@ -88,3 +88,83 @@ class HandoffData:
     part_filename: str = ""
 
     generated_on: date = field(default_factory=date.today)
+
+
+# ---------------------------------------------------------------------------
+# Field labels
+#
+# Single source of truth. The form builds its rows from these and the PDF
+# prints these, so the two cannot drift apart.
+# ---------------------------------------------------------------------------
+
+EM_DASH = "—"
+
+MACHINE_FIELDS: tuple[tuple[str, str], ...] = (
+    ("machine", "Machine – Brand and Model"),
+    ("vacuum_pressure", "Vacuum Pressure [bar or barg]"),
+    ("press_pressure", "Hot Press Pressing Pressure [bar]"),
+)
+
+MATERIAL_LABEL = "Final Pressed Part Material"
+VOLUME_LABEL = "Part Volume [cm³]"
+
+# The six values that can be marked as a target. Material and volume are not
+# here: neither is a measurement with a target counterpart.
+PRODUCTION_FIELDS: tuple[tuple[str, str], ...] = (
+    ("dry_thickness", "Dry Part Thickness [mm]"),
+    ("wet_thickness", "Wet Part Thickness [mm] – Or Transfer GAPS"),
+    ("wet_weight", "Wet Weight [g]"),
+    ("bone_dry_weight", "Bone Dry Weight [g]"),
+    ("standard_dry_weight", "Standard Dry Weight [g]"),
+    ("dryness", "Dryness [%]"),
+)
+
+FILE_FIELDS: tuple[tuple[str, str], ...] = (
+    ("ga_filename", "General Assembly Filename"),
+    ("part_filename", "Final Pressed Part Filename"),
+)
+
+
+def render_text(text: Any) -> str:
+    """A plain string as it prints -- em dash when there is nothing."""
+    value = str(text or "").strip()
+    return value or EM_DASH
+
+
+def render_value(value: Value) -> str:
+    """A production value as it prints, with its target marker."""
+    text = str(value.text or "").strip()
+    if not text:
+        return EM_DASH
+    return f"{text} (TARGET)" if value.is_target else text
+
+
+def machine_rows(data: HandoffData) -> list[tuple[str, str]]:
+    return [(label, render_text(getattr(data, name)))
+            for name, label in MACHINE_FIELDS]
+
+
+def production_rows(data: HandoffData) -> list[tuple[str, str]]:
+    rows = [
+        (MATERIAL_LABEL, render_text(data.material)),
+        (VOLUME_LABEL, render_text(data.volume)),
+    ]
+    rows.extend((label, render_value(getattr(data, name)))
+                for name, label in PRODUCTION_FIELDS)
+    return rows
+
+
+def file_rows(data: HandoffData) -> list[tuple[str, str]]:
+    return [(label, render_text(getattr(data, name)))
+            for name, label in FILE_FIELDS]
+
+
+def missing_fields(data: HandoffData) -> list[str]:
+    """Labels of every row that would print as an em dash.
+
+    The document says to complete every field, so the form warns before
+    generating -- but does not block. A partly-filled handoff is sometimes
+    exactly what is wanted.
+    """
+    rows = machine_rows(data) + production_rows(data) + file_rows(data)
+    return [label for label, value in rows if value == EM_DASH]

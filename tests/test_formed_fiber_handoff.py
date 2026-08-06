@@ -58,3 +58,51 @@ def test_handoff_data_defaults_are_usable():
     assert data.volume == ""
     assert data.bone_dry_weight == engine.Value()
     assert data.generated_on == date.today()
+
+
+# --------------------------------------------------------------- row builders
+
+def test_blank_value_renders_an_em_dash():
+    """A blank must be visibly blank, not ambiguous whitespace."""
+    assert engine.render_value(engine.Value()) == engine.EM_DASH
+    assert engine.render_text("") == engine.EM_DASH
+    assert engine.render_text("   ") == engine.EM_DASH
+
+
+def test_target_values_are_marked_and_others_are_not():
+    assert engine.render_value(engine.Value("2.4", True)) == "2.4 (TARGET)"
+    assert engine.render_value(engine.Value("2.4", False)) == "2.4"
+
+
+def test_production_section_prints_eight_rows_in_order():
+    """Material and the new Part Volume row lead, then the six measured
+    fields. Volume is not on the paper form -- it was added deliberately."""
+    rows = engine.production_rows(engine.HandoffData())
+    assert [label for label, _ in rows] == [
+        "Final Pressed Part Material",
+        "Part Volume [cm³]",
+        "Dry Part Thickness [mm]",
+        "Wet Part Thickness [mm] – Or Transfer GAPS",
+        "Wet Weight [g]",
+        "Bone Dry Weight [g]",
+        "Standard Dry Weight [g]",
+        "Dryness [%]",
+    ]
+
+
+def test_machine_and_file_sections_print_their_rows():
+    data = engine.HandoffData(machine="Beckwood 150T", ga_filename="CD-1.iam")
+    assert engine.machine_rows(data)[0] == ("Machine – Brand and Model", "Beckwood 150T")
+    assert engine.file_rows(data)[0] == ("General Assembly Filename", "CD-1.iam")
+    assert len(engine.machine_rows(data)) == 3
+    assert len(engine.file_rows(data)) == 2
+
+
+def test_missing_fields_lists_every_blank_row_by_label():
+    data = engine.HandoffData(machine="Beckwood 150T")
+    missing = engine.missing_fields(data)
+    assert "Machine – Brand and Model" not in missing
+    assert "Part Volume [cm³]" in missing
+    assert "Dryness [%]" in missing
+    # 3 machine + 8 production + 2 file = 13 rows, one of which is filled.
+    assert len(missing) == 12
