@@ -491,3 +491,58 @@ def test_render_copes_with_a_completely_empty_handoff(tmp_path):
     out = tmp_path / "h.pdf"
     render_handoff_pdf(engine.HandoffData(), out)
     assert out.is_file()
+
+
+def test_a_filled_handoff_fits_on_one_page(tmp_path):
+    """It is a one-page document. Section 3 spilled once already, when the
+    table padding was 6pt -- this catches the next time something grows."""
+    from pypdf import PdfReader
+    from formed_fiber_pdf import render_handoff_pdf
+    out = tmp_path / "h.pdf"
+    render_handoff_pdf(_filled_handoff(), out)
+    assert len(PdfReader(str(out)).pages) == 1
+    assert "Page 1 of 1" in _pdf_text(out)
+
+
+def test_the_page_label_is_counted_not_asserted(tmp_path):
+    """"Page 1 of 1" must be computed, or it lies the moment content grows.
+
+    It did lie: before the padding was tightened the document ran to two
+    pages and both of them claimed to be page 1 of 1.
+    """
+    from pypdf import PdfReader
+    from formed_fiber_pdf import render_handoff_pdf
+    out = tmp_path / "big.pdf"
+    render_handoff_pdf(
+        engine.HandoffData(material=("overflow " * 200).strip(),
+                           volume=("spill " * 200).strip()),
+        out)
+    pages = len(PdfReader(str(out)).pages)
+    assert pages > 1, "test needs a genuinely overflowing document"
+    text = _pdf_text(out)
+    assert f"Page 1 of {pages}" in text
+    assert f"Page {pages} of {pages}" in text
+    assert "of 1" not in text
+
+
+def test_long_values_wrap_instead_of_running_off_the_cell(tmp_path):
+    """A bare string in a reportlab table does not wrap -- it overruns the
+    column. Material specs and filenames-with-revision get long enough."""
+    import formed_fiber_pdf as renderer
+    short = renderer._parameter_table([("Material", "Cellulose Fibre")])
+    long = renderer._parameter_table([
+        ("Material",
+         "Cellulose Fibre, recycled cotton blend 40/60, uncoated, "
+         "supplier-certified")])
+    _, short_h = short.wrap(renderer.CONTENT_WIDTH, 500)
+    _, long_h = long.wrap(renderer.CONTENT_WIDTH, 500)
+    assert long_h > short_h, "long value did not wrap onto a second line"
+
+
+def test_markup_characters_in_a_value_do_not_break_the_render(tmp_path):
+    """Paragraph parses mini-HTML, so an unescaped & or < would raise."""
+    from formed_fiber_pdf import render_handoff_pdf
+    out = tmp_path / "h.pdf"
+    render_handoff_pdf(
+        engine.HandoffData(material="A&B Composite <grade 2>"), out)
+    assert "A&B Composite <grade 2>" in _pdf_text(out)

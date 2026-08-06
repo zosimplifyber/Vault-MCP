@@ -13,11 +13,13 @@ openpyxl demands that form; the two are kept in sync by hand.
 from __future__ import annotations
 
 from pathlib import Path
+from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
+from reportlab.pdfgen import canvas as pdfcanvas
 from reportlab.platypus import (
     KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
 )
@@ -102,6 +104,19 @@ _FOOTER = ParagraphStyle(
     "handoffFooter", fontName="Helvetica-Oblique", fontSize=6.5, leading=8.5,
     textColor=colors.black,
 )
+# Table cells are Paragraphs, not bare strings. A bare string in a reportlab
+# table does not wrap -- it runs straight past the cell edge and over the next
+# column. "Cellulose Fibre, recycled cotton blend 40/60, uncoated" is already
+# wider than the value column, and material specs and filenames-with-revision
+# are exactly the fields that get long.
+_CELL_LABEL = ParagraphStyle(
+    "handoffCellLabel", fontName="Helvetica-Bold", fontSize=9, leading=11.5,
+    textColor=colors.black,
+)
+_CELL_VALUE = ParagraphStyle(
+    "handoffCellValue", fontName="Helvetica", fontSize=9, leading=11.5,
+    textColor=colors.black,
+)
 
 
 def _rule(width: float, thickness: float = 1.2, color=BRAND_BLUE) -> Table:
@@ -119,7 +134,12 @@ def _rule(width: float, thickness: float = 1.2, color=BRAND_BLUE) -> Table:
 
 def _parameter_table(rows: list[tuple[str, str]]) -> Table:
     """The PARAMETER / VALUE table used by all three sections."""
-    body = [["PARAMETER", "VALUE"]] + [[name, value] for name, value in rows]
+    # escape() because Paragraph parses its text as mini-HTML: an unescaped
+    # "&" or "<" in a material name or filename would raise or be swallowed.
+    body: list[list] = [["PARAMETER", "VALUE"]]
+    body += [[Paragraph(escape(name), _CELL_LABEL),
+              Paragraph(escape(value), _CELL_VALUE)]
+             for name, value in rows]
     table = Table(body, colWidths=[CONTENT_WIDTH * 0.45, CONTENT_WIDTH * 0.55],
                   hAlign="LEFT")
 
@@ -136,8 +156,12 @@ def _parameter_table(rows: list[tuple[str, str]]) -> Table:
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("LEFTPADDING", (0, 0), (-1, -1), 8),
         ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-        ("TOPPADDING", (0, 0), (-1, -1), 6),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        # 4pt, not 6. Sixteen rows across three tables, so two points a side
+        # is ~64pt of page -- the difference between this fitting on one page
+        # and section 3 spilling onto a second. The source document is tight
+        # for the same reason.
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
     ]
     # Band every other data row, matching the source document.
     for index in range(1, len(body)):
@@ -169,9 +193,9 @@ def _page_furniture(canvas, doc, data: HandoffData) -> None:
         canvas.setFillColor(BRAND_BLUE)
         canvas.drawString(PAGE_MARGIN, top - 18, "SIMPLIFYBER")
 
-    canvas.setFont("Helvetica", 8)
-    canvas.setFillColor(NOTE_GRAY)
-    canvas.drawRightString(width - PAGE_MARGIN, top - 14, "Page 1 of 1")
+    # The "Page N of M" label is NOT drawn here -- reportlab does not know the
+    # total page count until the whole story has been laid out. _NumberedCanvas
+    # stamps it on a second pass. See its docstring.
 
     canvas.setStrokeColor(GRID_GRAY)
     canvas.setLineWidth(0.6)
@@ -196,6 +220,47 @@ def _page_furniture(canvas, doc, data: HandoffData) -> None:
     note.drawOn(canvas, PAGE_MARGIN, footer_top - 44)
 
     canvas.restoreState()
+
+
+class _NumberedCanvas(pdfcanvas.Canvas):
+    """Stamps "Page N of M" once M is actually known.
+
+    reportlab draws page furniture during layout, before it knows how many
+    pages the story will fill, so anything written then can only guess. This
+    defers every page, then replays them with the real total.
+
+    The obvious alternative -- hardcoding "Page 1 of 1", since the handoff is
+    meant to be a one-page document -- prints a lie the moment content grows
+    past one page. It already had: before the tighter table padding, section 3
+    spilled onto a second page and both pages claimed to be page 1 of 1. A
+    document that misreports its own length is worse on a factory floor than
+    one that is simply two pages long.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._deferred_pages: list[dict] = []
+
+    def showPage(self):
+        self._deferred_pages.append(dict(self.__dict__))
+        self._startPage()
+
+    def save(self):
+        total = len(self._deferred_pages)
+        for state in self._deferred_pages:
+            self.__dict__.update(state)
+            self._draw_page_label(total)
+            super().showPage()
+        super().save()
+
+    def _draw_page_label(self, total: int) -> None:
+        width, height = letter
+        self.saveState()
+        self.setFont("Helvetica", 8)
+        self.setFillColor(NOTE_GRAY)
+        self.drawRightString(width - PAGE_MARGIN, height - PAGE_MARGIN - 14,
+                             f"Page {self._pageNumber} of {total}")
+        self.restoreState()
 
 
 def render_handoff_pdf(data: HandoffData, output_path: str | Path) -> Path:
@@ -232,5 +297,6 @@ def render_handoff_pdf(data: HandoffData, output_path: str | Path) -> Path:
     def _on_page(canvas, doc_):
         _page_furniture(canvas, doc_, data)
 
-    doc.build(story, onFirstPage=_on_page, onLaterPages=_on_page)
+    doc.build(story, onFirstPage=_on_page, onLaterPages=_on_page,
+              canvasmaker=_NumberedCanvas)
     return out
