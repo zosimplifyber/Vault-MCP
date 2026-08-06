@@ -27,6 +27,7 @@ from __future__ import annotations
 import logging
 import time
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator, Optional
 
@@ -234,9 +235,69 @@ def rebuild_and_save_assembly(
     return str(Path(file_path).expanduser().resolve())
 
 
+# ---------------------------------------------------------------------------
+# Physical properties (mass / volume)
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class PhysicalProperties:
+    """A part's computed mass and volume, in the units the handoff prints.
+
+    A named result rather than a bare tuple: at the call site, swapping mass
+    and volume would otherwise be silent.
+    """
+
+    mass_g: float
+    volume_cm3: float
+
+
+def read_part_physical_properties(file_path: str | Path) -> PhysicalProperties:
+    """Return the part's computed mass in grams and volume in cm³.
+
+    Read from ``MassProperties``, not from the ``Mass`` / ``Volume``
+    iProperty strings. The API reports database units -- kilograms and cubic
+    centimetres -- regardless of the document's display units, so mass is an
+    exact ``* 1000`` and volume needs no conversion at all. The iProperty
+    strings are formatted in the document's units and would need parsing.
+
+    Both values come from ONE document open. Opening Inventor is the slowest
+    thing the handoff tool does; doing it twice for two properties of the
+    same part would double it.
+
+    COM is initialised here rather than by the caller. The handoff GUI reads
+    on a worker thread, where an uninitialised apartment fails with an error
+    that points nowhere near the real cause. ``scripts/release_workflow.py``
+    calls from the main thread, where this is a harmless no-op.
+
+    Raises ``InventorUnavailableError`` (no Inventor, no pywin32) or
+    ``InventorAutomationError`` (open failed, not a part document, properties
+    unreadable).
+    """
+    pythoncom, _ = _import_win32()
+    pythoncom.CoInitialize()
+    try:
+        # Note: get_inventor_app's default visible=True is deliberate here.
+        # Passing False would hide the user's already-running Inventor window.
+        app = get_inventor_app()
+        with open_document(app, file_path, open_visible=False) as doc:
+            try:
+                mass_properties = doc.ComponentDefinition.MassProperties
+                mass_kg = float(mass_properties.Mass)
+                volume_cm3 = float(mass_properties.Volume)
+            except Exception as exc:  # noqa: BLE001
+                raise InventorAutomationError(
+                    f"Could not read mass properties from {file_path}. Is it a "
+                    f"part (.ipt) with a material assigned? ({exc})"
+                ) from exc
+        return PhysicalProperties(mass_g=mass_kg * 1000.0, volume_cm3=volume_cm3)
+    finally:
+        pythoncom.CoUninitialize()
+
+
 __all__ = [
     "InventorUnavailableError",
     "InventorAutomationError",
+    "PhysicalProperties",
     "get_inventor_app",
     "open_document",
     "rebuild_document",
@@ -244,4 +305,5 @@ __all__ = [
     "vault_get_latest",
     "vault_check_in",
     "rebuild_and_save_assembly",
+    "read_part_physical_properties",
 ]
