@@ -94,19 +94,30 @@ def get_inventor_app(*, visible: bool = True):
 # ---------------------------------------------------------------------------
 
 @contextmanager
-def open_document(app, file_path: str | Path, *, save_on_close: bool = False) -> Iterator:
+def open_document(
+    app,
+    file_path: str | Path,
+    *,
+    save_on_close: bool = False,
+    open_visible: bool = True,
+) -> Iterator:
     """Open ``file_path`` in Inventor and yield the resulting Document object.
 
     The document is closed automatically on exit. Pass ``save_on_close=True``
     to commit changes (caller is responsible for triggering `update`/save).
+
+    Pass ``open_visible=False`` for a read-only property pull: the document
+    loads without a window, which is faster and leaves whatever the user has
+    on screen undisturbed. The default stays True so the release workflow,
+    which wants to see what it is rebuilding, is unaffected.
     """
     p = Path(file_path).expanduser().resolve()
     if not p.exists():
         raise InventorAutomationError(f"File does not exist: {p}")
 
-    logger.info("Inventor: opening %s", p)
+    logger.info("Inventor: opening %s (visible=%s)", p, open_visible)
     try:
-        doc = app.Documents.Open(str(p), True)  # OpenVisible = True
+        doc = app.Documents.Open(str(p), open_visible)
     except Exception as exc:  # noqa: BLE001
         raise InventorAutomationError(f"Documents.Open failed for {p}: {exc}") from exc
 
