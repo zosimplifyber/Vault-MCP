@@ -209,6 +209,24 @@ class Machine:
     characterized: bool = True
 
 
+# Text a hand editor might reasonably write for "no". machines.json is
+# maintained in a text editor with no schema check, so `"characterized":
+# "false"` -- quoted, an easy JSON slip -- is a realistic entry. bool("false")
+# is True, which would silently suppress the uncharacterized-press warning:
+# a safety notice disappearing because of a pair of quotes. Compare the text
+# instead of coercing it.
+_NOT_CHARACTERIZED_TEXT = {"false", "no", "0", "off", "n"}
+
+
+def _read_characterized(raw: Any) -> bool:
+    """The characterized flag from one hand-edited row. Absent means True."""
+    if isinstance(raw, str):
+        return raw.strip().lower() not in _NOT_CHARACTERIZED_TEXT
+    # Absent means characterized -- warning on every unflagged entry would
+    # cry wolf across a library nobody has annotated yet.
+    return True if raw is None else bool(raw)
+
+
 def load_machines(path: Path | str = MACHINES_PATH) -> list[Machine]:
     """Every machine profile in ``machines.json``, or [] if it cannot be read.
 
@@ -237,9 +255,7 @@ def load_machines(path: Path | str = MACHINES_PATH) -> list[Machine]:
             name=name,
             vacuum_pressure=str(row.get("vacuum_pressure") or "").strip(),
             press_pressure=str(row.get("press_pressure") or "").strip(),
-            # Absent means characterized -- warning on every unflagged entry
-            # would cry wolf.
-            characterized=bool(row.get("characterized", True)),
+            characterized=_read_characterized(row.get("characterized")),
         ))
     return machines
 
@@ -313,16 +329,28 @@ def resolve_output_dir(
     directory invented inside the Vault workspace is a path Vault does not
     know about.
     """
+    has_folder = bool(str(folder_path or "").strip())
     mapped = vault_folder_to_local(folder_path, workspace_root)
-    if str(folder_path or "").strip() and mapped.is_dir():
+    if has_folder and mapped.is_dir():
         return mapped, ""
 
     if fallback is None:
+        # Lazy: bom_purchasing pulls in pandas and openpyxl, which this
+        # dependency-light engine should not import unless the fallback is
+        # actually taken. Same pattern as vault_state.py's lazy imports.
         import bom_purchasing
         fallback = bom_purchasing.default_output_dir()
-    return Path(fallback), (
-        f"{mapped} is not on this machine — saving to {fallback} instead."
+
+    # Two different reasons land here and the status bar shows this verbatim,
+    # so say which one it was. Claiming a folder "is not on this machine" when
+    # no folder was ever supplied -- the no-Vault-session path -- sends the
+    # reader looking for a missing directory that was never named.
+    reason = (
+        f"{mapped} is not on this machine"
+        if has_folder else
+        "No Vault folder for this assembly"
     )
+    return Path(fallback), f"{reason} — saving to {fallback} instead."
 
 
 def format_file_reference(file_name: Any, revision: Any) -> str:

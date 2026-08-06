@@ -138,7 +138,6 @@ def test_missing_fields_lists_every_blank_row_by_label():
 # ------------------------------------------------------------ machine library
 
 import json  # noqa: E402
-import pytest  # noqa: E402
 
 
 def _write_machines(tmp_path, payload):
@@ -190,10 +189,39 @@ def test_machines_default_to_characterized(tmp_path):
     assert engine.load_machines(path)[0].characterized is True
 
 
+def test_a_quoted_false_still_means_not_characterized(tmp_path):
+    """machines.json is hand-edited, so `"characterized": "false"` happens.
+
+    bool("false") is True, so coercing would silently suppress the
+    uncharacterized-press warning -- a safety notice vanishing because of a
+    pair of quotes.
+    """
+    for falsey in ("false", "False", "FALSE", "no", "0", "off"):
+        path = _write_machines(tmp_path, {"machines": [
+            {"name": "Press", "characterized": falsey}]})
+        assert engine.load_machines(path)[0].characterized is False, falsey
+
+    # Real booleans and genuine truthy text still read as characterized.
+    for truthy in (True, "true", "yes"):
+        path = _write_machines(tmp_path, {"machines": [
+            {"name": "Press", "characterized": truthy}]})
+        assert engine.load_machines(path)[0].characterized is True, truthy
+
+
 def test_shipped_machines_json_is_loadable():
     """The file we ship must actually parse."""
     machines = engine.load_machines(engine.MACHINES_PATH)
     assert isinstance(machines, list)
+
+
+def test_find_machine_matches_on_exact_name():
+    machines = [engine.Machine(name="Beckwood 150T", press_pressure="120 bar"),
+                engine.Machine(name="Wabash 50T")]
+    assert engine.find_machine(machines, "Beckwood 150T").press_pressure == "120 bar"
+    assert engine.find_machine(machines, "  Beckwood 150T  ") is not None
+    assert engine.find_machine(machines, "Nonexistent") is None
+    assert engine.find_machine([], "Beckwood 150T") is None
+    assert engine.find_machine(machines, "") is None
 
 
 # -------------------------------------------------------------------- paths
@@ -245,6 +273,42 @@ def test_resolve_output_dir_falls_back_and_explains(tmp_path):
         "$/Nowhere", workspace_root=str(tmp_path), fallback=str(fallback))
     assert directory == fallback
     assert "Nowhere" in note and str(fallback) in note
+
+
+def test_resolve_output_dir_does_not_invent_the_folder(tmp_path):
+    """A directory conjured inside the Vault workspace is a path Vault does
+    not know about, so the mapped folder is never created."""
+    fallback = tmp_path / "Downloads"
+    fallback.mkdir()
+    engine.resolve_output_dir(
+        "$/Nowhere", workspace_root=str(tmp_path), fallback=str(fallback))
+    assert not (tmp_path / "Nowhere").exists()
+
+
+def test_resolve_output_dir_says_when_no_folder_was_supplied(tmp_path):
+    """Blank folder path is the no-Vault-session route, not a missing folder.
+
+    Saying "<workspace root> is not on this machine" there sends the reader
+    hunting for a directory that was never named.
+    """
+    fallback = tmp_path / "Downloads"
+    fallback.mkdir()
+    _, note = engine.resolve_output_dir(
+        "", workspace_root=str(tmp_path), fallback=str(fallback))
+    assert "No Vault folder" in note
+    assert "is not on this machine" not in note
+
+
+def test_resolve_output_dir_defaults_to_the_purchasing_output_dir(monkeypatch, tmp_path):
+    """The fallback=None branch is the one production actually takes."""
+    import bom_purchasing
+
+    monkeypatch.setattr(bom_purchasing, "default_output_dir",
+                        lambda: str(tmp_path / "Downloads"))
+    directory, note = engine.resolve_output_dir(
+        "$/Nowhere", workspace_root=str(tmp_path))
+    assert directory == tmp_path / "Downloads"
+    assert "Nowhere" in note
 
 
 def test_file_reference_carries_the_revision():
