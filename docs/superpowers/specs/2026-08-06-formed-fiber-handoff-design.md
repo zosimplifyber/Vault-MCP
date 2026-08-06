@@ -10,8 +10,9 @@ established during development — press, pressures, thicknesses, weights,
 dryness — have to reach the process team that will run the mold. Today that
 transfer happens on a Word document, `Simplifyber_Design-to-Process-Handoff`,
 filled in by hand. Every field is retyped, including the ones the CAD system
-already knows: the material of the pressed part and the exact released
-filenames and revisions of the two files the process team must pull.
+already knows: the material of the pressed part, its computed mass and volume,
+and the exact released filenames and revisions of the two files the process
+team must pull.
 
 Retyping known values is where the document goes wrong. A filename typed
 without its revision, or a material transcribed from memory, sends the press
@@ -30,6 +31,8 @@ only for what cannot.
 - A new entry in the launcher's TOOLS panel that opens a handoff form
 - Vault lookup of the general assembly and, via its CAD BOM, the final pressed
   part — pulling filename, revision, state and material
+- Inventor lookup of the pressed part's computed mass and volume
+- A new Part Volume row on the document, which the paper form does not have
 - A machine profile library so section 1 is a dropdown pick
 - Derivation of Standard Dry Weight from Bone Dry Weight
 - Per-field target-vs-measured marking, as the document itself requires
@@ -39,9 +42,9 @@ only for what cannot.
 **Out of scope**
 
 - Automatic check-in of the PDF to Vault. See "Why the PDF is not uploaded".
-- Reading process values out of Inventor (custom iProperties, model
-  parameters, computed mass). Confirmed with the user that these values live
-  in development notes, not in the CAD files.
+- Reading thicknesses, wet weight or dryness out of Inventor. Confirmed with
+  the user that those live in development notes, not in the CAD files. Bone
+  Dry Weight is the exception — see "Bone Dry Weight comes from Inventor".
 - Editing the document layout without touching code. The layout is built in
   reportlab; changing it means changing Python.
 
@@ -52,18 +55,50 @@ reasoning so implementation does not relitigate it.
 
 ### Where the process values come from
 
-They are typed. The user confirmed the nine process values exist only in
-development notes. This rules out an Inventor COM path — a real option, since
-`scripts/inventor_automation.py` already drives Inventor and could read custom
-iProperties, model parameters and computed mass — and it rules out scraping a
-development workbook. The tool's job is therefore to minimise typing around
-values it cannot source, not to source them.
+Most are typed. The user confirmed the thicknesses, wet weight and dryness
+exist only in development notes, so scraping a development workbook was ruled
+out and the tool's job for those is to minimise typing around values it cannot
+source, not to source them.
 
-Vault cannot supply them either. The vault carries 125 property definitions;
-the CAD-relevant ones are Material, Material Finish, Title, Description,
-Revision, State, Project, Designer, Engineer, Vendor, Vendor Number, Source,
-Stock Number and Cost. There is no mass, thickness, weight, pressure or
-machine property, and none of the nine values maps onto an existing one.
+Vault cannot supply them. The vault carries 125 property definitions; the
+CAD-relevant ones are Material, Material Finish, Title, Description, Revision,
+State, Project, Designer, Engineer, Vendor, Vendor Number, Source, Stock
+Number and Cost. There is no mass, thickness, weight, pressure or machine
+property in the vault at all.
+
+### Bone Dry Weight and Part Volume come from Inventor
+
+Bone Dry Weight is the one process value on the paper form that the CAD model
+already knows: it is Inventor's computed mass for the pressed part, geometry
+times the assigned material density. Part Volume is the geometry alone.
+
+Part Volume is a **new row on the document** — the attached form has no volume
+field. It is added at the user's request, printed in cm³, positioned directly
+after Final Pressed Part Material because both describe the part rather than
+the process. Inventor's database unit for volume is already cm³, so the value
+is printed as read.
+
+Because Vault has no Mass or Volume property, neither can come through the
+REST call.
+Two routes were considered. Adding a Vault user-defined property mapped to
+Inventor's Mass would have been free at the tool end — the value would simply
+appear in the CAD BOM response the design already fetches — but it needs a
+Vault Settings change plus a re-index before existing files carry it. The user
+chose the second route: read it directly from the part with Inventor COM,
+which works today against unmodified files and is always current with the
+model.
+
+Both values are read from `MassProperties` rather than from the `Mass` and
+`Volume` iProperty strings. The API reports database units — kilograms and
+cubic centimetres — regardless of the document's display units, so grams is an
+exact `* 1000` and cm³ needs no conversion at all. No unit parsing anywhere.
+
+One caveat the implementation must not paper over: the computed mass equals
+the bone dry weight only if the part's assigned material density is the dried
+fibre density. The tool cannot verify that, so the field stays editable and
+target-markable, and the form labels it as pulled from the model so a wrong
+density is visible rather than silent. Volume is unaffected — it is geometry
+alone and does not depend on the material.
 
 ### Standard Dry Weight formula
 
@@ -112,6 +147,7 @@ already uses (`bom_purchasing.py` + `gui/purchasing.py`,
 | `machines.json` | Machine profiles. Sibling of `file_property_rules.json`, reloaded on every run. |
 | `gui/formed_fiber_handoff.py` | The Tk form. Exposes `launch_gui(api, vault_id, cfg, parent)`. |
 | `gui/launcher.py` | One `_tool_row` entry plus one `_on_open_formed_fiber_handoff` handler. |
+| `scripts/inventor_automation.py` | Gains `read_part_physical_properties()`, plus an `open_visible` keyword on `open_document`. |
 
 The renderer is split from the engine because it is the one piece with no
 logic worth testing by assertion and the one most likely to churn on visual
@@ -142,6 +178,7 @@ class HandoffData:
 
     # Section 2 — Production Details
     material: str = ""
+    volume: str = ""               # cm³, from Inventor
     dry_thickness: Value = Value()
     wet_thickness: Value = Value()
     wet_weight: Value = Value()
@@ -156,10 +193,11 @@ class HandoffData:
     generated_on: date = field(default_factory=date.today)
 ```
 
-Section 1 fields are plain strings: a machine is never a "target". Material is
-a plain string for the same reason — it names a material, it is not a measured
-quantity that could be a target. The six remaining production fields are
-`Value` so each can be marked. Section 3 fields arrive pre-rendered from Vault.
+Section 1 fields are plain strings: a machine is never a "target". Material and
+Volume are plain strings for the same reason — one names a material, the other
+is geometry read straight off the model, and neither is a measured quantity
+with a target counterpart. The six remaining production fields are `Value` so
+each can be marked. Section 3 fields arrive pre-rendered from Vault.
 
 `Value` is frozen, so it is hashable and safe as a dataclass default.
 
@@ -171,18 +209,19 @@ quantity that could be a target. The six remaining production fields are
 | Vacuum Pressure [bar or barg] | Machine profile, overridable |
 | Hot Press Pressing Pressure [bar] | Machine profile, overridable |
 | Final Pressed Part Material | Vault `Material` on the pressed part |
+| Part Volume [cm³] *(new row)* | Inventor computed volume, overridable |
 | Dry Part Thickness [mm] | Typed, target-markable |
 | Wet Part Thickness [mm] – Or Transfer GAPS | Typed, target-markable |
 | Wet Weight [g] | Typed, target-markable |
-| Bone Dry Weight [g] | Typed, target-markable |
+| Bone Dry Weight [g] | Inventor computed mass, overridable, target-markable |
 | Standard Dry Weight [g] | Computed from Bone Dry Weight, overridable |
 | Dryness [%] | Typed, target-markable |
 | General Assembly Filename | Vault file name + revision |
 | Final Pressed Part Filename | Vault file name + revision |
 | Date (footer) | Generation date |
 
-Five typed values and one dropdown pick, against twelve fields on the paper
-form.
+Four typed values and one dropdown pick, against thirteen fields on the
+document.
 
 ## Machine library
 
@@ -255,6 +294,84 @@ both render as `<file name> (Rev <revision>)`, e.g. `CD-001659.iam (Rev 3)`.
 If either file's State is not `Released`, the form shows an amber note naming
 the file and its state. Non-blocking: handoffs get drafted before release.
 
+## Inventor integration
+
+Reading the physical properties needs the part on disk, an Inventor instance,
+and COM initialised on the calling thread. Each is a place this can fail, and
+none of them may take the GUI down with it.
+
+### Locating the file
+
+The pressed part's local path is built the same way the output path is: its
+Vault `Folder Path` (which `fetch_cad_children` already returns, since it
+requests all properties) mapped onto `handoff.workspace_root`, joined with its
+file name. The part's folder is not assumed to be the assembly's.
+
+If the file is not there, nothing is read. The tool does not attempt a Vault
+download — a file absent from the workspace has not been Get Latest'd, and
+silently pulling a copy behind the user's back would produce numbers from a
+version they are not looking at.
+
+### Reading mass and volume
+
+A new function in `scripts/inventor_automation.py`, returning **both values
+from a single document open** — opening Inventor twice for two properties of
+the same part would double the slowest step in the tool:
+
+```python
+@dataclass(frozen=True)
+class PhysicalProperties:
+    mass_g: float
+    volume_cm3: float
+
+
+def read_part_physical_properties(file_path: str | Path) -> PhysicalProperties:
+    """Return the part's computed mass in grams and volume in cm³.
+
+    Inventor's API reports database units (kilograms, cubic centimetres)
+    regardless of the document's display units, so mass is an exact `* 1000`
+    and volume needs no conversion.
+    """
+```
+
+It reuses `get_inventor_app` and `open_document`, reads `Mass` and `Volume`
+off `doc.ComponentDefinition.MassProperties`, and closes without saving. It
+raises the module's existing `InventorUnavailableError` (no Inventor, no
+pywin32) and `InventorAutomationError` (open failed, not a part document,
+properties unavailable) — no new exception types.
+
+`PhysicalProperties` is the module's first dataclass; the module currently
+returns plain values. A two-field named result beats a bare tuple at the call
+site, where mixing up mass and volume would otherwise be silent.
+
+`open_document` currently hardcodes `Documents.Open(path, True)`, opening every
+document visibly. A property read wants the document invisible: faster, and it
+does not disturb whatever the user has open. The fix is an `open_visible: bool
+= True` keyword that preserves today's behaviour for the release workflow, its
+only current caller.
+
+### COM on a worker thread
+
+This is new ground for the module. Its only existing caller,
+`scripts/release_workflow.py`, runs on the CLI's main thread, so COM
+initialisation has never come up. The GUI does its lookups on a worker thread,
+where COM must be initialised explicitly or every call fails with a
+misleading error.
+
+`read_part_physical_properties` therefore calls `pythoncom.CoInitialize()` on
+entry and `CoUninitialize()` in a `finally`. Putting it inside the function
+rather than in the GUI keeps the requirement next to the code that needs it,
+and is harmless on the main thread where COM is already initialised.
+
+### When it fails
+
+Every failure is non-fatal and specific. Bone Dry Weight and Part Volume stay
+manually editable and the form shows one line saying why: Inventor not
+installed, pywin32 missing, the part not in the workspace, or the property
+read failing. Standard Dry Weight simply has nothing to derive from until a
+weight is typed. Because both values come from one call, they succeed or fail
+together — there is no state where one is populated and the other is not.
+
 ## Output
 
 **Filename** derives from the general assembly, dropping its extension:
@@ -318,12 +435,16 @@ read the same way.
 1. **General Assembly** — read-only filename box, "Find GA" button opening
    `FileSearchDialog`, plus revision and state labels.
 2. **Final Pressed Part** — a table of the GA's CAD BOM children (file name,
-   revision, state, material); selecting a row fills the part fields.
+   revision, state, material); selecting a row fills the part fields and
+   kicks off the Inventor read on the worker thread, with a "Reading mass and
+   volume from Inventor…" status line while it runs.
 3. **Machine and Process Details** — machine dropdown, two pressure entries
    filled from the profile and editable.
-4. **Production Details** — a Material row (filled from Vault, editable, no
-   checkbox) followed by six rows, each a label, an entry and a "target"
-   checkbox. Standard Dry Weight recalculates as Bone Dry Weight changes and
+4. **Production Details** — a Material row (from Vault) and a Part Volume row
+   (from Inventor), both editable and neither with a checkbox, followed by six
+   rows with a label, an entry and a "target" checkbox. Bone Dry Weight
+   arrives pre-filled from Inventor and is labelled as read from the model.
+   Standard Dry Weight recalculates as Bone Dry Weight changes and
    stops tracking once typed in directly; while it is tracking, its target
    checkbox mirrors Bone Dry Weight's, since a value derived from a target is
    itself a target. Overriding the value makes the checkbox independent too.
@@ -342,6 +463,9 @@ this package uses. No Tk call happens off the main thread.
 | `machines.json` missing or malformed | Empty dropdown, explanatory status line, pressure fields become free text. Never fatal. |
 | Machine marked uncharacterized | Red warning quoting the document's rule. Generation proceeds. |
 | GA has no CAD BOM children | Message saying so; the pressed-part fields stay manually editable. |
+| Inventor or pywin32 missing | Status line naming which; Bone Dry Weight and Part Volume stay manually editable. |
+| Pressed part not in the local workspace | Status line naming the path it looked for, so the fix (Get Latest) is obvious. No Vault download attempted. |
+| Mass/volume read fails | Status line with the Inventor error; both fields stay manually editable. |
 | Either file not Released | Amber note naming the file and state. Generation proceeds. |
 | Blank fields at Generate | Warning listing them by name, with "generate anyway". Blanks render as em dashes. |
 | Mapped workspace folder missing | Falls back to `bom_purchasing.default_output_dir()`, reports the substitution. |
@@ -368,8 +492,18 @@ this package uses. No Tk call happens off the main thread.
 - Malformed JSON → empty list, no exception
 - `characterized: false` surfaces on the loaded profile
 
+**Inventor reader** — against a fake COM object, since no test may require
+Inventor. `tests/test_check_file_properties.py`'s fake-API pattern is the
+model.
+- `Mass` of 0.10526 kg → `105.26` g (the `* 1000` conversion)
+- `Volume` passes through unconverted
+- A COM object that raises on open → `InventorAutomationError`, not a crash
+- Missing pywin32 → `InventorUnavailableError`
+- The document is opened invisibly and closed without saving
+
 **Path and filename resolution**
 - `$/A/B` + root → `<root>\A\B`
+- The pressed part's own folder is used, not the assembly's
 - Missing folder → fallback path
 - `CD-001659.iam` → `CD-001659-DesignToProcessHandoff.pdf`
 - Filename with no extension, and with a dot in the stem
@@ -377,6 +511,7 @@ this package uses. No Tk call happens off the main thread.
 **Rendering** — build a fully populated `HandoffData`, render to a tmp path,
 then read it back with `pypdf` (already a dependency) and assert:
 - all three section headings appear
+- the Part Volume row appears with its cm³ unit
 - every entered value appears
 - a target-marked value appears with its `(TARGET)` suffix and an unmarked one
   does not
@@ -385,5 +520,28 @@ then read it back with `pypdf` (already a dependency) and assert:
 
 ## Dependencies
 
-None added. `reportlab` and `pypdf` are already in `requirements.txt` for the
-watermark tool; `Pillow` is already optional-with-fallback in `gui/theme.py`.
+`reportlab` and `pypdf` are already in `requirements.txt` for the watermark
+tool, and `Pillow` is already optional-with-fallback in `gui/theme.py`.
+
+`pywin32` is needed for the Inventor read and is **not currently declared**,
+despite `scripts/inventor_automation.py` having required it since it was
+written. It should be added to `requirements.txt` with a comment marking it
+Windows-and-Inventor-only, alongside the existing optional entries like
+`playwright`. Nothing about the declaration makes it mandatory at runtime —
+the module already degrades cleanly when the import fails, and the tests fake
+the COM layer — but an undeclared import that a shipped feature depends on is
+worth fixing while we are here.
+
+## Section 2 on the printed document
+
+For the avoidance of doubt, Production Details prints eight rows in this
+order:
+
+1. Final Pressed Part Material
+2. Part Volume [cm³] — new, not on the paper form
+3. Dry Part Thickness [mm]
+4. Wet Part Thickness [mm] – Or Transfer GAPS
+5. Wet Weight [g]
+6. Bone Dry Weight [g]
+7. Standard Dry Weight [g]
+8. Dryness [%]
