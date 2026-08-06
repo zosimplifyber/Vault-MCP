@@ -1058,6 +1058,11 @@ EXPOSE 5060
 
 # The healthcheck mirrors what RAGFlow's client calls, so a container reporting
 # healthy means RAGFlow's check would also succeed.
+#
+# This plain curl sends no Authorization header, which is exactly why /health
+# does not require the bearer token even when ODL_API_KEY is set. Requiring it
+# would leave the container permanently unhealthy while /file_parse worked fine.
+# /health reveals nothing worth protecting; do not "harden" it.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD curl -fsS http://127.0.0.1:5060/health || exit 1
 

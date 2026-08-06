@@ -26,6 +26,7 @@ class Settings:
     sample_pages: int  # ODL_TEXT_LAYER_SAMPLE_PAGES — number of pages sampled to judge text-layer quality
     max_concurrency: int  # ODL_MAX_CONCURRENCY — size of the asyncio.Semaphore gating concurrent parses
     timeout_seconds: int  # ODL_TIMEOUT — asyncio.wait_for timeout per request, in seconds
+    max_upload_bytes: int  # ODL_MAX_UPLOAD_BYTES — reject a /file_parse upload larger than this, before reading it
 
 
 def _is_unset(raw: str | None) -> bool:
@@ -93,4 +94,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         sample_pages=_int(env, "ODL_TEXT_LAYER_SAMPLE_PAGES", 5),
         max_concurrency=_int(env, "ODL_MAX_CONCURRENCY", 4),
         timeout_seconds=_int(env, "ODL_TIMEOUT", 540),
+        # 100 MiB: generous for a PDF, small enough that a rejected upload
+        # doesn't cost a meaningful amount of RAM to have received.
+        max_upload_bytes=_int(env, "ODL_MAX_UPLOAD_BYTES", 100 * 1024 * 1024),
     )
