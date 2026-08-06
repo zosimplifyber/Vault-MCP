@@ -14,6 +14,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from .config import Settings
+from .normalize import normalize_tables
 from .router import Tier
 
 logger = logging.getLogger(__name__)
@@ -175,6 +176,14 @@ def run_convert(
                 json_doc = json.loads(raw_json)
             except ValueError as exc:
                 logger.warning("[convert] output JSON for %s was unreadable: %s", filename, exc)
+
+        if json_doc is not None:
+            # Text passes through untouched, but tables do not survive the trip
+            # into RAGFlow unaided — measured, its converter found zero tables
+            # in a real 4x4 table and scattered the values across sixteen
+            # one-word sections. See normalize.py for the two schema
+            # mismatches behind that.
+            json_doc = normalize_tables(json_doc)
 
         if json_doc is None and not md_text:
             raise ConvertError("conversion produced no usable output")
