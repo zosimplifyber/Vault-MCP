@@ -25,7 +25,12 @@ def test_standard_dry_weight_is_wet_basis():
 
 
 def test_standard_dry_weight_rejects_unusable_input():
-    for bad in ("", "   ", "abc", "0", "-5", None):
+    # "nan", "inf" and "Infinity" are the interesting ones: float() accepts
+    # them all, and a positivity test alone lets them through -- NaN compares
+    # false against everything and +inf is not <= 0 -- so they would print as
+    # a weight of "nan" or "inf" on the document.
+    for bad in ("", "   ", "abc", "0", "-5", None,
+                "nan", "inf", "Infinity", "-inf"):
         assert engine.standard_dry_weight(bad) == "", f"{bad!r} should give ''"
 
 

@@ -13,6 +13,7 @@ rule in here is testable in isolation.
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -39,7 +40,11 @@ def standard_dry_weight(bone_dry: Any) -> str:
         value = float(str(bone_dry).strip())
     except (TypeError, ValueError):
         return ""
-    if value <= 0:
+    # isfinite as well as > 0: float() happily accepts "nan" and "inf", and
+    # neither is caught by a positivity test -- NaN compares false against
+    # everything, and +inf is not <= 0. Both would otherwise format straight
+    # into the document as a weight of "nan" or "inf".
+    if not math.isfinite(value) or value <= 0:
         return ""
     return f"{value / STANDARD_DRY_FIBRE_FRACTION:.2f}"
 
