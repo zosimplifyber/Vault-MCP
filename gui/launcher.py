@@ -636,6 +636,16 @@ class LauncherGUI:
         )
         self._tool_row(
             body,
+            "Formed Fiber Handoff",
+            "Build the design-to-process handoff document for a formed fiber "
+            "part. Pick the assembly and its pressed part; material, mass, "
+            "volume, filenames and press pressures fill themselves in.",
+            "Open Handoff",
+            self._on_open_formed_fiber_handoff,
+            primary=False,
+        )
+        self._tool_row(
+            body,
             "Open Reports Folder",
             "Browse saved Markdown readiness reports and MCP server logs.",
             "Open Folder",
@@ -1057,6 +1067,22 @@ class LauncherGUI:
         launch_task_gui(api=self.api, vault_id=self.vault_id, wrike=wrike,
                         cfg=self.cfg, parent=self.root)
         self.status_var.set("Launching BOM → Manufacturing Tasks…")
+
+    def _on_open_formed_fiber_handoff(self) -> None:
+        # No Vault gate: the form works session-less, with every pulled field
+        # editable, so a handoff can still be written by hand.
+        try:
+            from gui.formed_fiber_handoff import launch_gui as launch_handoff
+        except ImportError as exc:
+            messagebox.showerror(
+                "Handoff tool unavailable", str(exc), parent=self.root,
+            )
+            return
+        launch_handoff(
+            api=self.api, vault_id=self.vault_id,
+            cfg=self.cfg, parent=self.root,
+        )
+        self.status_var.set("Launching Formed Fiber Handoff…")
 
     def _on_open_logs(self) -> None:
         log_dir = PROJECT_ROOT / "Log"
