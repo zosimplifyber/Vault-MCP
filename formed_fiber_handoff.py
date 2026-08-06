@@ -22,6 +22,10 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parent
 MACHINES_PATH = PROJECT_ROOT / "machines.json"
 
+# The root of the local Vault working folder. Overridable via
+# config.json -> handoff.workspace_root.
+DEFAULT_WORKSPACE_ROOT = r"C:\Vault Workspace"
+
 # A standard dry part carries 5% water BY MASS OF THE FINISHED STANDARD DRY
 # PART, so the bone dry fibre is the other 95%. This is a WET-BASIS moisture
 # content, not the dry-basis regain the textile industry usually quotes -- do
@@ -247,3 +251,89 @@ def find_machine(machines: list[Machine], name: str) -> Machine | None:
         if machine.name == wanted:
             return machine
     return None
+
+
+# ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
+
+def workspace_root_from_config(cfg: dict[str, Any] | None) -> str:
+    """The local Vault workspace root from config.json, or the default."""
+    handoff_cfg = (cfg or {}).get("handoff") or {}
+    return str(handoff_cfg.get("workspace_root") or DEFAULT_WORKSPACE_ROOT)
+
+
+def vault_folder_to_local(
+    folder_path: Any,
+    workspace_root: str | Path = DEFAULT_WORKSPACE_ROOT,
+) -> Path:
+    """Map a Vault folder path onto the local workspace.
+
+    ``$/DESIGNS/Mold 12`` under ``C:\\Vault Workspace`` becomes
+    ``C:\\Vault Workspace\\DESIGNS\\Mold 12``. Vault is inconsistent about the
+    leading ``$`` and about separators depending on which endpoint answered,
+    so both are normalised rather than assumed.
+    """
+    cleaned = str(folder_path or "").strip().replace("\\", "/")
+    if cleaned.startswith("$"):
+        cleaned = cleaned[1:]
+    parts = [part for part in cleaned.split("/") if part]
+    return Path(workspace_root).joinpath(*parts)
+
+
+def part_local_path(
+    folder_path: Any,
+    file_name: Any,
+    *,
+    workspace_root: str | Path = DEFAULT_WORKSPACE_ROOT,
+) -> Path:
+    """Where a Vault file sits locally. Uses the file's OWN folder."""
+    return vault_folder_to_local(folder_path, workspace_root) / str(file_name or "").strip()
+
+
+def handoff_filename(ga_file_name: Any) -> str:
+    """``CD-001659.iam`` -> ``CD-001659-DesignToProcessHandoff.pdf``.
+
+    Mirrors bom_purchasing.py's ``{assembly}-PurchasingExport.xlsx``.
+    """
+    stem = Path(str(ga_file_name or "").strip()).stem or "Handoff"
+    return f"{stem}-DesignToProcessHandoff.pdf"
+
+
+def resolve_output_dir(
+    folder_path: Any,
+    *,
+    workspace_root: str | Path = DEFAULT_WORKSPACE_ROOT,
+    fallback: str | Path | None = None,
+) -> tuple[Path, str]:
+    """Where the PDF goes: ``(directory, note)``.
+
+    ``note`` is "" when the assembly's own workspace folder was used, and
+    explains the substitution otherwise. The folder is never created -- a
+    directory invented inside the Vault workspace is a path Vault does not
+    know about.
+    """
+    mapped = vault_folder_to_local(folder_path, workspace_root)
+    if str(folder_path or "").strip() and mapped.is_dir():
+        return mapped, ""
+
+    if fallback is None:
+        import bom_purchasing
+        fallback = bom_purchasing.default_output_dir()
+    return Path(fallback), (
+        f"{mapped} is not on this machine — saving to {fallback} instead."
+    )
+
+
+def format_file_reference(file_name: Any, revision: Any) -> str:
+    """``CD-001659.iam`` + ``3`` -> ``CD-001659.iam (Rev 3)``.
+
+    The document asks for filenames "exactly as released, including
+    revision", so the revision travels with the name rather than in its own
+    column.
+    """
+    name = str(file_name or "").strip()
+    revision_text = str(revision or "").strip()
+    if not name:
+        return ""
+    return f"{name} (Rev {revision_text})" if revision_text else name

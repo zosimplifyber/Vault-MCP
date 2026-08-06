@@ -194,3 +194,67 @@ def test_shipped_machines_json_is_loadable():
     """The file we ship must actually parse."""
     machines = engine.load_machines(engine.MACHINES_PATH)
     assert isinstance(machines, list)
+
+
+# -------------------------------------------------------------------- paths
+
+from pathlib import Path  # noqa: E402
+
+
+def test_vault_folder_maps_onto_the_local_workspace():
+    got = engine.vault_folder_to_local("$/DESIGNS/PRODUCTION EQUIPMENT/Mold 12",
+                                       r"C:\Vault Workspace")
+    assert got == Path(r"C:\Vault Workspace") / "DESIGNS" / "PRODUCTION EQUIPMENT" / "Mold 12"
+
+
+def test_vault_folder_mapping_tolerates_shapes_vault_actually_returns():
+    root = r"C:\WS"
+    assert engine.vault_folder_to_local("$/A/B", root) == Path(root) / "A" / "B"
+    assert engine.vault_folder_to_local("/A/B", root) == Path(root) / "A" / "B"
+    assert engine.vault_folder_to_local("$\\A\\B", root) == Path(root) / "A" / "B"
+    assert engine.vault_folder_to_local("$/", root) == Path(root)
+    assert engine.vault_folder_to_local("", root) == Path(root)
+
+
+def test_part_local_path_uses_the_parts_own_folder():
+    """The pressed part need not live beside its assembly."""
+    got = engine.part_local_path("$/DESIGNS/Parts", "CD-001660.ipt", workspace_root=r"C:\WS")
+    assert got == Path(r"C:\WS") / "DESIGNS" / "Parts" / "CD-001660.ipt"
+
+
+def test_handoff_filename_derives_from_the_assembly():
+    assert engine.handoff_filename("CD-001659.iam") == "CD-001659-DesignToProcessHandoff.pdf"
+    assert engine.handoff_filename("CD-001659") == "CD-001659-DesignToProcessHandoff.pdf"
+    # Only the final extension is dropped.
+    assert engine.handoff_filename("CD.1659.iam") == "CD.1659-DesignToProcessHandoff.pdf"
+    assert engine.handoff_filename("") == "Handoff-DesignToProcessHandoff.pdf"
+
+
+def test_resolve_output_dir_uses_the_mapped_folder_when_it_exists(tmp_path):
+    (tmp_path / "A" / "B").mkdir(parents=True)
+    directory, note = engine.resolve_output_dir(
+        "$/A/B", workspace_root=str(tmp_path), fallback=str(tmp_path / "nope"))
+    assert directory == tmp_path / "A" / "B"
+    assert note == ""
+
+
+def test_resolve_output_dir_falls_back_and_explains(tmp_path):
+    fallback = tmp_path / "Downloads"
+    fallback.mkdir()
+    directory, note = engine.resolve_output_dir(
+        "$/Nowhere", workspace_root=str(tmp_path), fallback=str(fallback))
+    assert directory == fallback
+    assert "Nowhere" in note and str(fallback) in note
+
+
+def test_file_reference_carries_the_revision():
+    assert engine.format_file_reference("CD-001659.iam", "3") == "CD-001659.iam (Rev 3)"
+    assert engine.format_file_reference("CD-001659.iam", "") == "CD-001659.iam"
+    assert engine.format_file_reference("", "3") == ""
+
+
+def test_workspace_root_from_config_falls_back_to_the_default():
+    assert engine.workspace_root_from_config(None) == engine.DEFAULT_WORKSPACE_ROOT
+    assert engine.workspace_root_from_config({}) == engine.DEFAULT_WORKSPACE_ROOT
+    assert engine.workspace_root_from_config(
+        {"handoff": {"workspace_root": r"D:\WS"}}) == r"D:\WS"
