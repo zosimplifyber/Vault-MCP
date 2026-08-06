@@ -47,6 +47,10 @@ build_purchasing_log.txt
 # repo, so they must never be tracked by it.
 .worktrees/
 
+# Local machine-provisioning scripts — unrelated to Vault-MCP, kept here only
+# for convenience. Never commit these.
+/Setup-NewPC*
+
 # OS junk
 .DS_Store
 Thumbs.db
