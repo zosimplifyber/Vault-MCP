@@ -1,0 +1,13 @@
+# Runtime dependencies for the odl-api image.
+fastapi>=0.110.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.9
+# The [crypto] extra is NOT optional here. Plain pypdf ships AES support only in
+# that extra, and nothing else in this file pulls `cryptography` transitively
+# (verified: resolving without it yields 22 packages, none of them cryptography).
+# Without it, every AES-encrypted PDF — the default since Acrobat 7 — raises
+# DependencyError inside the router, is read as "no text layer", and is routed to
+# the OCR tier that cannot decrypt it either. That costs ~27 minutes of CPU per
+# document (540 s timeout x 3 RAGFlow retries) and returns nothing.
+pypdf[crypto]>=4.0.0
+opendataloader-pdf>=2.0.0

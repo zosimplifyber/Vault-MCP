@@ -2,3 +2,9 @@
 # Install with:  pip install -r requirements-dev.txt
 pytest>=8.0.0
 pytest-asyncio>=0.23.0
+reportlab>=4.0.0         # Builds PDFs in-memory for the OpenDataLoader router tests
+
+# OpenDataLoader service tests — the service itself runs in a container, but
+# its unit tests exercise the FastAPI app in-process.
+fastapi>=0.110.0
+python-multipart>=0.0.9

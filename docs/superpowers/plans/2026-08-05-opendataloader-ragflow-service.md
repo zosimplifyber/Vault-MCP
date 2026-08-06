@@ -716,8 +716,10 @@ Append to `requirements-dev.txt`:
 # its unit tests exercise the FastAPI app in-process.
 fastapi>=0.110.0
 python-multipart>=0.0.9
-reportlab>=4.0.0
 ```
+
+(`reportlab` was already added to this file in Task 2, where the router tests
+first needed it. Do not add it twice.)
 
 Run: `python -m pip install -r requirements-dev.txt`
 Expected: installs without error.
@@ -844,6 +846,23 @@ def test_a_timeout_is_a_504():
 def test_an_empty_upload_is_rejected_before_conversion():
     response = client().post("/file_parse", files={"file": ("d.pdf", b"", "application/pdf")})
     assert response.status_code == 400
+
+
+def test_a_decisively_unreadable_pdf_is_a_fast_400(monkeypatch):
+    """Password-protected and crypto-unsupported PDFs must fail immediately.
+
+    Routing them to the OCR tier would cost ~27 minutes of CPU (540 s timeout
+    times RAGFlow's three retries) on a document no tier can read.
+    """
+    from opendataloader.service.router import UnreadablePdf
+
+    def refuse(pdf_bytes, explicit_hybrid, settings):
+        raise UnreadablePdf("password-protected; no tier can read it")
+
+    monkeypatch.setattr(app_mod, "choose_tier", refuse)
+    response = client().post("/file_parse", files={"file": ("d.pdf", PDF, "application/pdf")})
+    assert response.status_code == 400
+    assert "password" in response.json()["detail"]
 ```
 
 - [ ] **Step 3: Run test to verify it fails**
@@ -874,7 +893,7 @@ from fastapi.concurrency import run_in_threadpool
 
 from .config import Settings, load_settings
 from .convert import ConvertError, run_convert
-from .router import choose_tier
+from .router import UnreadablePdf, choose_tier
 
 logger = logging.getLogger(__name__)
 
@@ -921,8 +940,16 @@ def create_app(env: Mapping[str, str] | None = None) -> FastAPI:
         if sanitize is not None:
             options["sanitize"] = sanitize.strip().lower() in ("1", "true", "yes", "on")
 
-        tier = choose_tier(pdf_bytes, hybrid, settings)
         filename = file.filename or "input.pdf"
+
+        # A decisively unreadable PDF must fail fast and loudly. Routing it to
+        # the OCR tier instead would burn ~27 minutes of CPU (540 s timeout x
+        # RAGFlow's 3 retries) on a document no tier can read.
+        try:
+            tier = choose_tier(pdf_bytes, hybrid, settings)
+        except UnreadablePdf as exc:
+            logger.error("[file_parse] %s is unreadable: %s", filename, exc)
+            raise HTTPException(status_code=400, detail=str(exc))
 
         async with app.state.slots:
             try:
@@ -989,7 +1016,14 @@ Create `opendataloader/requirements.api.txt`:
 fastapi>=0.110.0
 uvicorn[standard]>=0.30.0
 python-multipart>=0.0.9
-pypdf>=4.0.0
+# The [crypto] extra is NOT optional here. Plain pypdf ships AES support only in
+# that extra, and nothing else in this file pulls `cryptography` transitively
+# (verified: resolving without it yields 22 packages, none of them cryptography).
+# Without it, every AES-encrypted PDF — the default since Acrobat 7 — raises
+# DependencyError inside the router, is read as "no text layer", and is routed to
+# the OCR tier that cannot decrypt it either. That costs ~27 minutes of CPU per
+# document (540 s timeout x 3 RAGFlow retries) and returns nothing.
+pypdf[crypto]>=4.0.0
 opendataloader-pdf>=2.0.0
 ```
 
@@ -1024,6 +1058,11 @@ EXPOSE 5060
 
 # The healthcheck mirrors what RAGFlow's client calls, so a container reporting
 # healthy means RAGFlow's check would also succeed.
+#
+# This plain curl sends no Authorization header, which is exactly why /health
+# does not require the bearer token even when ODL_API_KEY is set. Requiring it
+# would leave the container permanently unhealthy while /file_parse worked fine.
+# /health reveals nothing worth protecting; do not "harden" it.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD curl -fsS http://127.0.0.1:5060/health || exit 1
 

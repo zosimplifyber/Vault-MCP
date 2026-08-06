@@ -1,0 +1,84 @@
+# A standalone compose project that attaches to RAGFlow's existing network.
+#
+# Deliberately NOT an edit to the ragflow checkout: that repo is upstream code,
+# and keeping our services here means `git pull` there can never conflict with
+# them. RAGFlow reaches these containers by service name on the shared network.
+#
+# Start the fast tier only:
+#   docker compose -f opendataloader/docker-compose.opendataloader.yml up -d
+# Start the OCR tier as well (see Dockerfile.hybrid — not built yet):
+#   docker compose -f opendataloader/docker-compose.opendataloader.yml --profile hybrid up -d
+
+name: opendataloader
+
+services:
+  odl-api:
+    build:
+      context: ..
+      dockerfile: opendataloader/Dockerfile.api
+    image: odl-api:local
+    container_name: odl-api
+    restart: unless-stopped
+    environment:
+      ODL_HYBRID_URL: http://odl-hybrid:5002
+      ODL_HYBRID_BACKEND: docling-fast
+      # Routing to the hybrid tier is harmless while that container is stopped:
+      # convert.py passes hybrid_fallback=True, so a scanned PDF degrades to a
+      # local parse instead of erroring. Set this to "false" to skip detection
+      # entirely and keep every document on the fast path.
+      ODL_ENABLE_HYBRID: "true"
+      ODL_TEXT_LAYER_MIN_CHARS_PER_PAGE: "50"
+      ODL_TEXT_LAYER_SAMPLE_PAGES: "5"
+      # Each conversion spawns a JVM. 4 on a 20-core host leaves room for
+      # RAGFlow's own embedding work, which is the other CPU consumer here.
+      ODL_MAX_CONCURRENCY: "4"
+      # Below RAGFlow's own 600 s client timeout on purpose, so this service
+      # gives a definitive answer before RAGFlow gives up and retries.
+      ODL_TIMEOUT: "540"
+      ODL_MAX_UPLOAD_BYTES: "104857600"
+      # ODL_API_KEY: set this and OPENDATALOADER_API_KEY in ragflow/docker/.env
+      # together, or neither. /health stays open either way — see Dockerfile.api.
+    ports:
+      # Loopback only. RAGFlow reaches this over the shared docker network by
+      # service name, so the published port exists purely for local curl and
+      # troubleshooting — there is no reason to offer it to the LAN.
+      - "127.0.0.1:5060:5060"
+    networks:
+      - ragflow
+
+  odl-hybrid:
+    build:
+      context: ..
+      dockerfile: opendataloader/Dockerfile.hybrid
+    image: odl-hybrid:local
+    container_name: odl-hybrid
+    restart: unless-stopped
+    # Opt-in: this container is multi-gigabyte and loads ML models at startup.
+    # It stays stopped unless scanned documents are actually being ingested.
+    profiles: ["hybrid"]
+    volumes:
+      # Without this, every restart re-downloads the Docling and OCR models.
+      - odl_hybrid_models:/models
+    # No published port: only odl-api talks to it, over the shared network.
+    networks:
+      - ragflow
+    # GPU is not enabled. This machine has 4 GB of VRAM shared with the display
+    # and Docker Desktop needs WSL2 passthrough set up first. To try it, install
+    # the NVIDIA container toolkit, change --device in Dockerfile.hybrid, and:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+volumes:
+  odl_hybrid_models:
+
+networks:
+  ragflow:
+    # Created by the RAGFlow stack (compose project "docker", network "ragflow").
+    # Verify with: docker network ls | grep ragflow
+    name: docker_ragflow
+    external: true
