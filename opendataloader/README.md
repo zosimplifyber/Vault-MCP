@@ -113,6 +113,14 @@ variable is silent.
 `docker exec` command above — a working `curl` from the host proves less,
 because RAGFlow reaches the service over the compose network.
 
+**The first document parsed after enabling this reports `[ERROR]OpenDataLoader
+not found.`** RAGFlow auto-provisions the OpenDataLoader OCR model entry on
+first use, and if several documents start parsing at once the first one can run
+before that registration lands. Observed exactly once, on the very first parse
+after setting `OPENDATALOADER_APISERVER`; re-parsing the affected document
+succeeds. To avoid it, parse a single document first, or register OpenDataLoader
+from the **Model providers** page before the first ingest.
+
 **Chunks are one enormous block per document.** The service returned `md_text`
 without `json_doc`; RAGFlow turns markdown into a single section, losing chunk
 boundaries and citations. Check `docker logs odl-api` for the warning naming

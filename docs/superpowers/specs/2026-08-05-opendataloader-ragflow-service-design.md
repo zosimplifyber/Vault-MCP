@@ -235,3 +235,48 @@ Written test-first, following this repo's existing pytest conventions.
   that cost, not that OCR becomes cheap.
 - **RAGFlow marks OpenDataLoader experimental.** The client could change shape in
   a future release; the contract test is the early-warning system.
+
+## Verification
+
+Run on 2026-08-06 against the live stack (RAGFlow v0.26.4, `docker-ragflow-cpu-1`).
+
+**Service.** `odl-api` built from `Dockerfile.api` and started via the compose
+project on the existing `docker_ragflow` network. Reports `healthy`, which also
+confirms the decision to leave `/health` unauthenticated — that status comes
+from the very `curl` in `HEALTHCHECK` that would otherwise have failed.
+`pypdf[crypto]` pulled `cryptography` 50.0.0 as intended.
+
+**Reachability.** `curl http://odl-api:5060/health` from inside the RAGFlow
+container succeeds, and RAGFlow's own client reports
+`OpenDataLoader service reachable: True`.
+
+**Parse speed.** A 990 KB, 6-page standards PDF parsed in **2.3 s** including
+JVM startup, on the local tier, with no ML model loaded. The router chose
+`local` for every born-digital document tested.
+
+**Ingest.** Dataset `odl-verification` created with
+`layout_recognize: OpenDataLoader`. `iso4014.pdf` produced 90 sections and 22
+chunks. `table_test.pdf` produced 2 chunks in 2.64 s.
+
+**Tables — the finding that changed the design.** RAGFlow's converter, run
+against a real captured parse tree, produced **zero tables** and 21 sections
+for a 4x4 table: sixteen single-word paragraphs plus four empty `'|  |  |'`
+rows. Two one-sided schema mismatches caused it (see *Known limitations*).
+After `normalize.py`, the same document indexes as a single chunk containing
+the intact table, and a retrieval for "What is the head diameter of an ISO 4014
+M10 bolt?" returns it as the top hit with `16.0 mm` still beside `ISO 4014 M10`.
+Without this the service would have been a downgrade from DeepDOC on precisely
+the table-heavy documents it was built to ingest.
+
+**Bounding boxes.** Every text element in the captured trees carries a usable
+`bounding box` and `page number`, so citations link back to the page.
+
+**First-parse gotcha.** The very first document parsed after setting
+`OPENDATALOADER_APISERVER` failed with `[ERROR]OpenDataLoader not found.` —
+RAGFlow auto-provisions the OCR model entry on first use and a concurrent task
+can beat it. Re-parsing succeeded. Documented in the README.
+
+**Not yet verified.** The hybrid/OCR tier: `odl-hybrid` is defined in compose
+and has a Dockerfile but has not been built, so no scanned document has been
+parsed end to end. Its CLI flags come from upstream documentation rather than
+from a binary that has been run.
