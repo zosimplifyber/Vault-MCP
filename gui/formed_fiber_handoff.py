@@ -94,6 +94,9 @@ class HandoffGUI:
         self.part: dict[str, str] = {}
         self.children: list[dict[str, str]] = []
         self.busy = False
+        # Bumped on every Inventor read so a slow result for a part the user
+        # has clicked away from can be recognised and dropped.
+        self._inventor_generation = 0
         self._sdw_tracking = True
         self._sdw_updating = False
 
@@ -108,6 +111,11 @@ class HandoffGUI:
         self.win.configure(bg=LIGHT_GRAY)
 
         self.vars: dict[str, tk.StringVar] = {}
+        # Entry widgets by field name. Kept so tests can drive real key
+        # events at a field rather than calling its handler by hand -- the
+        # earlier SDW test did the latter and so could not catch a binding
+        # that fired on the wrong events.
+        self.entries: dict[str, tk.Entry] = {}
         self.target_vars: dict[str, tk.BooleanVar] = {}
         self.top_file_var = tk.StringVar()          # FileSearchDialog contract
         self.status_var = tk.StringVar(value="Ready. Find the general assembly to start.")
@@ -256,8 +264,7 @@ class HandoffGUI:
                              relief="flat", highlightthickness=1,
                              highlightbackground=GRAY_BDR)
             entry.pack(side="left", fill="x", expand=True, ipady=2)
-            if name == "standard_dry_weight":
-                entry.bind("<Key>", lambda _e: self.on_standard_dry_weight_edited())
+            self.entries[name] = entry
             target = tk.BooleanVar(value=False)
             self.target_vars[name] = target
             tk.Checkbutton(row, text="target", variable=target, bg=WHITE,
@@ -303,6 +310,13 @@ class HandoffGUI:
             "write", lambda *_a: self._refresh_standard_dry_weight())
         self.target_vars["bone_dry_weight"].trace_add(
             "write", lambda *_a: self._refresh_standard_dry_weight())
+        # Detach on an actual VALUE CHANGE, not on a keypress. The obvious
+        # `entry.bind("<Key>", ...)` fires for arrow keys and Tab too, so
+        # clicking into the field to read the number and pressing Left would
+        # silently and permanently stop it tracking -- with no visual cue, on
+        # a field whose whole point is that it stays correct.
+        self.vars["standard_dry_weight"].trace_add(
+            "write", lambda *_a: self.on_standard_dry_weight_edited())
 
     def _refresh_standard_dry_weight(self) -> None:
         """Recompute while the field is still tracking bone dry weight.
@@ -323,7 +337,12 @@ class HandoffGUI:
             self._sdw_updating = False
 
     def on_standard_dry_weight_edited(self) -> None:
-        """Typing in the field detaches it from the derivation for good."""
+        """Changing the field's value detaches it from the derivation for good.
+
+        Guarded by ``_sdw_updating`` so the derivation's own write does not
+        count as a user edit -- without that, the first recompute would
+        immediately switch tracking off.
+        """
         if not self._sdw_updating:
             self._sdw_tracking = False
 
@@ -390,7 +409,17 @@ class HandoffGUI:
         self._read_physical_properties()
 
     def _read_physical_properties(self) -> None:
-        """Pull mass and volume off the model, on the worker thread."""
+        """Pull mass and volume off the model, on the worker thread.
+
+        Each read carries the generation it was dispatched in. Opening
+        Inventor takes seconds, and clicking down a BOM comparing parts is
+        the normal way to use this -- so a slower read for part A can land
+        after a faster one for part B and overwrite B's numbers with A's.
+        Silently, on a manufacturing document. ``_handle`` drops any result
+        whose generation is no longer current.
+        """
+        self._inventor_generation += 1
+        generation = self._inventor_generation
         path = engine.part_local_path(
             self.part.get("folder_path", ""), self.part.get("file_name", ""),
             workspace_root=self.workspace_root)
@@ -402,9 +431,9 @@ class HandoffGUI:
                 from inventor_automation import read_part_physical_properties
                 props = read_part_physical_properties(path)
             except Exception as exc:  # noqa: BLE001
-                self.q.put(("inventor_error", f"{exc}"))
+                self.q.put(("inventor_error", (generation, f"{exc}")))
                 return
-            self.q.put(("inventor", props))
+            self.q.put(("inventor", (generation, props)))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -440,8 +469,13 @@ class HandoffGUI:
             self.busy = False
             self.status_var.set(f"Vault lookup failed: {payload}")
         elif kind == "inventor":
-            self.vars["bone_dry_weight"].set(f"{payload.mass_g:.2f}")
-            self.vars["volume"].set(f"{payload.volume_cm3:.2f}")
+            generation, props = payload
+            # Stale read for a part the user has already clicked away from.
+            # Writing it would put another part's mass on this document.
+            if generation != self._inventor_generation:
+                return
+            self.vars["bone_dry_weight"].set(f"{props.mass_g:.2f}")
+            self.vars["volume"].set(f"{props.volume_cm3:.2f}")
             self.inventor_note_var.set(
                 "Bone dry weight and volume read from the Inventor model. The "
                 "mass is only the bone dry weight if the part's material "
@@ -449,8 +483,11 @@ class HandoffGUI:
             )
             self.status_var.set("Mass and volume read from the model.")
         elif kind == "inventor_error":
+            generation, message = payload
+            if generation != self._inventor_generation:
+                return
             self.inventor_note_var.set(
-                f"Could not read mass and volume — type them in. ({payload})")
+                f"Could not read mass and volume — type them in. ({message})")
             self.status_var.set("Inventor read failed; the fields stay manual.")
 
     def _populate_bom(self, children_error: str) -> None:
@@ -546,10 +583,19 @@ class HandoffGUI:
                 "No folder", f"{directory or '(blank)'} is not a folder.",
                 parent=self.win)
             return
+        # Three-way on sys.platform, matching gui/launcher.py's _on_open_logs.
+        # Catching AttributeError from os.startfile and falling through to
+        # xdg-open sends macOS at a command it does not have.
         try:
-            os.startfile(directory)  # noqa: S606  (Windows-only, by design)
-        except AttributeError:
-            subprocess.Popen(["xdg-open", directory])
+            if sys.platform == "win32":
+                os.startfile(directory)  # type: ignore[attr-defined]
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", directory])
+            else:
+                subprocess.Popen(["xdg-open", directory])
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror(
+                "Could not open folder", str(exc), parent=self.win)
 
 
 def launch_gui(*, api=None, vault_id: str = "", cfg=None, parent=None) -> HandoffGUI:

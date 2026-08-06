@@ -65,15 +65,105 @@ def test_standard_dry_weight_tracks_bone_dry_weight():
 
 
 def test_standard_dry_weight_stops_tracking_once_typed_in():
+    """Setting the var IS the trigger now -- no need to call the hook by hand.
+
+    The earlier version called gui.on_standard_dry_weight_edited() directly,
+    which meant it never exercised the real trigger and could not have caught
+    the over-broad <Key> binding this replaced.
+    """
     root, gui = _make_gui()
     try:
         gui.vars["bone_dry_weight"].set("100")
         root.update_idletasks()
-        gui.on_standard_dry_weight_edited()      # what the <Key> binding calls
-        gui.vars["standard_dry_weight"].set("999.99")
+        gui.vars["standard_dry_weight"].set("999.99")   # the user edit
         gui.vars["bone_dry_weight"].set("250")
         root.update_idletasks()
         assert gui.vars["standard_dry_weight"].get() == "999.99"
+    finally:
+        root.destroy()
+
+
+def test_the_derivation_detaches_on_value_change_not_on_keypress():
+    """No key binding may drive the detach.
+
+    `entry.bind("<Key>", ...)` fires for arrow keys and Tab as well as typing,
+    so clicking into the field to read the number and pressing Left silently
+    and permanently stopped it tracking -- no error, no visual cue, just a
+    number that quietly goes stale on a manufacturing document.
+
+    This asserts structurally rather than by driving real key events, because
+    a behavioural version of this test PASSES VACUOUSLY: event_generate does
+    not deliver key events to a widget in a withdrawn window, so the
+    assertion never exercises the binding at all. Verified by mutation --
+    restoring the <Key> binding left a behavioural version green.
+    """
+    root, gui = _make_gui()
+    try:
+        entry = gui.entries["standard_dry_weight"]
+        bound = entry.bind()
+        key_bindings = [seq for seq in bound if "Key" in seq]
+        assert not key_bindings, (
+            f"detach is driven by {key_bindings}, which fire on cursor "
+            "movement as well as typing")
+
+        # And the trace-based detach it was replaced with does work.
+        gui.vars["bone_dry_weight"].set("100")
+        root.update_idletasks()
+        assert gui.vars["standard_dry_weight"].get() == "105.26"
+        assert gui._sdw_tracking is True
+        gui.vars["standard_dry_weight"].set("999.99")
+        assert gui._sdw_tracking is False
+    finally:
+        root.destroy()
+
+
+def test_a_stale_inventor_read_cannot_overwrite_a_newer_one():
+    """Click part A, click part B, A's slower read lands last.
+
+    Opening Inventor takes seconds and clicking down a BOM comparing parts is
+    the normal way to use this, so the slow result for a part the user has
+    moved on from must be dropped -- otherwise another part's mass lands on
+    this document, silently.
+    """
+    from inventor_automation import PhysicalProperties
+
+    root, gui = _make_gui()
+    try:
+        gui.part = {"file_name": "A.ipt", "folder_path": "$/X"}
+        gui._read_physical_properties()
+        stale = gui._inventor_generation
+
+        gui.part = {"file_name": "B.ipt", "folder_path": "$/X"}
+        gui._read_physical_properties()
+        current = gui._inventor_generation
+
+        # B's read returns first, then A's arrives late.
+        gui._handle("inventor", (current, PhysicalProperties(200.0, 20.0)))
+        gui._handle("inventor", (stale, PhysicalProperties(999.0, 99.0)))
+
+        assert gui.vars["bone_dry_weight"].get() == "200.00"
+        assert gui.vars["volume"].get() == "20.00"
+    finally:
+        root.destroy()
+
+
+def test_a_stale_inventor_error_does_not_clobber_a_good_read():
+    from inventor_automation import PhysicalProperties
+
+    root, gui = _make_gui()
+    try:
+        gui.part = {"file_name": "A.ipt", "folder_path": "$/X"}
+        gui._read_physical_properties()
+        stale = gui._inventor_generation
+        gui.part = {"file_name": "B.ipt", "folder_path": "$/X"}
+        gui._read_physical_properties()
+        current = gui._inventor_generation
+
+        gui._handle("inventor", (current, PhysicalProperties(200.0, 20.0)))
+        gui._handle("inventor_error", (stale, "Inventor not installed"))
+
+        assert gui.vars["bone_dry_weight"].get() == "200.00"
+        assert "Could not read" not in gui.inventor_note_var.get()
     finally:
         root.destroy()
 
