@@ -12,6 +12,7 @@ import logging
 from enum import Enum
 
 from pypdf import PdfReader
+from pypdf.errors import DependencyError, FileNotDecryptedError
 
 from .config import Settings
 
@@ -23,11 +24,30 @@ class Tier(str, Enum):
     HYBRID = "hybrid"
 
 
+class UnreadablePdf(Exception):
+    """No tier can read this document — fail fast instead of routing to OCR."""
+
+
+# Not a property of the document — the image is missing the optional
+# 'cryptography' package that pypdf needs to touch anything encrypted.
+_DEPENDENCY_ERROR_MESSAGE = (
+    "pypdf cannot decrypt this PDF: the 'cryptography' extra is not installed "
+    "(install pypdf[crypto] in the service image)"
+)
+_PASSWORD_ERROR_MESSAGE = "PDF is password-protected and could not be opened with an empty password"
+
+
 def chars_per_page(pdf_bytes: bytes, sample_pages: int) -> float:
     """Average extractable characters across the first `sample_pages` pages.
 
-    Returns 0.0 for anything unreadable: a corrupt upload is a routing
-    decision, not a crash.
+    Returns 0.0 for anything unreadable — a corrupt upload is a routing
+    decision, not a crash. The two exceptions are AES/password failures
+    (`UnreadablePdf`): those are decisive, not ambiguous, so they must not be
+    swallowed into "no text layer" and silently sent to a tier that can't
+    read them either. `DependencyError` is checked before `FileNotDecryptedError`
+    only because both must be caught ahead of any broader pypdf handler —
+    `DependencyError` does not subclass `PdfReadError`, while
+    `FileNotDecryptedError` does.
     """
     try:
         reader = PdfReader(io.BytesIO(pdf_bytes))
@@ -35,19 +55,41 @@ def chars_per_page(pdf_bytes: bytes, sample_pages: int) -> float:
         if not pages:
             return 0.0
         total = 0
+        counted = 0
         for page in pages:
             try:
                 total += len((page.extract_text() or "").strip())
-            except Exception:
+                counted += 1
+            except DependencyError as exc:
+                raise UnreadablePdf(_DEPENDENCY_ERROR_MESSAGE) from exc
+            except FileNotDecryptedError as exc:
+                raise UnreadablePdf(_PASSWORD_ERROR_MESSAGE) from exc
+            except Exception as exc:
+                # A page that errored is not evidence of "no text" the way a
+                # genuinely blank page is — don't let it drag the average down.
+                logger.warning("[router] could not extract text from a sampled page: %s", exc)
                 continue
-        return total / len(pages)
+        if counted == 0:
+            return 0.0
+        return total / counted
+    except UnreadablePdf:
+        raise
+    except DependencyError as exc:
+        raise UnreadablePdf(_DEPENDENCY_ERROR_MESSAGE) from exc
+    except FileNotDecryptedError as exc:
+        raise UnreadablePdf(_PASSWORD_ERROR_MESSAGE) from exc
     except Exception as exc:
         logger.warning("[router] could not read the PDF for detection: %s", exc)
         return 0.0
 
 
 def choose_tier(pdf_bytes: bytes, explicit_hybrid: str | None, settings: Settings) -> Tier:
-    """Pick a tier. An explicit `hybrid` field from RAGFlow always wins."""
+    """Pick a tier. An explicit `hybrid` field from RAGFlow always wins.
+
+    `UnreadablePdf` from `chars_per_page` is allowed to propagate: it means no
+    tier can read the document, which is a 400 for the caller to handle, not a
+    routing decision this function should paper over.
+    """
     if explicit_hybrid is not None:
         explicit = explicit_hybrid.strip().lower()
         if explicit in ("", "off", "none", "false"):
@@ -59,7 +101,9 @@ def choose_tier(pdf_bytes: bytes, explicit_hybrid: str | None, settings: Setting
 
     density = chars_per_page(pdf_bytes, settings.sample_pages)
     if density >= settings.min_chars_per_page:
-        logger.info("[router] local tier (%.0f chars/page)", density)
+        logger.info("[router] %s tier (%.0f chars/page)", Tier.LOCAL.value, density)
         return Tier.LOCAL
-    logger.info("[router] hybrid tier (%.0f chars/page — no usable text layer)", density)
+    logger.info(
+        "[router] %s tier (%.0f chars/page — no usable text layer)", Tier.HYBRID.value, density
+    )
     return Tier.HYBRID
