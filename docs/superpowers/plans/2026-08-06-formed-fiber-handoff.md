@@ -1045,6 +1045,13 @@ def test_com_is_initialised_and_released(part_file, fake_com, monkeypatch):
 
 def test_com_is_released_even_when_the_read_fails(part_file, fake_com, monkeypatch):
     class Exploding(FakeDoc):
+        # Own __init__: FakeDoc's would assign to ComponentDefinition, which
+        # collides with the read-only property below (no setter), raising at
+        # construction before the code under test is ever reached.
+        def __init__(self):
+            self.FullFileName = "fake.ipt"
+            self.close_calls = []
+
         @property
         def ComponentDefinition(self):
             raise RuntimeError("no component definition")
