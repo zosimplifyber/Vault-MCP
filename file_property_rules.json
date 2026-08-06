@@ -23,7 +23,7 @@
         "Description (File)": { "required": false, "description": "TEMPORARILY UNGATED — reported for reference only. To re-enable the Vault PDM – Item Description standard (lowercase keyword nouns; no dimensions, materials, standards, or project/customer names), restore: \"required\": true, \"min_length\": 5, \"pattern\": \"^[a-z][a-z \\\\-]*[a-z]$\", \"forbidden_patterns\": [\"\\\\b(iso|din|astm|ansi|jis|sae|asme|nist|en|bs)\\\\b\"]" },
         "Revision":           { "required": true,  "pattern": "[0-9]+" },
         "State":              { "required": true,  "allowed_values": ["Released", "In Review", "Work in Progress"] },
-        "Source":             { "required": true,  "allowed_values": ["Make"] },
+        "Source":             { "required": true,  "allowed_values": ["Make", "Buy"] },
         "Material":           { "required": false },
         "Material Finish":    { "required": false },
         "Vendor":             { "required": true,  "description": "Who supplies it. Required on every part and assembly." },
