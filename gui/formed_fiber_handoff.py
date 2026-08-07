@@ -78,6 +78,14 @@ class HandoffGUI:
         ("material", "Material", 160),
     ]
 
+    # Fields computed from Bone Dry Weight, and the rule that computes each.
+    # Both are the same wet-basis arithmetic at different moisture contents,
+    # which is why the rules live in the engine rather than here.
+    DERIVED_FROM_BONE_DRY = {
+        "wet_weight": engine.wet_weight,
+        "standard_dry_weight": engine.standard_dry_weight,
+    }
+
     def __init__(
         self,
         *,
@@ -101,8 +109,11 @@ class HandoffGUI:
         # Bumped on every Inventor read so a slow result for a part the user
         # has clicked away from can be recognised and dropped.
         self._inventor_generation = 0
-        self._sdw_tracking = True
-        self._sdw_updating = False
+        # Which derived fields are still following Bone Dry Weight. Each
+        # detaches on its own -- overriding wet weight must not stop standard
+        # dry weight tracking.
+        self._derived_tracking = {name: True for name in self.DERIVED_FROM_BONE_DRY}
+        self._derived_updating: set[str] = set()
 
         self.win = tk.Toplevel(parent) if parent is not None else tk.Tk()
         # FileSearchDialog reaches for parent.root, so expose the window there.
@@ -362,45 +373,47 @@ class HandoffGUI:
     # ----- Derived fields -----------------------------------------------------
 
     def _wire_derived_fields(self) -> None:
-        self.vars["bone_dry_weight"].trace_add(
-            "write", lambda *_a: self._refresh_standard_dry_weight())
-        self.target_vars["bone_dry_weight"].trace_add(
-            "write", lambda *_a: self._refresh_standard_dry_weight())
+        for source in (self.vars["bone_dry_weight"],
+                       self.target_vars["bone_dry_weight"]):
+            source.trace_add("write", lambda *_a: self._refresh_derived())
         # Detach on an actual VALUE CHANGE, not on a keypress. The obvious
         # `entry.bind("<Key>", ...)` fires for arrow keys and Tab too, so
-        # clicking into the field to read the number and pressing Left would
+        # clicking into a field to read the number and pressing Left would
         # silently and permanently stop it tracking -- with no visual cue, on
-        # a field whose whole point is that it stays correct.
-        self.vars["standard_dry_weight"].trace_add(
-            "write", lambda *_a: self.on_standard_dry_weight_edited())
+        # fields whose whole point is that they stay correct.
+        for name in self.DERIVED_FROM_BONE_DRY:
+            self.vars[name].trace_add(
+                "write", lambda *_a, field=name: self.on_derived_edited(field))
 
-    def _refresh_standard_dry_weight(self) -> None:
-        """Recompute while the field is still tracking bone dry weight.
+    def _refresh_derived(self) -> None:
+        """Recompute every field still tracking bone dry weight.
 
-        A value derived from a target is itself a target, so the checkbox
-        mirrors too -- until the user overrides the value, at which point both
-        become independent.
+        A value derived from a target is itself a target, so each checkbox
+        mirrors too -- until the user overrides that field, at which point it
+        goes independent on its own. Overriding wet weight does not detach
+        standard dry weight.
         """
-        if not self._sdw_tracking:
-            return
-        self._sdw_updating = True
-        try:
-            self.vars["standard_dry_weight"].set(
-                engine.standard_dry_weight(self.vars["bone_dry_weight"].get()))
-            self.target_vars["standard_dry_weight"].set(
-                self.target_vars["bone_dry_weight"].get())
-        finally:
-            self._sdw_updating = False
+        bone_dry = self.vars["bone_dry_weight"].get()
+        is_target = self.target_vars["bone_dry_weight"].get()
+        for name, rule in self.DERIVED_FROM_BONE_DRY.items():
+            if not self._derived_tracking.get(name, True):
+                continue
+            self._derived_updating.add(name)
+            try:
+                self.vars[name].set(rule(bone_dry))
+                self.target_vars[name].set(is_target)
+            finally:
+                self._derived_updating.discard(name)
 
-    def on_standard_dry_weight_edited(self) -> None:
-        """Changing the field's value detaches it from the derivation for good.
+    def on_derived_edited(self, name: str) -> None:
+        """Changing a derived field's value detaches it for good.
 
-        Guarded by ``_sdw_updating`` so the derivation's own write does not
-        count as a user edit -- without that, the first recompute would
+        Guarded by ``_derived_updating`` so the derivation's own write does
+        not count as a user edit -- without that, the first recompute would
         immediately switch tracking off.
         """
-        if not self._sdw_updating:
-            self._sdw_tracking = False
+        if name not in self._derived_updating:
+            self._derived_tracking[name] = False
 
     def on_machine_selected(self) -> None:
         """Fill both pressures from the picked profile."""

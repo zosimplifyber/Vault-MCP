@@ -34,6 +34,22 @@ def test_standard_dry_weight_rejects_unusable_input():
         assert engine.standard_dry_weight(bad) == "", f"{bad!r} should give ''"
 
 
+def test_wet_weight_is_the_part_at_15_percent_moisture():
+    """Same wet-basis rule as the standard dry weight, different moisture.
+
+    15% water by mass of the finished part, so the bone dry fibre is 85% and
+    the divisor is 0.85 -- not a multiplication by 1.15.
+    """
+    assert engine.wet_weight("100") == "117.65"
+    assert engine.wet_weight("3660.11") == "4306.01"
+
+
+def test_both_weight_rules_reject_the_same_unusable_input():
+    for bad in ("", "abc", "0", "-5", None, "nan", "inf"):
+        assert engine.wet_weight(bad) == "", f"{bad!r} should give ''"
+        assert engine.standard_dry_weight(bad) == "", f"{bad!r} should give ''"
+
+
 def test_standard_dry_weight_accepts_decimals_and_whitespace():
     assert engine.standard_dry_weight(" 47.5 ") == "50.00"
 

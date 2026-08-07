@@ -110,9 +110,9 @@ def test_the_derivation_detaches_on_value_change_not_on_keypress():
         gui.vars["bone_dry_weight"].set("100")
         root.update_idletasks()
         assert gui.vars["standard_dry_weight"].get() == "105.26"
-        assert gui._sdw_tracking is True
+        assert gui._derived_tracking["standard_dry_weight"] is True
         gui.vars["standard_dry_weight"].set("999.99")
-        assert gui._sdw_tracking is False
+        assert gui._derived_tracking["standard_dry_weight"] is False
     finally:
         root.destroy()
 
@@ -331,3 +331,51 @@ def test_the_shipped_library_offers_the_real_presses():
     names = [m.name for m in engine.load_machines(engine.MACHINES_PATH)]
     assert "KFT 90" in names
     assert "Lab Former" in names
+
+
+def test_wet_weight_is_derived_from_bone_dry_weight():
+    """Wet weight is the part at 15% moisture, so bone dry fibre is 85%."""
+    root, gui = _make_gui()
+    try:
+        gui.vars["bone_dry_weight"].set("3660.11")
+        root.update_idletasks()
+        assert gui.vars["wet_weight"].get() == "4306.01"
+        assert gui.vars["standard_dry_weight"].get() == "3852.75"
+    finally:
+        root.destroy()
+
+
+def test_overriding_one_derived_field_leaves_the_other_tracking():
+    """The two detach independently.
+
+    They share one mechanism now, so the mistake to guard against is a single
+    tracking flag: typing a wet weight by hand must not also freeze standard
+    dry weight.
+    """
+    root, gui = _make_gui()
+    try:
+        gui.vars["bone_dry_weight"].set("100")
+        root.update_idletasks()
+
+        gui.vars["wet_weight"].set("999.99")        # override just this one
+        gui.vars["bone_dry_weight"].set("200")
+        root.update_idletasks()
+
+        assert gui.vars["wet_weight"].get() == "999.99"
+        assert gui.vars["standard_dry_weight"].get() == "210.53"
+        assert gui._derived_tracking["wet_weight"] is False
+        assert gui._derived_tracking["standard_dry_weight"] is True
+    finally:
+        root.destroy()
+
+
+def test_both_derived_fields_mirror_the_bone_dry_target_flag():
+    root, gui = _make_gui()
+    try:
+        gui.vars["bone_dry_weight"].set("100")
+        gui.target_vars["bone_dry_weight"].set(True)
+        root.update_idletasks()
+        assert gui.target_vars["wet_weight"].get() is True
+        assert gui.target_vars["standard_dry_weight"].get() is True
+    finally:
+        root.destroy()

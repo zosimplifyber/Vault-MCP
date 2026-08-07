@@ -26,16 +26,17 @@ MACHINES_PATH = PROJECT_ROOT / "machines.json"
 # config.json -> handoff.workspace_root.
 DEFAULT_WORKSPACE_ROOT = r"C:\Vault Workspace"
 
-# A standard dry part carries 5% water BY MASS OF THE FINISHED STANDARD DRY
-# PART, so the bone dry fibre is the other 95%. This is a WET-BASIS moisture
-# content, not the dry-basis regain the textile industry usually quotes -- do
-# NOT "simplify" this to `* 1.05`, which is a different number (105.00 vs
-# 105.26 on a 100 g part). Confirmed with engineering, 2026-08-06.
-STANDARD_DRY_FIBRE_FRACTION = 0.95
+# Moisture contents are WET BASIS: the water is that fraction OF THE FINISHED
+# PART, so the bone dry fibre is the rest. This is not the dry-basis regain
+# the textile industry usually quotes -- do NOT "simplify" a division by 0.95
+# into a multiplication by 1.05, which is a different number (105.00 vs 105.26
+# on a 100 g part). Confirmed with engineering, 2026-08-06.
+STANDARD_DRY_MOISTURE = 0.05
+WET_MOISTURE = 0.15
 
 
-def standard_dry_weight(bone_dry: Any) -> str:
-    """Standard dry weight in grams, as display text, from a bone dry weight.
+def _weight_at_moisture(bone_dry: Any, moisture: float) -> str:
+    """Bone dry fibre plus enough water to reach ``moisture``, as display text.
 
     Returns "" for anything that is not a positive number, so a blank or
     half-typed entry leaves the field empty instead of showing a bogus value.
@@ -50,7 +51,17 @@ def standard_dry_weight(bone_dry: Any) -> str:
     # into the document as a weight of "nan" or "inf".
     if not math.isfinite(value) or value <= 0:
         return ""
-    return f"{value / STANDARD_DRY_FIBRE_FRACTION:.2f}"
+    return f"{value / (1 - moisture):.2f}"
+
+
+def standard_dry_weight(bone_dry: Any) -> str:
+    """Standard dry weight in grams: the part at 5% moisture."""
+    return _weight_at_moisture(bone_dry, STANDARD_DRY_MOISTURE)
+
+
+def wet_weight(bone_dry: Any) -> str:
+    """Wet weight in grams: the part at 15% moisture."""
+    return _weight_at_moisture(bone_dry, WET_MOISTURE)
 
 
 @dataclass(frozen=True)
