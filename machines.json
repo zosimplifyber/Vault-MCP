@@ -3,11 +3,18 @@
 
   "machines": [
     {
-      "name": "EXAMPLE — replace with a real press",
-      "vacuum_pressure": "-0.9 barg",
-      "press_pressure": "120 bar",
+      "name": "KFT 90",
+      "vacuum_pressure": "",
+      "press_pressure": "",
       "characterized": true,
-      "notes": "Not printed on the document. Delete this entry once real presses are added."
+      "notes": "Pressures not filled in yet -- add them here and every handoff for this press picks them up. Until then the two fields stay blank and get typed by hand."
+    },
+    {
+      "name": "Lab Former",
+      "vacuum_pressure": "",
+      "press_pressure": "",
+      "characterized": true,
+      "notes": "Pressures not filled in yet -- add them here and every handoff for this press picks them up. Until then the two fields stay blank and get typed by hand."
     }
   ]
 }

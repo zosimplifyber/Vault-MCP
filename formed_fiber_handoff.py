@@ -119,7 +119,11 @@ PRODUCTION_FIELDS: tuple[tuple[str, str], ...] = (
     ("wet_thickness", "Wet Part Thickness [mm] – Or Transfer GAPS"),
     ("wet_weight", "Wet Weight [g]"),
     ("bone_dry_weight", "Bone Dry Weight [g]"),
-    ("standard_dry_weight", "Standard Dry Weight [g]"),
+    # The moisture content is part of the definition, not a footnote: a
+    # standard dry weight is meaningless without saying what it is standard
+    # AT. Carrying it in the label means it prints on the document and shows
+    # on the form from this one place.
+    ("standard_dry_weight", "Standard Dry Weight [g] – at 5% moisture"),
     ("dryness", "Dryness [%]"),
 )
 

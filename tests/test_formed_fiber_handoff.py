@@ -85,7 +85,9 @@ def test_production_section_prints_eight_rows_in_order():
         "Wet Part Thickness [mm] – Or Transfer GAPS",
         "Wet Weight [g]",
         "Bone Dry Weight [g]",
-        "Standard Dry Weight [g]",
+        # The moisture content is part of the definition -- a standard dry
+        # weight means nothing without saying what it is standard AT.
+        "Standard Dry Weight [g] – at 5% moisture",
         "Dryness [%]",
     ]
 

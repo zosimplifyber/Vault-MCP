@@ -297,3 +297,37 @@ def test_the_bom_table_shows_the_file_description():
         assert row.index("forming tool") == 1
     finally:
         root.destroy()
+
+
+def test_a_machine_with_no_recorded_pressures_does_not_wipe_typed_ones(tmp_path):
+    """Selecting a press must not clear values already entered by hand.
+
+    KFT 90 and Lab Former ship without recorded pressures, so a blind
+    overwrite would erase what the user had just typed simply by picking
+    the machine.
+    """
+    import json
+
+    library = tmp_path / "machines.json"
+    library.write_text(json.dumps({"machines": [
+        {"name": "KFT 90", "vacuum_pressure": "", "press_pressure": ""},
+    ]}), encoding="utf-8")
+
+    root, gui = _make_gui(machines_path=library)
+    try:
+        gui.vars["vacuum_pressure"].set("-0.85 barg")
+        gui.vars["press_pressure"].set("95 bar")
+        gui.vars["machine"].set("KFT 90")
+        gui.on_machine_selected()
+        assert gui.vars["vacuum_pressure"].get() == "-0.85 barg"
+        assert gui.vars["press_pressure"].get() == "95 bar"
+    finally:
+        root.destroy()
+
+
+def test_the_shipped_library_offers_the_real_presses():
+    import formed_fiber_handoff as engine
+
+    names = [m.name for m in engine.load_machines(engine.MACHINES_PATH)]
+    assert "KFT 90" in names
+    assert "Lab Former" in names

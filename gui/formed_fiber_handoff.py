@@ -172,8 +172,15 @@ class HandoffGUI:
                  anchor="w", padx=12).pack(side="left", fill="y")
         tk.Frame(self.win, bg=MID_BLUE, height=2).pack(fill="x")
 
-        body = tk.Frame(self.win, bg=LIGHT_GRAY, pady=12)
-        body.pack(fill="both", expand=True)
+        # Status bar first, packed to the bottom, so it keeps its place when
+        # the scroll area below claims the remaining space.
+        bar = tk.Frame(self.win, bg=PALE_BLUE, highlightthickness=1,
+                       highlightbackground=GRAY_BDR)
+        bar.pack(fill="x", side="bottom")
+        tk.Label(bar, textvariable=self.status_var, bg=PALE_BLUE, fg=DARK_BLUE,
+                 font=("Arial", 9), anchor="w", padx=12, pady=4).pack(fill="x")
+
+        body = self._build_scroll_area()
 
         self._build_assembly_card(body)
         self._build_bom_card(body)
@@ -181,11 +188,39 @@ class HandoffGUI:
         self._build_production_card(body)
         self._build_output_card(body)
 
-        bar = tk.Frame(self.win, bg=PALE_BLUE, highlightthickness=1,
-                       highlightbackground=GRAY_BDR)
-        bar.pack(fill="x", side="bottom")
-        tk.Label(bar, textvariable=self.status_var, bg=PALE_BLUE, fg=DARK_BLUE,
-                 font=("Arial", 9), anchor="w", padx=12, pady=4).pack(fill="x")
+    def _build_scroll_area(self) -> tk.Frame:
+        """Vertically-scrollable container for the cards. Returns the inner frame.
+
+        Without this the form clips: five cards do not fit 900px on a laptop,
+        and the bottom of Production Details -- Standard Dry Weight and
+        Dryness -- was simply cut off with nothing to indicate more existed.
+        Same canvas-plus-inner-frame idiom as gui/launcher.py's own.
+        """
+        outer = tk.Frame(self.win, bg=LIGHT_GRAY)
+        outer.pack(fill="both", expand=True)
+
+        canvas = tk.Canvas(outer, bg=LIGHT_GRAY, highlightthickness=0)
+        vsb = tk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=vsb.set)
+        vsb.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+
+        content = tk.Frame(canvas, bg=LIGHT_GRAY, pady=12)
+        win_id = canvas.create_window((0, 0), window=content, anchor="nw")
+
+        content.bind("<Configure>",
+                     lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>",
+                    lambda e: canvas.itemconfigure(win_id, width=e.width))
+
+        # Wheel bound only while the pointer is over this form, so the
+        # launcher behind it keeps its own scrolling.
+        def _on_wheel(event):
+            canvas.yview_scroll(int(-event.delta / 120), "units")
+        canvas.bind("<Enter>",
+                    lambda _e: canvas.bind_all("<MouseWheel>", _on_wheel))
+        canvas.bind("<Leave>", lambda _e: canvas.unbind_all("<MouseWheel>"))
+        return content
 
     def _build_assembly_card(self, parent) -> None:
         body = _card(parent, "GENERAL ASSEMBLY")
@@ -217,64 +252,81 @@ class HandoffGUI:
         tk.Label(body, textvariable=self.part_detail_var, bg=WHITE, fg=DARK_GRAY,
                  font=("Arial", 9), anchor="w").pack(fill="x", pady=(6, 0))
 
+    def _field_grid(self, body) -> tk.Frame:
+        """A three-column grid: label, input, optional marker.
+
+        Grid rather than one packed Frame per row. Packing sized the label
+        with `width=34` characters, which silently truncated "Wet Part
+        Thickness [mm] – Or Transfer GAPS" mid-word, and left rows without a
+        target checkbox ending further right than rows with one. A grid sizes
+        column 0 to the widest label on its own and lands every input on the
+        same left and right edge.
+        """
+        grid = tk.Frame(body, bg=WHITE)
+        grid.pack(fill="x")
+        grid.columnconfigure(1, weight=1)   # the input column takes the slack
+        return grid
+
+    def _field_label(self, grid, row: int, text: str) -> None:
+        tk.Label(grid, text=text, bg=WHITE, fg=DARK_BLUE,
+                 font=("Arial", 9, "bold"), anchor="w").grid(
+            row=row, column=0, sticky="w", padx=(0, 14), pady=3)
+
     def _build_machine_card(self, parent) -> None:
         body = _card(parent, "1. MACHINE AND PROCESS DETAILS")
-        for name, label in engine.MACHINE_FIELDS:
-            row = tk.Frame(body, bg=WHITE)
-            row.pack(fill="x", pady=2)
-            tk.Label(row, text=label, bg=WHITE, fg=DARK_BLUE, width=34,
-                     font=("Arial", 9, "bold"), anchor="w").pack(side="left")
+        grid = self._field_grid(body)
+        for index, (name, label) in enumerate(engine.MACHINE_FIELDS):
+            self._field_label(grid, index, label)
             var = tk.StringVar()
             self.vars[name] = var
             if name == "machine":
-                widget = ttk.Combobox(row, textvariable=var, state="normal",
+                widget = ttk.Combobox(grid, textvariable=var, state="normal",
                                       values=[m.name for m in self.machines])
                 widget.bind("<<ComboboxSelected>>",
                             lambda _e: self.on_machine_selected())
             else:
-                widget = tk.Entry(row, textvariable=var, font=("Arial", 10),
+                widget = tk.Entry(grid, textvariable=var, font=("Arial", 10),
                                   relief="flat", highlightthickness=1,
                                   highlightbackground=GRAY_BDR)
-            widget.pack(side="left", fill="x", expand=True, ipady=2)
+            widget.grid(row=index, column=1, sticky="ew", pady=3, ipady=2)
         tk.Label(body, textvariable=self.machine_warning_var, bg=WHITE,
                  fg=RUST_ORANGE, font=("Arial", 9, "bold"), anchor="w",
                  wraplength=780, justify="left").pack(fill="x", pady=(6, 0))
 
     def _build_production_card(self, parent) -> None:
         body = _card(parent, "2. PRODUCTION DETAILS")
+        grid = self._field_grid(body)
 
-        # Material and volume are pulled, not measured -- no target checkbox.
-        for name, label in (("material", engine.MATERIAL_LABEL),
-                            ("volume", engine.VOLUME_LABEL)):
-            row = tk.Frame(body, bg=WHITE)
-            row.pack(fill="x", pady=2)
-            tk.Label(row, text=label, bg=WHITE, fg=DARK_BLUE, width=34,
-                     font=("Arial", 9, "bold"), anchor="w").pack(side="left")
+        def add_row(index: int, name: str, label: str, *, markable: bool) -> None:
+            self._field_label(grid, index, label)
             var = tk.StringVar()
             self.vars[name] = var
-            tk.Entry(row, textvariable=var, font=("Arial", 10), relief="flat",
-                     highlightthickness=1, highlightbackground=GRAY_BDR).pack(
-                side="left", fill="x", expand=True, ipady=2)
-            tk.Label(row, text="  ", bg=WHITE, width=8).pack(side="left")
-
-        for name, label in engine.PRODUCTION_FIELDS:
-            row = tk.Frame(body, bg=WHITE)
-            row.pack(fill="x", pady=2)
-            tk.Label(row, text=label, bg=WHITE, fg=DARK_BLUE, width=34,
-                     font=("Arial", 9, "bold"), anchor="w").pack(side="left")
-            var = tk.StringVar()
-            self.vars[name] = var
-            entry = tk.Entry(row, textvariable=var, font=("Arial", 10),
+            entry = tk.Entry(grid, textvariable=var, font=("Arial", 10),
                              relief="flat", highlightthickness=1,
                              highlightbackground=GRAY_BDR)
-            entry.pack(side="left", fill="x", expand=True, ipady=2)
+            entry.grid(row=index, column=1, sticky="ew", pady=3, ipady=2)
             self.entries[name] = entry
+            if not markable:
+                return
             target = tk.BooleanVar(value=False)
             self.target_vars[name] = target
-            tk.Checkbutton(row, text="target", variable=target, bg=WHITE,
+            tk.Checkbutton(grid, text="target", variable=target, bg=WHITE,
                            fg=DARK_GRAY, activebackground=WHITE,
-                           selectcolor=PALE_BLUE, font=("Arial", 8)).pack(
-                side="left", padx=(6, 0))
+                           activeforeground=DARK_GRAY, selectcolor=PALE_BLUE,
+                           font=("Arial", 8)).grid(
+                row=index, column=2, sticky="w", padx=(10, 0))
+
+        index = 0
+        # Material and volume are pulled, not measured -- no target checkbox.
+        # They still sit in the same grid, so their inputs line up with the
+        # rest instead of running wider by the width of a missing checkbox.
+        for name, label in (("material", engine.MATERIAL_LABEL),
+                            ("volume", engine.VOLUME_LABEL)):
+            add_row(index, name, label, markable=False)
+            index += 1
+        for name, label in engine.PRODUCTION_FIELDS:
+            add_row(index, name, label, markable=True)
+            index += 1
 
         tk.Label(body, textvariable=self.inventor_note_var, bg=WHITE,
                  fg=DARK_GRAY, font=("Arial", 8, "italic"), anchor="w",
@@ -356,8 +408,13 @@ class HandoffGUI:
         if machine is None:
             self.machine_warning_var.set("")
             return
-        self.vars["vacuum_pressure"].set(machine.vacuum_pressure)
-        self.vars["press_pressure"].set(machine.press_pressure)
+        # Only fill what the profile actually knows. A press whose pressures
+        # have not been recorded in machines.json yet would otherwise wipe
+        # values already typed by hand, just by being selected.
+        if machine.vacuum_pressure:
+            self.vars["vacuum_pressure"].set(machine.vacuum_pressure)
+        if machine.press_pressure:
+            self.vars["press_pressure"].set(machine.press_pressure)
         if machine.characterized:
             self.machine_warning_var.set("")
         else:
