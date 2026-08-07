@@ -220,15 +220,16 @@ def missing_fields(data: HandoffData) -> list[str]:
 
 @dataclass(frozen=True)
 class Machine:
-    """One characterized press.
+    """One press the mold can run on.
 
-    Pressures are strings, not numbers: the document's own unit is "bar or
-    barg", so the value carries its unit rather than the code assuming one.
+    Deliberately just a name and a characterization flag. The library does
+    NOT carry vacuum pressure or pressing force: those are set per run, not
+    per press, so there is no value to remember against a machine. It exists
+    to keep the machine named the same way on every document, and to flag a
+    press that has not been characterized yet.
     """
 
     name: str
-    vacuum_pressure: str = ""
-    press_force: str = ""
     characterized: bool = True
 
 
@@ -251,11 +252,11 @@ def _read_characterized(raw: Any) -> bool:
 
 
 def load_machines(path: Path | str = MACHINES_PATH) -> list[Machine]:
-    """Every machine profile in ``machines.json``, or [] if it cannot be read.
+    """Every press in ``machines.json``, or [] if it cannot be read.
 
     Never raises. A missing or malformed library must not stop a handoff
-    being written -- the form degrades the machine fields to free text and
-    says so in the status bar.
+    being written -- the machine box degrades to free text and the form says
+    so in the status bar.
     """
     try:
         with open(path, encoding="utf-8") as fh:
@@ -276,8 +277,6 @@ def load_machines(path: Path | str = MACHINES_PATH) -> list[Machine]:
             continue
         machines.append(Machine(
             name=name,
-            vacuum_pressure=str(row.get("vacuum_pressure") or "").strip(),
-            press_force=str(row.get("press_force") or "").strip(),
             characterized=_read_characterized(row.get("characterized")),
         ))
     return machines

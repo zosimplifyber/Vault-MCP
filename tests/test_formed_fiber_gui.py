@@ -191,21 +191,27 @@ def test_collect_builds_handoff_data_with_target_markers():
         root.destroy()
 
 
-def test_picking_a_machine_fills_both_pressures(tmp_path):
+def test_picking_a_machine_leaves_the_run_values_alone(tmp_path):
+    """The press is not a source of pressures -- they are set per run.
+
+    Selecting a machine must not write to either field, or it would wipe
+    what the operator just typed.
+    """
     import json
 
     library = tmp_path / "machines.json"
     library.write_text(json.dumps({"machines": [
-        {"name": "Beckwood 150T", "vacuum_pressure": "-0.9 barg",
-         "press_force": "1200000 N", "characterized": True},
+        {"name": "KFT 90", "characterized": True},
     ]}), encoding="utf-8")
 
     root, gui = _make_gui(machines_path=library)
     try:
-        gui.vars["machine"].set("Beckwood 150T")
+        gui.vars["vacuum_pressure"].set("-0.85 barg")
+        gui.vars["press_force"].set("950000 N")
+        gui.vars["machine"].set("KFT 90")
         gui.on_machine_selected()
-        assert gui.vars["vacuum_pressure"].get() == "-0.9 barg"
-        assert gui.vars["press_force"].get() == "1200000 N"
+        assert gui.vars["vacuum_pressure"].get() == "-0.85 barg"
+        assert gui.vars["press_force"].get() == "950000 N"
         assert gui.machine_warning_var.get() == ""
     finally:
         root.destroy()
@@ -283,32 +289,6 @@ def test_the_bom_table_shows_the_file_description():
         assert "forming tool" in row
         # Sits beside the file name, which is how the table is read.
         assert row.index("forming tool") == 1
-    finally:
-        root.destroy()
-
-
-def test_a_machine_with_no_recorded_pressures_does_not_wipe_typed_ones(tmp_path):
-    """Selecting a press must not clear values already entered by hand.
-
-    KFT 90 and Lab Former ship without recorded pressures, so a blind
-    overwrite would erase what the user had just typed simply by picking
-    the machine.
-    """
-    import json
-
-    library = tmp_path / "machines.json"
-    library.write_text(json.dumps({"machines": [
-        {"name": "KFT 90", "vacuum_pressure": "", "press_force": ""},
-    ]}), encoding="utf-8")
-
-    root, gui = _make_gui(machines_path=library)
-    try:
-        gui.vars["vacuum_pressure"].set("-0.85 barg")
-        gui.vars["press_force"].set("950000 N")
-        gui.vars["machine"].set("KFT 90")
-        gui.on_machine_selected()
-        assert gui.vars["vacuum_pressure"].get() == "-0.85 barg"
-        assert gui.vars["press_force"].get() == "950000 N"
     finally:
         root.destroy()
 

@@ -164,18 +164,29 @@ def _write_machines(tmp_path, payload):
     return path
 
 
-def test_load_machines_reads_every_profile(tmp_path):
+def test_load_machines_reads_every_press(tmp_path):
     path = _write_machines(tmp_path, {"machines": [
-        {"name": "Beckwood 150T", "vacuum_pressure": "-0.9 barg",
-         "press_force": "1200000 N", "characterized": True},
-        {"name": "Wabash 50T", "vacuum_pressure": "-0.8 barg",
-         "press_force": "600000 N", "characterized": False},
+        {"name": "Beckwood 150T", "characterized": True},
+        {"name": "Wabash 50T", "characterized": False},
     ]})
     machines = engine.load_machines(path)
     assert [m.name for m in machines] == ["Beckwood 150T", "Wabash 50T"]
-    assert machines[0].vacuum_pressure == "-0.9 barg"
-    assert machines[0].press_force == "1200000 N"
     assert machines[1].characterized is False
+
+
+def test_the_library_carries_no_pressure_values(tmp_path):
+    """Vacuum pressure and pressing force are per run, not per press.
+
+    Pressure keys in machines.json must be ignored, not quietly adopted --
+    a machine-level default would overwrite what the operator just typed.
+    """
+    path = _write_machines(tmp_path, {"machines": [
+        {"name": "KFT 90", "vacuum_pressure": "-0.9 barg",
+         "press_force": "1200000 N"},
+    ]})
+    machine = engine.load_machines(path)[0]
+    assert not hasattr(machine, "vacuum_pressure")
+    assert not hasattr(machine, "press_force")
 
 
 def test_load_machines_never_raises(tmp_path):
@@ -233,9 +244,9 @@ def test_shipped_machines_json_is_loadable():
 
 
 def test_find_machine_matches_on_exact_name():
-    machines = [engine.Machine(name="Beckwood 150T", press_force="1200000 N"),
+    machines = [engine.Machine(name="Beckwood 150T", characterized=False),
                 engine.Machine(name="Wabash 50T")]
-    assert engine.find_machine(machines, "Beckwood 150T").press_force == "1200000 N"
+    assert engine.find_machine(machines, "Beckwood 150T").characterized is False
     assert engine.find_machine(machines, "  Beckwood 150T  ") is not None
     assert engine.find_machine(machines, "Nonexistent") is None
     assert engine.find_machine([], "Beckwood 150T") is None

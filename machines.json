@@ -1,20 +1,8 @@
 {
-  "_comment": "Characterized presses for the Formed Fiber design-to-process handoff tool. Picking a machine in the tool fills Vacuum Pressure and Hot Press Pressing Force from its entry here, so the two values that belong to the press rather than the part are never retyped. Reloaded on every run -- edits take effect without restarting the tool.\n\nNote 'press_force' is a FORCE in newtons, not a pressure. The original paper form asked for a pressing pressure in bar; the presses are set and reported in newtons, so the field follows the machine. Do not put bar in it -- nothing converts between the two without a platen area.\n\nBoth values are STRINGS, not numbers, and carry their own unit, so '-0.9 barg' and '1200000 N' print exactly as written.\n\n'characterized': false means the press has not been characterized yet. The tool still generates the handoff, but shows a warning, because the document states that an uncharacterized machine must be characterized before the first production run. Absent means true.\n\nA machine with no 'name' is skipped -- it could not be picked from the dropdown.",
+  "_comment": "Presses the formed fiber mold can run on. Drives the 'Machine – Brand and Model' dropdown in the design-to-process handoff tool. Reloaded on every run -- edits take effect without restarting the tool.\n\nThis library holds NAMES ONLY, plus a characterization flag. It deliberately does not carry vacuum pressure or pressing force: those are set per run, not per press, so there is no value to remember against a machine. They are typed on the form every time. Do not re-add pressure keys here -- they would be read as machine constants and overwrite what was just entered.\n\nWhat it is for: keeping the press named identically on every document (no 'KFT90' / 'KFT 90' / 'KFT-90' drift), and flagging a press that has not been characterized yet.\n\n'characterized': false means the press has not been characterized. The tool still generates the handoff, but shows a warning, because the document states that an uncharacterized machine must be characterized before the first production run. Absent means true. A quoted \"false\" also counts as false -- bool(\"false\") is True in Python, and a safety warning must not vanish because of a pair of quotes.\n\nA machine with no 'name' is skipped -- it could not be picked from the dropdown.",
 
   "machines": [
-    {
-      "name": "KFT 90",
-      "vacuum_pressure": "",
-      "press_force": "",
-      "characterized": true,
-      "notes": "Pressures not filled in yet -- add them here and every handoff for this press picks them up. Until then the two fields stay blank and get typed by hand."
-    },
-    {
-      "name": "Lab Former",
-      "vacuum_pressure": "",
-      "press_force": "",
-      "characterized": true,
-      "notes": "Pressures not filled in yet -- add them here and every handoff for this press picks them up. Until then the two fields stay blank and get typed by hand."
-    }
+    { "name": "KFT 90", "characterized": true },
+    { "name": "Lab Former", "characterized": true }
   ]
 }

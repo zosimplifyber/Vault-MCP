@@ -2,9 +2,14 @@
 GUI: build the Formed Fiber design-to-process handoff document.
 
 Pick the general assembly from Vault, click the final pressed part in its CAD
-BOM, choose the press, and type the four values nobody can look up. Material
-and the filenames come from Vault; mass and volume come from the Inventor
-model; both pressures come from the machine library.
+BOM, choose the press, and type the values nobody can look up. Material and
+the filenames come from Vault; mass and volume come from the Inventor model,
+and the wet and standard dry weights derive from the mass.
+
+The machine library supplies names only. Vacuum pressure and pressing force
+are set per run rather than per press, so they are typed every time -- there
+is no machine-level value to recall, and a default would only overwrite what
+was just entered.
 
 Vault and Inventor work runs on a worker thread so the window stays
 responsive, and results come back through a queue drained on the Tk thread.
@@ -376,25 +381,21 @@ class HandoffGUI:
             self._derived_tracking[name] = False
 
     def on_machine_selected(self) -> None:
-        """Fill both pressures from the picked profile."""
+        """Warn if the picked press has not been characterized.
+
+        It deliberately does NOT touch the vacuum pressure or pressing force
+        fields. Those are set per run, not per press, so there is nothing to
+        recall against a machine and writing to them would only overwrite
+        what was just typed.
+        """
         machine = engine.find_machine(self.machines, self.vars["machine"].get())
-        if machine is None:
+        if machine is None or machine.characterized:
             self.machine_warning_var.set("")
             return
-        # Only fill what the profile actually knows. A press whose pressures
-        # have not been recorded in machines.json yet would otherwise wipe
-        # values already typed by hand, just by being selected.
-        if machine.vacuum_pressure:
-            self.vars["vacuum_pressure"].set(machine.vacuum_pressure)
-        if machine.press_force:
-            self.vars["press_force"].set(machine.press_force)
-        if machine.characterized:
-            self.machine_warning_var.set("")
-        else:
-            self.machine_warning_var.set(
-                f"{machine.name} is not characterized. The document requires a "
-                "machine to be characterized before the first production run."
-            )
+        self.machine_warning_var.set(
+            f"{machine.name} is not characterized. The document requires a "
+            "machine to be characterized before the first production run."
+        )
 
     # ----- Vault + Inventor ---------------------------------------------------
 
