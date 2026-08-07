@@ -26,7 +26,7 @@ from check_file_properties import fetch_cad_children, fetch_file  # noqa: E402
 
 
 def _summarise(properties: dict[str, Any]) -> dict[str, str]:
-    """The six fields the handoff cares about, as plain strings."""
+    """The fields the handoff cares about, as plain strings."""
     def text(key: str) -> str:
         return str(properties.get(key) or "").strip()
 
@@ -35,6 +35,11 @@ def _summarise(properties: dict[str, Any]) -> dict[str, str]:
         "revision": text("Revision"),
         "state": text("State"),
         "material": text("Material"),
+        # "Description (File)", not "Description" -- that is the display name
+        # Vault gives property definition 49, and the flattened properties are
+        # keyed by display name. It is also what file_property_rules.json
+        # calls it, so the two stay greppable together.
+        "description": text("Description (File)"),
         "folder_path": text("Folder Path"),
         "category": text("Category Name"),
     }

@@ -67,11 +67,15 @@ class HandoffGUI:
     modules carry explicit "do not merge them" notes.
     """
 
+    # Description sits next to the file name because together they are what
+    # you actually scan to find the pressed part -- CD-001488.iam alone does
+    # not tell you which child it is.
     BOM_COLUMNS = [
-        ("file_name", "File Name", 210),
-        ("revision", "Rev", 45),
-        ("state", "State", 110),
-        ("material", "Material", 190),
+        ("file_name", "File Name", 165),
+        ("description", "Description", 245),
+        ("revision", "Rev", 40),
+        ("state", "State", 95),
+        ("material", "Material", 160),
     ]
 
     def __init__(

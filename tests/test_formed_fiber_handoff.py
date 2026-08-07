@@ -332,11 +332,24 @@ import formed_fiber_vault as vault_lookup  # noqa: E402
 def _props(**overrides):
     base = {
         "File Name": "CD-001659.iam", "Revision": "3", "State": "Released",
-        "Material": "", "Folder Path": "$/DESIGNS/Mold 12",
+        "Material": "", "Description (File)": "mold assembly",
+        "Folder Path": "$/DESIGNS/Mold 12",
         "Category Name": "Assembly - Engineering",
     }
     base.update(overrides)
     return base
+
+
+def test_summarise_reads_the_file_description_under_its_display_name():
+    """Vault calls it "Description (File)", not "Description".
+
+    The bare "Description" key is what the property's systemName is; the
+    flattened properties are keyed by DISPLAY name, so reading the wrong one
+    yields a silently blank column rather than an error.
+    """
+    row = vault_lookup._summarise(_props(**{"Description (File)": "forming tool"}))
+    assert row["description"] == "forming tool"
+    assert vault_lookup._summarise({"Description": "wrong key"})["description"] == ""
 
 
 async def test_load_assembly_summarises_the_assembly_and_its_children(monkeypatch):
@@ -347,7 +360,9 @@ async def test_load_assembly_summarises_the_assembly_and_its_children(monkeypatc
         assert version_id == "v-1"
         return [{"properties": _props(
             **{"File Name": "CD-001660.ipt", "Revision": "2",
-               "Material": "Cellulose Fibre", "Folder Path": "$/DESIGNS/Parts",
+               "Material": "Cellulose Fibre",
+               "Description (File)": "pressed part",
+               "Folder Path": "$/DESIGNS/Parts",
                "Category Name": "Part - Engineering"})}]
 
     monkeypatch.setattr(vault_lookup, "fetch_file", fake_fetch_file)
@@ -362,6 +377,7 @@ async def test_load_assembly_summarises_the_assembly_and_its_children(monkeypatc
     child = result["children"][0]
     assert child["file_name"] == "CD-001660.ipt"
     assert child["material"] == "Cellulose Fibre"
+    assert child["description"] == "pressed part"
     assert child["folder_path"] == "$/DESIGNS/Parts"
 
 

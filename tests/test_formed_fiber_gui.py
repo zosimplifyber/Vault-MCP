@@ -268,3 +268,32 @@ def test_generate_writes_a_pdf(tmp_path, monkeypatch):
         assert written.is_file()
     finally:
         root.destroy()
+
+
+def test_the_bom_table_shows_the_file_description():
+    """The description is what tells you which child is the pressed part.
+
+    Asserts the rendered row, not just the column definition: the tree is
+    populated by looking each column's key up on the child dict, so a key
+    that does not match what formed_fiber_vault produces yields a silently
+    blank column rather than an error.
+    """
+    root, gui = _make_gui()
+    try:
+        gui.assembly = {"file_name": "CD-001478.iam", "revision": "2",
+                        "state": "Released", "folder_path": "$/DESIGNS"}
+        gui.children = [{
+            "file_name": "CD-001488.iam", "revision": "2", "state": "Released",
+            "material": "Aluminum 6061", "description": "forming tool",
+            "folder_path": "$/DESIGNS", "category": "Assembly - Engineering",
+        }]
+        gui._populate_bom("")
+        root.update_idletasks()
+
+        assert "description" in [key for key, *_ in gui.BOM_COLUMNS]
+        row = gui.bom_tree.item(gui.bom_tree.get_children()[0])["values"]
+        assert "forming tool" in row
+        # Sits beside the file name, which is how the table is read.
+        assert row.index("forming tool") == 1
+    finally:
+        root.destroy()
