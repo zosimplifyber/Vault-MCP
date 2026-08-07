@@ -112,7 +112,7 @@ def test_machine_and_file_labels_are_pinned():
     assert [label for label, _ in engine.machine_rows(data)] == [
         "Machine – Brand and Model",
         "Vacuum Pressure [bar or barg]",
-        "Hot Press Pressing Pressure [bar]",
+        "Hot Press Pressing Force [N]",
     ]
     assert [label for label, _ in engine.file_rows(data)] == [
         "General Assembly Filename",
@@ -151,14 +151,14 @@ def _write_machines(tmp_path, payload):
 def test_load_machines_reads_every_profile(tmp_path):
     path = _write_machines(tmp_path, {"machines": [
         {"name": "Beckwood 150T", "vacuum_pressure": "-0.9 barg",
-         "press_pressure": "120 bar", "characterized": True},
+         "press_force": "1200000 N", "characterized": True},
         {"name": "Wabash 50T", "vacuum_pressure": "-0.8 barg",
-         "press_pressure": "60 bar", "characterized": False},
+         "press_force": "600000 N", "characterized": False},
     ]})
     machines = engine.load_machines(path)
     assert [m.name for m in machines] == ["Beckwood 150T", "Wabash 50T"]
     assert machines[0].vacuum_pressure == "-0.9 barg"
-    assert machines[0].press_pressure == "120 bar"
+    assert machines[0].press_force == "1200000 N"
     assert machines[1].characterized is False
 
 
@@ -217,9 +217,9 @@ def test_shipped_machines_json_is_loadable():
 
 
 def test_find_machine_matches_on_exact_name():
-    machines = [engine.Machine(name="Beckwood 150T", press_pressure="120 bar"),
+    machines = [engine.Machine(name="Beckwood 150T", press_force="1200000 N"),
                 engine.Machine(name="Wabash 50T")]
-    assert engine.find_machine(machines, "Beckwood 150T").press_pressure == "120 bar"
+    assert engine.find_machine(machines, "Beckwood 150T").press_force == "1200000 N"
     assert engine.find_machine(machines, "  Beckwood 150T  ") is not None
     assert engine.find_machine(machines, "Nonexistent") is None
     assert engine.find_machine([], "Beckwood 150T") is None
@@ -420,7 +420,7 @@ def _filled_handoff():
     return engine.HandoffData(
         machine="Beckwood 150T",
         vacuum_pressure="-0.9 barg",
-        press_pressure="120 bar",
+        press_force="1200000 N",
         material="Cellulose Fibre",
         volume="512.50",
         dry_thickness=engine.Value("2.4", True),
@@ -463,7 +463,7 @@ def test_rendered_pdf_carries_every_entered_value(tmp_path):
     out = tmp_path / "h.pdf"
     render_handoff_pdf(_filled_handoff(), out)
     text = _pdf_text(out)
-    for expected in ("Beckwood 150T", "-0.9 barg", "120 bar", "Cellulose Fibre",
+    for expected in ("Beckwood 150T", "-0.9 barg", "1200000 N", "Cellulose Fibre",
                      "512.50", "6.1", "410.0", "105.26", "110.80",
                      "CD-001659.iam", "CD-001660.ipt"):
         assert expected in text, f"{expected!r} missing from the PDF"

@@ -413,8 +413,8 @@ class HandoffGUI:
         # values already typed by hand, just by being selected.
         if machine.vacuum_pressure:
             self.vars["vacuum_pressure"].set(machine.vacuum_pressure)
-        if machine.press_pressure:
-            self.vars["press_pressure"].set(machine.press_pressure)
+        if machine.press_force:
+            self.vars["press_force"].set(machine.press_force)
         if machine.characterized:
             self.machine_warning_var.set("")
         else:
@@ -591,7 +591,7 @@ class HandoffGUI:
         return engine.HandoffData(
             machine=self.vars["machine"].get().strip(),
             vacuum_pressure=self.vars["vacuum_pressure"].get().strip(),
-            press_pressure=self.vars["press_pressure"].get().strip(),
+            press_force=self.vars["press_force"].get().strip(),
             machine_characterized=(machine.characterized if machine else True),
             material=self.vars["material"].get().strip(),
             volume=self.vars["volume"].get().strip(),

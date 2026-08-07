@@ -209,7 +209,7 @@ def test_picking_a_machine_fills_both_pressures(tmp_path):
     library = tmp_path / "machines.json"
     library.write_text(json.dumps({"machines": [
         {"name": "Beckwood 150T", "vacuum_pressure": "-0.9 barg",
-         "press_pressure": "120 bar", "characterized": True},
+         "press_force": "1200000 N", "characterized": True},
     ]}), encoding="utf-8")
 
     root, gui = _make_gui(machines_path=library)
@@ -217,7 +217,7 @@ def test_picking_a_machine_fills_both_pressures(tmp_path):
         gui.vars["machine"].set("Beckwood 150T")
         gui.on_machine_selected()
         assert gui.vars["vacuum_pressure"].get() == "-0.9 barg"
-        assert gui.vars["press_pressure"].get() == "120 bar"
+        assert gui.vars["press_force"].get() == "1200000 N"
         assert gui.machine_warning_var.get() == ""
     finally:
         root.destroy()
@@ -310,17 +310,17 @@ def test_a_machine_with_no_recorded_pressures_does_not_wipe_typed_ones(tmp_path)
 
     library = tmp_path / "machines.json"
     library.write_text(json.dumps({"machines": [
-        {"name": "KFT 90", "vacuum_pressure": "", "press_pressure": ""},
+        {"name": "KFT 90", "vacuum_pressure": "", "press_force": ""},
     ]}), encoding="utf-8")
 
     root, gui = _make_gui(machines_path=library)
     try:
         gui.vars["vacuum_pressure"].set("-0.85 barg")
-        gui.vars["press_pressure"].set("95 bar")
+        gui.vars["press_force"].set("950000 N")
         gui.vars["machine"].set("KFT 90")
         gui.on_machine_selected()
         assert gui.vars["vacuum_pressure"].get() == "-0.85 barg"
-        assert gui.vars["press_pressure"].get() == "95 bar"
+        assert gui.vars["press_force"].get() == "950000 N"
     finally:
         root.destroy()
 

@@ -72,7 +72,7 @@ class HandoffData:
     # never a "target".
     machine: str = ""
     vacuum_pressure: str = ""
-    press_pressure: str = ""
+    press_force: str = ""
     machine_characterized: bool = True
 
     # Section 2 -- Production Details. Material and volume are plain strings
@@ -106,7 +106,11 @@ EM_DASH = "—"
 MACHINE_FIELDS: tuple[tuple[str, str], ...] = (
     ("machine", "Machine – Brand and Model"),
     ("vacuum_pressure", "Vacuum Pressure [bar or barg]"),
-    ("press_pressure", "Hot Press Pressing Pressure [bar]"),
+    # Force, not pressure. The paper form said "Pressing Pressure [bar]", but
+    # the press is set and reported in newtons. Note the field name changed
+    # with it -- a variable called press_pressure holding newtons is the kind
+    # of name that misleads a reader into converting something.
+    ("press_force", "Hot Press Pressing Force [N]"),
 )
 
 MATERIAL_LABEL = "Final Pressed Part Material"
@@ -209,7 +213,7 @@ class Machine:
 
     name: str
     vacuum_pressure: str = ""
-    press_pressure: str = ""
+    press_force: str = ""
     characterized: bool = True
 
 
@@ -258,7 +262,7 @@ def load_machines(path: Path | str = MACHINES_PATH) -> list[Machine]:
         machines.append(Machine(
             name=name,
             vacuum_pressure=str(row.get("vacuum_pressure") or "").strip(),
-            press_pressure=str(row.get("press_pressure") or "").strip(),
+            press_force=str(row.get("press_force") or "").strip(),
             characterized=_read_characterized(row.get("characterized")),
         ))
     return machines
