@@ -35,6 +35,8 @@ from gui.release_workflow import (  # noqa: E402
     _pil_available, _resource_path,
 )
 
+from gui.widgets import card as _card  # noqa: E402
+
 from check_file_properties import (  # noqa: E402
     CONFIG_PATH, DEFAULT_RULES_PATH,
     check_file_name, child_status, default_export_path, export_to_excel,
@@ -45,17 +47,6 @@ PASS_GREEN = "#1F6B2E"   # legible on white, unlike the pale spreadsheet olive
 
 
 # --------------------------------------------------------------------------- ui bits
-
-def _card(parent, title: str, *, bg: str = WHITE, pady=(0, 10)):
-    """A bordered panel with the brand's dark-blue caption bar. Returns its body."""
-    card = tk.Frame(parent, bg=bg, highlightthickness=1, highlightbackground=GRAY_BDR)
-    card.pack(fill="x", padx=18, pady=pady)
-    tk.Label(card, text=f"  {title}", bg=DARK_BLUE, fg=WHITE,
-             font=("Arial", 10, "bold"), anchor="w", padx=10, pady=6).pack(fill="x")
-    tk.Frame(card, bg=MID_BLUE, height=2).pack(fill="x")
-    body = tk.Frame(card, bg=bg, padx=14, pady=10)
-    body.pack(fill="both", expand=True)
-    return body
 
 
 def _hint(parent, text: str) -> None:

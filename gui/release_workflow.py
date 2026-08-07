@@ -1140,6 +1140,15 @@ class FileSearchDialog:
     The threading shape — worker thread, ``queue.Queue``, drain on the Tk
     thread via ``parent.root.after`` — is copied from ``SearchDialog``
     deliberately: no Tk call may happen off the main thread.
+
+    The parent GUI must supply this duck-typed contract:
+
+        parent.root, parent.api, parent.vault_id, parent.top_file_var,
+        parent.set_top_file, parent._brand_button, parent._ensure_signed_in
+
+    There are two implementers now — ``ReleaseWorkflowGUI`` and
+    ``gui.formed_fiber_handoff.HandoffGUI`` — so the list lives here, at the
+    provider, rather than being re-derived by each caller.
     """
 
     COLUMNS = [

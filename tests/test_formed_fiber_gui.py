@@ -168,18 +168,6 @@ def test_a_stale_inventor_error_does_not_clobber_a_good_read():
         root.destroy()
 
 
-def test_target_flag_mirrors_bone_dry_weight_while_tracking():
-    """A value derived from a target is itself a target."""
-    root, gui = _make_gui()
-    try:
-        gui.vars["bone_dry_weight"].set("100")
-        gui.target_vars["bone_dry_weight"].set(True)
-        root.update_idletasks()
-        assert gui.target_vars["standard_dry_weight"].get() is True
-    finally:
-        root.destroy()
-
-
 def test_collect_builds_handoff_data_with_target_markers():
     import formed_fiber_handoff as engine
 
@@ -370,6 +358,7 @@ def test_overriding_one_derived_field_leaves_the_other_tracking():
 
 
 def test_both_derived_fields_mirror_the_bone_dry_target_flag():
+    """A value derived from a target is itself a target."""
     root, gui = _make_gui()
     try:
         gui.vars["bone_dry_weight"].set("100")

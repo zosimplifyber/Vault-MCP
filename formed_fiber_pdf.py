@@ -6,9 +6,12 @@ target markers applied, blanks turned into em dashes -- so nothing in here
 decides what a field says, only how it looks. Layout tweaks cannot change a
 number.
 
-Colours come from ``gui.theme``, which is the canonical palette. Note that
-``bom_purchasing.py`` keeps its own copy without the leading '#' because
-openpyxl demands that form; the two are kept in sync by hand.
+Colours come from the root-level ``branding`` module, NOT from ``gui.theme``.
+This is an engine-tier module -- it must not import the ``gui`` package, both
+because that runs the layering backwards and because it would close a cycle
+(``gui.formed_fiber_handoff`` imports this module). Note that
+``bom_purchasing.py`` keeps its own copy of the palette without the leading
+'#' because openpyxl demands that form; those two are kept in sync by hand.
 """
 from __future__ import annotations
 
@@ -27,8 +30,8 @@ from reportlab.platypus import (
 from formed_fiber_handoff import (
     HandoffData, file_rows, machine_rows, production_rows,
 )
-from gui.theme import (
-    DARK_BLUE, GRAY_BDR, DARK_GRAY, PALE_BLUE, PROJECT_ROOT,
+from branding import (
+    DARK_BLUE, GRAY_BDR, DARK_GRAY, PALE_BLUE, resource_path,
 )
 
 BRAND_BLUE = colors.HexColor(DARK_BLUE)
@@ -79,7 +82,7 @@ CONFIDENTIALITY = (
 
 def _logo_path() -> Path:
     """Where the brand logo lives. A function so tests can point it away."""
-    return PROJECT_ROOT / "Simplifyber_Logo.png"
+    return Path(resource_path("Simplifyber_Logo.png"))
 
 
 # ----------------------------------------------------------------- styles
@@ -171,7 +174,7 @@ def _parameter_table(rows: list[tuple[str, str]]) -> Table:
     return table
 
 
-def _page_furniture(canvas, doc, data: HandoffData) -> None:
+def _page_furniture(canvas, data: HandoffData) -> None:
     """Header and footer -- page furniture, so drawn rather than flowed."""
     canvas.saveState()
     width, height = letter
@@ -295,7 +298,7 @@ def render_handoff_pdf(data: HandoffData, output_path: str | Path) -> Path:
         ]))
 
     def _on_page(canvas, doc_):
-        _page_furniture(canvas, doc_, data)
+        _page_furniture(canvas, data)
 
     doc.build(story, onFirstPage=_on_page, onLaterPages=_on_page,
               canvasmaker=_NumberedCanvas)

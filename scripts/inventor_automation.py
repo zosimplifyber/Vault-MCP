@@ -34,7 +34,11 @@ The release workflow calls from the CLI's main thread; the handoff GUI calls
 from a worker thread, where COM must be initialised explicitly.
 ``read_part_physical_properties`` therefore handles its own
 ``CoInitialize``/``CoUninitialize``. The older entry points do not, and are
-main-thread only.
+main-thread only. A future off-main-thread caller needs the same treatment --
+and note it is not a mechanical wrapper: ``get_inventor_app`` returns a live
+COM pointer that outlives its own call, so uninitializing the apartment
+around it would tear COM down while the caller still holds ``app``. See how
+``_read_mass_properties`` is split from its caller to get the ordering right.
 
 Requires `pywin32` (`pip install pywin32`) and a local Inventor install.
 The module is import-safe on machines without Inventor — every entry point

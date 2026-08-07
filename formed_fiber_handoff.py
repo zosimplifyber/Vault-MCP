@@ -84,7 +84,6 @@ class HandoffData:
     machine: str = ""
     vacuum_pressure: str = ""
     press_force: str = ""
-    machine_characterized: bool = True
 
     # Section 2 -- Production Details. Material and volume are plain strings
     # for the same reason: one names a material, the other is geometry read
@@ -169,28 +168,33 @@ def render_value(value: Value) -> str:
     return f"{text} (TARGET)" if value.is_target else text
 
 
+# Material and volume are pulled values, so they render like section 1 and 3
+# do -- plain text, no target marker.
+PULLED_FIELDS: tuple[tuple[str, str], ...] = (
+    ("material", MATERIAL_LABEL),
+    ("volume", VOLUME_LABEL),
+)
+
+
+def _rows(data: HandoffData, fields, renderer) -> list[tuple[str, str]]:
+    """``(label, rendered value)`` for each field, in the order given."""
+    return [(label, renderer(getattr(data, name))) for name, label in fields]
+
+
 def machine_rows(data: HandoffData) -> list[tuple[str, str]]:
     """Section 1 rows, in document order."""
-    return [(label, render_text(getattr(data, name)))
-            for name, label in MACHINE_FIELDS]
+    return _rows(data, MACHINE_FIELDS, render_text)
 
 
 def production_rows(data: HandoffData) -> list[tuple[str, str]]:
-    """Section 2 rows, in document order: material, volume, then the six
-    markable values."""
-    rows = [
-        (MATERIAL_LABEL, render_text(data.material)),
-        (VOLUME_LABEL, render_text(data.volume)),
-    ]
-    rows.extend((label, render_value(getattr(data, name)))
-                for name, label in PRODUCTION_FIELDS)
-    return rows
+    """Section 2 rows: the two pulled values, then the five markable ones."""
+    return (_rows(data, PULLED_FIELDS, render_text)
+            + _rows(data, PRODUCTION_FIELDS, render_value))
 
 
 def file_rows(data: HandoffData) -> list[tuple[str, str]]:
     """Section 3 rows, in document order."""
-    return [(label, render_text(getattr(data, name)))
-            for name, label in FILE_FIELDS]
+    return _rows(data, FILE_FIELDS, render_text)
 
 
 def missing_fields(data: HandoffData) -> list[str]:

@@ -44,10 +44,11 @@ def test_wet_weight_is_the_part_at_15_percent_moisture():
     assert engine.wet_weight("3660.11") == "4306.01"
 
 
-def test_both_weight_rules_reject_the_same_unusable_input():
+def test_wet_weight_rejects_unusable_input_too():
+    """Both rules share _weight_at_moisture, whose rejection logic the
+    standard-dry test above already covers thoroughly."""
     for bad in ("", "abc", "0", "-5", None, "nan", "inf"):
         assert engine.wet_weight(bad) == "", f"{bad!r} should give ''"
-        assert engine.standard_dry_weight(bad) == "", f"{bad!r} should give ''"
 
 
 def test_standard_dry_weight_accepts_decimals_and_whitespace():

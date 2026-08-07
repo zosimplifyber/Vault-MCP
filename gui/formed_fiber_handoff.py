@@ -18,7 +18,6 @@ from __future__ import annotations
 import asyncio
 import os
 import queue
-import subprocess
 import sys
 import threading
 import tkinter as tk
@@ -38,22 +37,14 @@ from gui.theme import (  # noqa: E402
     WHITE, RUST_ORANGE, WARN_AMBER,
 )
 
+from gui.widgets import (  # noqa: E402
+    build_scroll_area, card as _card, open_in_file_manager,
+)
+
 import formed_fiber_handoff as engine  # noqa: E402
 import formed_fiber_vault as vault_lookup  # noqa: E402
 from formed_fiber_pdf import render_handoff_pdf  # noqa: E402
 
-
-def _card(parent, title: str):
-    """A bordered panel with the brand's dark-blue caption bar. Returns body."""
-    card = tk.Frame(parent, bg=WHITE, highlightthickness=1,
-                    highlightbackground=GRAY_BDR)
-    card.pack(fill="x", padx=16, pady=(0, 10))
-    tk.Label(card, text=f"  {title}", bg=DARK_BLUE, fg=WHITE,
-             font=("Arial", 10, "bold"), anchor="w", padx=10, pady=6).pack(fill="x")
-    tk.Frame(card, bg=MID_BLUE, height=2).pack(fill="x")
-    body = tk.Frame(card, bg=WHITE, padx=12, pady=10)
-    body.pack(fill="both", expand=True)
-    return body
 
 
 class HandoffGUI:
@@ -113,7 +104,10 @@ class HandoffGUI:
         # detaches on its own -- overriding wet weight must not stop standard
         # dry weight tracking.
         self._derived_tracking = {name: True for name in self.DERIVED_FROM_BONE_DRY}
-        self._derived_updating: set[str] = set()
+        # Reentrancy guard for the derivation's own writes. A plain flag, not
+        # a set of field names: Tk traces fire inline on one thread, so a
+        # refresh is never partway through two fields at once.
+        self._deriving = False
 
         self.win = tk.Toplevel(parent) if parent is not None else tk.Tk()
         # FileSearchDialog reaches for parent.root, so expose the window there.
@@ -191,47 +185,13 @@ class HandoffGUI:
         tk.Label(bar, textvariable=self.status_var, bg=PALE_BLUE, fg=DARK_BLUE,
                  font=("Arial", 9), anchor="w", padx=12, pady=4).pack(fill="x")
 
-        body = self._build_scroll_area()
+        body = build_scroll_area(self.win, bg=LIGHT_GRAY, pady=12)
 
         self._build_assembly_card(body)
         self._build_bom_card(body)
         self._build_machine_card(body)
         self._build_production_card(body)
         self._build_output_card(body)
-
-    def _build_scroll_area(self) -> tk.Frame:
-        """Vertically-scrollable container for the cards. Returns the inner frame.
-
-        Without this the form clips: five cards do not fit 900px on a laptop,
-        and the bottom of Production Details -- Standard Dry Weight and
-        Dryness -- was simply cut off with nothing to indicate more existed.
-        Same canvas-plus-inner-frame idiom as gui/launcher.py's own.
-        """
-        outer = tk.Frame(self.win, bg=LIGHT_GRAY)
-        outer.pack(fill="both", expand=True)
-
-        canvas = tk.Canvas(outer, bg=LIGHT_GRAY, highlightthickness=0)
-        vsb = tk.Scrollbar(outer, orient="vertical", command=canvas.yview)
-        canvas.configure(yscrollcommand=vsb.set)
-        vsb.pack(side="right", fill="y")
-        canvas.pack(side="left", fill="both", expand=True)
-
-        content = tk.Frame(canvas, bg=LIGHT_GRAY, pady=12)
-        win_id = canvas.create_window((0, 0), window=content, anchor="nw")
-
-        content.bind("<Configure>",
-                     lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.bind("<Configure>",
-                    lambda e: canvas.itemconfigure(win_id, width=e.width))
-
-        # Wheel bound only while the pointer is over this form, so the
-        # launcher behind it keeps its own scrolling.
-        def _on_wheel(event):
-            canvas.yview_scroll(int(-event.delta / 120), "units")
-        canvas.bind("<Enter>",
-                    lambda _e: canvas.bind_all("<MouseWheel>", _on_wheel))
-        canvas.bind("<Leave>", lambda _e: canvas.unbind_all("<MouseWheel>"))
-        return content
 
     def _build_assembly_card(self, parent) -> None:
         body = _card(parent, "GENERAL ASSEMBLY")
@@ -395,24 +355,24 @@ class HandoffGUI:
         """
         bone_dry = self.vars["bone_dry_weight"].get()
         is_target = self.target_vars["bone_dry_weight"].get()
-        for name, rule in self.DERIVED_FROM_BONE_DRY.items():
-            if not self._derived_tracking.get(name, True):
-                continue
-            self._derived_updating.add(name)
-            try:
+        self._deriving = True
+        try:
+            for name, rule in self.DERIVED_FROM_BONE_DRY.items():
+                if not self._derived_tracking.get(name, True):
+                    continue
                 self.vars[name].set(rule(bone_dry))
                 self.target_vars[name].set(is_target)
-            finally:
-                self._derived_updating.discard(name)
+        finally:
+            self._deriving = False
 
     def on_derived_edited(self, name: str) -> None:
         """Changing a derived field's value detaches it for good.
 
-        Guarded by ``_derived_updating`` so the derivation's own write does
-        not count as a user edit -- without that, the first recompute would
-        immediately switch tracking off.
+        Guarded by ``_deriving`` so the derivation's own write does not count
+        as a user edit -- without that, the first recompute would immediately
+        switch tracking off.
         """
-        if name not in self._derived_updating:
+        if not self._deriving:
             self._derived_tracking[name] = False
 
     def on_machine_selected(self) -> None:
@@ -474,7 +434,14 @@ class HandoffGUI:
         index = self.bom_tree.index(selection[0])
         if index >= len(self.children):
             return
-        self.part = self.children[index]
+        picked = self.children[index]
+        # Tk re-fires <<TreeviewSelect>> when an already-selected row is
+        # clicked again, and re-reading would mean another multi-second
+        # Inventor open for numbers already in the fields -- and would stamp
+        # over any correction typed since.
+        if picked == self.part:
+            return
+        self.part = picked
         self.vars["material"].set(self.part.get("material", ""))
         self.part_detail_var.set(
             f"{self.part.get('file_name', '')} — Rev "
@@ -605,7 +572,6 @@ class HandoffGUI:
             machine=self.vars["machine"].get().strip(),
             vacuum_pressure=self.vars["vacuum_pressure"].get().strip(),
             press_force=self.vars["press_force"].get().strip(),
-            machine_characterized=(machine.characterized if machine else True),
             material=self.vars["material"].get().strip(),
             volume=self.vars["volume"].get().strip(),
             ga_filename=engine.format_file_reference(
@@ -657,16 +623,8 @@ class HandoffGUI:
                 "No folder", f"{directory or '(blank)'} is not a folder.",
                 parent=self.win)
             return
-        # Three-way on sys.platform, matching gui/launcher.py's _on_open_logs.
-        # Catching AttributeError from os.startfile and falling through to
-        # xdg-open sends macOS at a command it does not have.
         try:
-            if sys.platform == "win32":
-                os.startfile(directory)  # type: ignore[attr-defined]
-            elif sys.platform == "darwin":
-                subprocess.Popen(["open", directory])
-            else:
-                subprocess.Popen(["xdg-open", directory])
+            open_in_file_manager(directory)
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror(
                 "Could not open folder", str(exc), parent=self.win)
