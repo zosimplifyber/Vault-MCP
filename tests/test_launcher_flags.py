@@ -72,3 +72,12 @@ def test_property_check_is_no_longer_flagged_broken():
         assert str(btn["state"]) != "disabled"
     finally:
         root.destroy()
+
+
+def test_handoff_tool_is_on_the_dashboard():
+    root, gui = _make_gui()
+    try:
+        btn = gui.tool_buttons["Formed Fiber Handoff"]
+        assert str(btn["state"]) != "disabled"
+    finally:
+        root.destroy()

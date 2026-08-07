@@ -11,3 +11,4 @@ xlrd>=2.0.0              # Lets pandas read legacy .xls Vault BOM exports
 msal>=1.30.0            # Microsoft auth (device-code) for the purchasing Microsoft-List reference
 requests-pkcs12>=1.24   # McMaster OFFICIAL API — attaches the .pfx client cert (recommended path)
 playwright>=1.40.0      # McMaster browser fallback ONLY (opt-in via --allow-scrape; run `playwright install chromium`)
+pywin32>=306            # Inventor COM (mass/volume for the handoff tool, release-workflow rebuilds). Windows + Inventor only; scripts/inventor_automation.py degrades cleanly when it is absent.

@@ -51,6 +51,10 @@ build_purchasing_log.txt
 # for convenience. Never commit these.
 /Setup-NewPC*
 
+# Sample handoff PDFs generated while eyeballing the renderer's layout. The
+# real ones are written into the Vault workspace, never here.
+/sample-handoff.pdf
+
 # OS junk
 .DS_Store
 Thumbs.db

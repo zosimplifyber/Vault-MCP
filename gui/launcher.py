@@ -44,6 +44,7 @@ from gui.release_workflow import (  # noqa: E402
     WHITE, OLIVE_GREEN, RUST_ORANGE,
     _pil_available, _resource_path,
 )
+from gui.widgets import build_scroll_area, open_in_file_manager  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -296,42 +297,12 @@ class LauncherGUI:
     def _build_scroll_area(self) -> None:
         """Vertically-scrollable container for the panels.
 
-        A ``tk.Canvas`` holds an inner ``self.content`` frame; the panels parent
-        to that frame instead of the root. The header stays pinned at the top
-        and the status bar at the bottom — only the panels scroll."""
-        outer = tk.Frame(self.root, bg=LIGHT_GRAY)
-        outer.pack(fill="both", expand=True)
-
-        canvas = tk.Canvas(outer, bg=LIGHT_GRAY, highlightthickness=0)
-        vsb = tk.Scrollbar(outer, orient="vertical", command=canvas.yview)
-        canvas.configure(yscrollcommand=vsb.set)
-        vsb.pack(side="right", fill="y")
-        canvas.pack(side="left", fill="both", expand=True)
-
-        content = tk.Frame(canvas, bg=LIGHT_GRAY)
-        win_id = canvas.create_window((0, 0), window=content, anchor="nw")
-        self.content = content
-        self._scroll_canvas = canvas
-
-        def _on_content_configure(_event):
-            canvas.configure(scrollregion=canvas.bbox("all"))
-        content.bind("<Configure>", _on_content_configure)
-
-        def _on_canvas_configure(event):
-            # Match the inner frame to the canvas width, and when the window is
-            # taller than the panels, stretch it so the TOOLS card's white
-            # background fills the viewport instead of leaving a gap.
-            canvas.itemconfigure(win_id, width=event.width)
-            canvas.itemconfigure(
-                win_id, height=max(content.winfo_reqheight(), event.height))
-        canvas.bind("<Configure>", _on_canvas_configure)
-
-        # Mouse-wheel scrolling, bound only while the pointer is over the area
-        # so child tool windows keep their own wheel behavior.
-        def _on_wheel(event):
-            canvas.yview_scroll(int(-event.delta / 120), "units")
-        canvas.bind("<Enter>", lambda _e: canvas.bind_all("<MouseWheel>", _on_wheel))
-        canvas.bind("<Leave>", lambda _e: canvas.unbind_all("<MouseWheel>"))
+        The panels parent to ``self.content`` instead of the root, so the
+        header stays pinned at the top and the status bar at the bottom —
+        only the panels scroll. The widget itself is shared with the other
+        GUIs; see ``gui.widgets.build_scroll_area``."""
+        self.content = build_scroll_area(self.root, bg=LIGHT_GRAY)
+        self._scroll_canvas = self.content.scroll_canvas
 
     def _build_header(self) -> None:
         header = tk.Frame(self.root, bg=DARK_BLUE, height=72)
@@ -632,6 +603,16 @@ class LauncherGUI:
             "purchasing, manufacturing and shipping, chained and dated.",
             "Open Task Builder",
             self._on_open_wrike_mfg_tasks,
+            primary=False,
+        )
+        self._tool_row(
+            body,
+            "Formed Fiber Handoff",
+            "Build the design-to-process handoff document for a formed fiber "
+            "part. Pick the assembly and its pressed part; material, mass, "
+            "volume, filenames and press pressures fill themselves in.",
+            "Open Handoff",
+            self._on_open_formed_fiber_handoff,
             primary=False,
         )
         self._tool_row(
@@ -1058,16 +1039,27 @@ class LauncherGUI:
                         cfg=self.cfg, parent=self.root)
         self.status_var.set("Launching BOM → Manufacturing Tasks…")
 
+    def _on_open_formed_fiber_handoff(self) -> None:
+        # No Vault gate: the form works session-less, with every pulled field
+        # editable, so a handoff can still be written by hand.
+        try:
+            from gui.formed_fiber_handoff import launch_gui as launch_handoff
+        except ImportError as exc:
+            messagebox.showerror(
+                "Handoff tool unavailable", str(exc), parent=self.root,
+            )
+            return
+        launch_handoff(
+            api=self.api, vault_id=self.vault_id,
+            cfg=self.cfg, parent=self.root,
+        )
+        self.status_var.set("Launching Formed Fiber Handoff…")
+
     def _on_open_logs(self) -> None:
         log_dir = PROJECT_ROOT / "Log"
         log_dir.mkdir(parents=True, exist_ok=True)
         try:
-            if sys.platform == "win32":
-                os.startfile(str(log_dir))  # type: ignore[attr-defined]
-            elif sys.platform == "darwin":
-                subprocess.Popen(["open", str(log_dir)])
-            else:
-                subprocess.Popen(["xdg-open", str(log_dir)])
+            open_in_file_manager(log_dir)
             self.status_var.set(f"Opened {log_dir}")
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror(
@@ -1085,12 +1077,7 @@ class LauncherGUI:
             )
             return
         try:
-            if sys.platform == "win32":
-                os.startfile(str(rules_path))  # type: ignore[attr-defined]
-            elif sys.platform == "darwin":
-                subprocess.Popen(["open", str(rules_path)])
-            else:
-                subprocess.Popen(["xdg-open", str(rules_path)])
+            open_in_file_manager(rules_path)
             self.status_var.set(f"Opened {rules_path.name}")
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror(

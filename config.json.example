@@ -29,6 +29,9 @@
         },
         "column_map": {}
     },
+    "handoff": {
+        "workspace_root": "C:\\Vault Workspace"
+    },
     "server": {
         "host": "0.0.0.0",
         "port": 8765
