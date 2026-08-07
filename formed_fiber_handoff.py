@@ -85,7 +85,6 @@ class HandoffData:
     wet_weight: Value = Value()
     bone_dry_weight: Value = Value()
     standard_dry_weight: Value = Value()
-    dryness: Value = Value()
 
     # Section 3 -- File References. Pre-rendered "NAME.iam (Rev 3)".
     ga_filename: str = ""
@@ -121,14 +120,15 @@ VOLUME_LABEL = "Part Volume [cm³]"
 PRODUCTION_FIELDS: tuple[tuple[str, str], ...] = (
     ("dry_thickness", "Dry Part Thickness [mm]"),
     ("wet_thickness", "Wet Part Thickness [mm] – Or Transfer GAPS"),
-    ("wet_weight", "Wet Weight [g]"),
+    # Both weights carry their moisture content in the label. It is part of
+    # the definition, not a footnote -- a wet or standard dry weight means
+    # nothing without saying what moisture it is stated at. Keeping it in the
+    # label means it prints on the document and shows on the form from this
+    # one place. Dryness [%] used to be a separate row; it was removed because
+    # these two figures already say what it was there to say.
+    ("wet_weight", "Wet Weight [g] – at 15% moisture"),
     ("bone_dry_weight", "Bone Dry Weight [g]"),
-    # The moisture content is part of the definition, not a footnote: a
-    # standard dry weight is meaningless without saying what it is standard
-    # AT. Carrying it in the label means it prints on the document and shows
-    # on the form from this one place.
     ("standard_dry_weight", "Standard Dry Weight [g] – at 5% moisture"),
-    ("dryness", "Dryness [%]"),
 )
 
 FILE_FIELDS: tuple[tuple[str, str], ...] = (

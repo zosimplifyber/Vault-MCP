@@ -74,8 +74,8 @@ def test_target_values_are_marked_and_others_are_not():
     assert engine.render_value(engine.Value("2.4", False)) == "2.4"
 
 
-def test_production_section_prints_eight_rows_in_order():
-    """Material and the new Part Volume row lead, then the six measured
+def test_production_section_prints_seven_rows_in_order():
+    """Material and the new Part Volume row lead, then the five measured
     fields. Volume is not on the paper form -- it was added deliberately."""
     rows = engine.production_rows(engine.HandoffData())
     assert [label for label, _ in rows] == [
@@ -83,12 +83,11 @@ def test_production_section_prints_eight_rows_in_order():
         "Part Volume [cm³]",
         "Dry Part Thickness [mm]",
         "Wet Part Thickness [mm] – Or Transfer GAPS",
-        "Wet Weight [g]",
+        "Wet Weight [g] – at 15% moisture",
         "Bone Dry Weight [g]",
         # The moisture content is part of the definition -- a standard dry
         # weight means nothing without saying what it is standard AT.
         "Standard Dry Weight [g] – at 5% moisture",
-        "Dryness [%]",
     ]
 
 
@@ -132,9 +131,9 @@ def test_missing_fields_lists_every_blank_row_by_label():
     missing = engine.missing_fields(data)
     assert "Machine – Brand and Model" not in missing
     assert "Part Volume [cm³]" in missing
-    assert "Dryness [%]" in missing
-    # 3 machine + 8 production + 2 file = 13 rows, one of which is filled.
-    assert len(missing) == 12
+    assert "Wet Weight [g] – at 15% moisture" in missing
+    # 3 machine + 7 production + 2 file = 12 rows, one of which is filled.
+    assert len(missing) == 11
 
 
 # ------------------------------------------------------------ machine library
@@ -424,11 +423,11 @@ def _filled_handoff():
         material="Cellulose Fibre",
         volume="512.50",
         dry_thickness=engine.Value("2.4", True),
-        wet_thickness=engine.Value("6.1", False),
+        # Left blank on purpose -- the em-dash rendering tests need one.
+        wet_thickness=engine.Value("", False),
         wet_weight=engine.Value("410.0", False),
         bone_dry_weight=engine.Value("105.26", False),
         standard_dry_weight=engine.Value("110.80", False),
-        dryness=engine.Value("", False),          # left blank on purpose
         ga_filename="CD-001659.iam (Rev 3)",
         part_filename="CD-001660.ipt (Rev 2)",
     )
@@ -464,7 +463,7 @@ def test_rendered_pdf_carries_every_entered_value(tmp_path):
     render_handoff_pdf(_filled_handoff(), out)
     text = _pdf_text(out)
     for expected in ("Beckwood 150T", "-0.9 barg", "1200000 N", "Cellulose Fibre",
-                     "512.50", "6.1", "410.0", "105.26", "110.80",
+                     "512.50", "410.0", "105.26", "110.80",
                      "CD-001659.iam", "CD-001660.ipt"):
         assert expected in text, f"{expected!r} missing from the PDF"
 
@@ -475,7 +474,10 @@ def test_rendered_pdf_marks_targets_and_only_targets(tmp_path):
     render_handoff_pdf(_filled_handoff(), out)
     text = _pdf_text(out)
     assert "2.4 (TARGET)" in text          # dry thickness is a target
-    assert "6.1 (TARGET)" not in text      # wet thickness is not
+    # Wet weight is NOT a target. It has to be a value that actually renders,
+    # or this passes whether the marker logic works or not.
+    assert "410.0" in text
+    assert "410.0 (TARGET)" not in text
 
 
 def test_rendered_pdf_shows_the_new_volume_row(tmp_path):
