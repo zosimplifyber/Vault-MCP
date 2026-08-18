@@ -1,0 +1,41 @@
+material,sample_id,rep,process_step,weight_g,gsm,thickness_mm,density_kg_m3,tensile_n,tear_n,elongation_pct,peak_force_bending_n,flexural_modulus_mpa,max_flexural_strength_mpa,post_weight_g,post_gsm,post_thickness_mm,post_tensile_n,post_tear_n,post_flexural_modulus_mpa,post_peak_force_bending_n,post_max_flexural_strength_mpa,water_absorption_pct,thickness_change_pct,tensile_drop_pct,tear_drop_pct,flexural_modulus_drop_pct,source_sheet
+Fybron,SF-Fybron-Nylon-2-3,A,coated,0.75,500,0.93,537.63,232.17,44.13,,,,,,,,,,,,,,,,,,Testing_Fybron
+Fybron,SF-Fybron-PET-1-4,B,coated,0.8,533.33,0.91,586.08,194.17,33.45,,,,,,,,,,,,,,,,,,Testing_Fybron
+Fybron,SF_Fybron PET-1-2,A,internal coating,0.58,386.67,0.83,465.86,,25.09,,,,,1.31,873.33,0.94,,26.8,,,,125.9,13.3,,-6.8,,Testing_Fybron
+Fybron,SF_Fybron PET-1-2,B,internal coating,1.4,373.33,0.87,429.12,317.98,,,,,,3.3,880,0.95,130.18,,,,,135.7,9.2,59.1,,,Testing_Fybron
+Fybron,SF_Fybron Nylon-2-2,A,internal coating,0.53,353.33,0.73,484.02,,40.88,,,,,1.26,840,0.87,,21.26,,,,137.7,19.2,,48,,Testing_Fybron
+Fybron,SF_Fybron Nylon-2-2,B,internal coating,1.3,346.67,0.67,517.41,298.37,,,,,,2.9,773.33,0.79,116.21,,,,,123.1,17.9,61.1,,,Testing_Fybron
+Fybron,SF_Fybron PET-1-3,A,internal coating,0.61,406.67,0.94,432.62,,33.87,,,,,1.32,880,1.01,,13.93,,,,116.4,7.4,,58.9,,Testing_Fybron
+Fybron,SF_Fybron PET-1-3,B,internal coating,1.44,384,0.89,431.46,230.46,,,,,,3.38,901.33,1,132.88,,,,,134.7,12.4,42.3,,,Testing_Fybron
+Fybron,SF_Fybron Nylon-2-4,A,internal and spray,0.74,493.33,0.98,503.4,,46.73,,,,,1.69,,1.03,,23.57,,,,128.4,5.1,,49.6,,Testing_Fybron
+Fybron,SF_Fybron Nylon-2-4,B,internal and spray,1.91,509.33,0.93,547.67,235.11,,,,,,4.05,,1.09,120.87,,,,,112,17.2,48.6,,,Testing_Fybron
+Fybron,SF_Fybron Nylon 2% AKD,C,internal and spray,0.9,600,0.95,631.58,,59.36,,,,,1.61,,1.05,,32.47,,,,78.9,10.5,,45.3,,Testing_Fybron
+Fybron,100% PET,D,internal coating,0.53,353.33,0.65,543.59,,60.56,,,,,0.8,,0.67,,56.85,,,,50.9,3.1,,6.1,,Testing_Fybron
+Fybron,SF_Fybron_8.5_1.1,,finished,0.74,493.33,0.82,601.63,,33.73,,,,,1.36,906.67,0.98,,29.45,,,,83.8,19.5,,12.7,,Testing_Fybron
+Fybron,SF_Fybron_8.5_1.2,,finished,1.91,509.33,0.91,559.71,310.87,,,,,,3.77,1005.33,0.98,126.26,,,,,97.4,7.7,59.4,,,Testing_Fybron
+Fybron,SF_Fybron_8.5_2.1,,finished,0.93,620,0.95,652.63,,47,,,,,1.68,1120,1.11,,31.21,,,,80.6,16.8,,33.6,,Testing_Fybron
+Fybron,SF_Fybron_8.5_2.2,,finished,2.59,690.67,1.01,683.83,403.55,,,,,,4.21,1122.67,1.17,213.79,,,,,62.5,15.8,47,,,Testing_Fybron
+Fybron,90:10 Viscose_1.1,,finished,1,666.67,0.86,775.19,,63.82,,,,,1.31,873.33,0.91,,85.75,,,,31,5.8,,-34.4,,Testing_Fybron
+Fybron,90:10 Viscose_1.2,,finished,2.94,784,0.86,911.63,472.93,,,,,,3.66,976,0.94,478.56,,,,,24.5,9.3,-1.2,,,Testing_Fybron
+Fybron,90:10 Viscose_2.1,,finished,1.08,720,0.9,800,,69.5,,,,,1.35,900,0.91,,75.26,,,,25,1.1,,-8.3,,Testing_Fybron
+Fybron,90:10 Viscose_2.2,,finished,2.87,765.33,0.89,859.93,474.15,,,,,,3.45,920,0.9,469.74,,,,,20.2,1.1,0.9,,,Testing_Fybron
+Fyberite,SF_Fyberite_8.5_1.1,,finished,2.49,1660,2.44,680.33,,,,,,,3.49,,2.7,,,,,,40.2,10.7,,,,Testing_Fybron
+Fyberite,SF_Fyberite_8.5_1.2,,finished,5.18,1726.67,2.43,710.56,,,,,,,7.23,,2.62,1027.25,,,,,39.6,7.8,,,,Testing_Fybron
+Fyberite,SF_Fyberite_8.5_2,,finished,2.05,1366.67,2.11,647.71,1140.27,,,,,,,,,,,,,,,,,,,Testing_Fybron
+Fyberite,SF_Fyberite_8.5_3.1,,finished,2.69,1793.33,2.52,711.64,,,,,,,3.73,,2.78,,,,,,38.7,10.3,,,,Testing_Fybron
+Fyberite,SF_Fyberite_8.5_3.2,,finished,5.24,1746.67,2.51,695.88,,,,,,,7.17,,2.72,855.14,,,,,36.8,8.4,,,,Testing_Fybron
+Fyberite,SF_Fyberite_8.5_4,,finished,2.84,1893.33,2.64,717.17,1772.06,,,,,,,,,,,,,,,,,,,Testing_Fybron
+Fyberite,FiberiteV2-2-2,A,uncoated,0.92,1150,1.89,608.47,,,,20.2,,,,,,,,,,,,,,,,Testing_Fyberite
+Fyberite,FiberiteV2-2-2,B,uncoated,0.87,1223.63,1.94,630.74,,,,24.28,,,,,,,,,,,,,,,,Testing_Fyberite
+Fyberite,FiberiteV2-2-2,C,uncoated,0.6,1132.08,1.89,598.98,,,,22.39,,,,,,,,,,,,,,,,Testing_Fyberite
+Fyberite,FiberiteV2-2-2,D,uncoated,0.64,1097.77,1.99,551.64,,,,37.38,,,,,,,,,,,,,,,,Testing_Fyberite
+Fyberite,SF_Fyberite (MF CF)-1-2,A,internal coating,1.28,1600,2.87,557.49,,,,30.93,740.3,18.02,1.53,1912.5,3.1,,,166,7.66,3.83,19.5,8,,,77.6,Testing_Fyberite
+Fyberite,SF_Fyberite (MF CF)-1-2,B,internal coating,5.99,1597.33,2.64,605.05,1336.65,,,,,,7.39,1970.67,2.92,1048.82,,,,,23.4,10.6,21.5,,,Testing_Fyberite
+Fyberite,SF_Fyberite-1-5,A,internal coating,1.22,1525,2.36,646.19,,,,25.2,1243.89,21.72,1.48,1850,2.52,,,711.87,16.5,12.47,21.3,6.8,,,42.8,Testing_Fyberite
+Fyberite,SF_Fyberite-1-7,B,internal coating,1.41,1762.5,2.77,636.28,,,,33.66,1109.55,21.05,1.84,2300,3.03,,,430.57,18.5,9.67,30.5,9.4,,,61.2,Testing_Fyberite
+Fyberite,SF_Fyberite (MF CF+Starch)-2-4,A,internal coating,1.25,1562.5,2.8,558.04,,,,12.83,470.95,7.85,1.43,1787.5,2.97,,,161.39,7.62,4.15,14.4,6.1,,,65.7,Testing_Fyberite
+Fyberite,SF_Fyberite (MF CF+Starch)-2-4,B,internal coating,6.37,1698.67,2.92,581.74,1040.24,,,,,,7.24,1930.67,3.31,296.41,,,,,13.7,13.4,71.5,,,Testing_Fyberite
+Fyberite,SF_Fyberite (MF CF+Starch+SW)-3-4,A,internal coating,1.45,1812.5,2.8,647.32,,,,29.23,933.88,17.9,1.64,2050,3.13,,,287.76,12.49,6.12,13.1,11.8,,,69.2,Testing_Fyberite
+Fyberite,SF_Fyberite (MF CF+Starch+SW)-3-4,B,internal coating,6.42,1712,2.82,607.09,968.41,,,,,,7.25,1933.33,3.06,486.66,,,,,12.9,8.5,49.7,,,Testing_Fyberite
+Fyberite,SF_Fyberite-1-6-Vartega,A - H,internal coating,1.22,1525,2.09,729.67,,,,47.4,2287,45.4,1.46,1825,2.33,,,818.42,13.64,12.06,19.7,11.5,,,64.2,Testing_Fyberite
+Fyberite,SF_Fyberite-1-6-Vartega,B - V,internal coating,1.35,1687.5,2.08,811.3,,,,41.3,2323,47.2,1.58,1975,2.31,,,867.78,14.38,12.93,17,11.1,,,62.6,Testing_Fyberite
