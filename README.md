@@ -58,20 +58,18 @@ cp config.json.example config.json
 | `logging.level` | Log verbosity: `DEBUG`, `INFO`, `WARNING`, or `ERROR` |
 | `logging.file` | Path to the rotating log file (relative to project root) |
 
-### Wrike MCP server (optional second server)
+### Wrike configuration (used by BOM → Manufacturing Tasks)
 
-This project also bundles a **second, independent MCP server for [Wrike](https://www.wrike.com)** that runs on its own port alongside the Vault server. It exposes Wrike tasks, folders/projects, comments, timelogs, and metadata as `wrike_*` tools. It is managed from the same launcher dashboard (its own **WRIKE MCP SERVER** panel) and is independent of the Vault session — it runs even if Vault sign-in fails.
+The standalone Wrike MCP server (the `wrike_*` tools) has moved to its own repo, [SF-WrikeConnector](https://github.com/zosimplifyber/SF-WrikeConnector) — it's an independent service and no longer runs inside this project.
 
-To enable it, add a `wrike` block to `config.json`:
+This project still talks to Wrike directly for one feature, **BOM → Manufacturing Tasks** (see below), which needs its own `wrike` block in `config.json`:
 
 ```json
 {
     "wrike": {
         "token": "your-wrike-permanent-access-token-here",
         "base_url": "https://www.wrike.com/api/v4",
-        "host": "0.0.0.0",
-        "port": 8766,
-        "readonly": false
+        "allowed_folders": []
     }
 }
 ```
@@ -80,13 +78,10 @@ To enable it, add a `wrike` block to `config.json`:
 |---|---|
 | `wrike.token` | Wrike **permanent access token**. Create one at Wrike → **Apps & Integrations → API** → *Permanent access token* → **Create token**. |
 | `wrike.base_url` | API base URL. Default `https://www.wrike.com/api/v4` (US data center). EU-hosted accounts use `https://app-eu.wrike.com/api/v4`. |
-| `wrike.host` | Bind address for the Wrike SSE server (`0.0.0.0` = all interfaces). |
-| `wrike.port` | Port for the Wrike SSE server (default `8766` — distinct from the Vault server's `8765`). |
-| `wrike.readonly` | When `true`, the write tools (`wrike_create_task`, `wrike_update_task`, `wrike_move_task`, `wrike_create_comment`, `wrike_create_timelog`) refuse and make no API call. Read tools are unaffected. |
-| `wrike.allowed_folders` | Optional **folder allowlist** (list of folder IDs). When set, write tools refuse to edit a task located *exclusively outside* these folders and their subfolders — the safe zone. Empty `[]` (or absent) disables the guard. To permit a one-off out-of-zone edit, the user confirms and the tool is re-called with `allow_outside=true`. |
+| `wrike.allowed_folders` | Optional **folder allowlist** (list of folder IDs). When set, task creation refuses to write into a folder located *exclusively outside* these folders and their subfolders — the safe zone. Empty `[]` (or absent) disables the guard. |
 | `wrike.mfg_tasks` | Picks remembered by **BOM → Manufacturing Tasks** — last-used `project_id`, per-stage `owners` (contact IDs), and the three `_days` stage durations. Written back to `config.json` automatically each time you create tasks; there's nothing to hand-edit here. |
 
-If no `wrike` block (or token) is present, the launcher shows the Wrike panel as **Not configured** and only the Vault server runs — no error.
+If no `wrike` block (or token) is present, **BOM → Manufacturing Tasks** shows a warning when opened; everything else in this project runs normally.
 
 ## Running the Server
 
@@ -239,22 +234,17 @@ In `~/.claude.json` (user-level) or `.claude/settings.json` (project-level):
     "vault": {
       "type": "sse",
       "url": "http://127.0.0.1:8765/sse"
-    },
-    "wrike": {
-      "type": "sse",
-      "url": "http://127.0.0.1:8766/sse"
     }
   }
 }
 ```
 
-The `wrike` entry is the second, independent server — include it only if you've configured a `wrike` block in `config.json`. Both servers are served by the same running launcher.
+For the Wrike `wrike_*` tools, add the [SF-WrikeConnector](https://github.com/zosimplifyber/SF-WrikeConnector) server (its own independent process) instead.
 
 Or via CLI:
 
 ```bash
 claude mcp add --transport sse vault http://127.0.0.1:8765/sse
-claude mcp add --transport sse wrike http://127.0.0.1:8766/sse
 ```
 
 ### Claude Desktop
@@ -356,37 +346,7 @@ The single visible-to-the-user 401 entry above is harmless — the retry on the 
 | **Files / utilities** | |
 | `vault_watermark_pdfs_in_folder` | Download every PDF in a Vault folder, watermark it, save locally |
 
-## Available Wrike Tools
-
-Served by the second server on port `8766` (the `wrike` MCP entry). All IDs are Wrike permalink IDs (tasks `IEAA…`, folders `IEAF…`, contacts `KUAA…`). Use `wrike_list_folders` / `wrike_search_tasks` to discover IDs first.
-
-| Tool | Description |
-|---|---|
-| **Read** | |
-| `wrike_search_tasks` | List/filter tasks (optional title, status, folder scope) |
-| `wrike_get_task` | Full detail for one task |
-| `wrike_list_folders` | The folder/project tree |
-| `wrike_get_folder` | One folder/project's detail |
-| `wrike_list_projects` | Folders that are projects |
-| `wrike_get_subtasks` | Subtasks of a task |
-| **Write** (refused when `readonly: true`) | |
-| `wrike_create_task` | Create a task in a folder/project (incl. custom fields by ID + effort) |
-| `wrike_update_task` | Update title/description/status/importance/dates/responsibles/custom fields/effort |
-| `wrike_set_task_fields` | **Set custom fields BY NAME** (auto-resolves IDs, validates dropdown options, resolves contacts) + effort |
-| `wrike_move_task` | Add/remove a task's parent folders |
-| `wrike_create_comment` | Post a comment to a task |
-| `wrike_create_timelog` | Add a time-tracking entry to a task |
-| **Comments / timelogs (read)** | |
-| `wrike_get_comments` | Comments on a task |
-| `wrike_get_timelogs` | Time entries on a task |
-| **Metadata** | |
-| `wrike_list_contacts` | Users/contacts in the account |
-| `wrike_get_account` | Account info |
-| `wrike_list_custom_fields` | Custom field definitions |
-| `wrike_list_workflows` | Workflows and their statuses |
-| `wrike_list_access_roles` | Access roles |
-
-`create_task`'s underlying client method also takes `super_task_ids` (create as a subtask of an existing task), and the client has a further `add_dependency` method for finish-to-start links between tasks — both used internally by **BOM → Manufacturing Tasks**. Neither is exposed as its own MCP tool; `wrike_create_task` has no subtask or dependency parameter.
+The `wrike_*` MCP tools themselves (search/create/update tasks, folders, comments, timelogs, metadata) now live in [SF-WrikeConnector](https://github.com/zosimplifyber/SF-WrikeConnector) — see that repo's README for the tool list. The `WrikeRestAPI` client vendored in this repo (`wrike_rest_api.py`) is used directly by **BOM → Manufacturing Tasks** for task/subtask creation and dependency chaining; it is not exposed as MCP tools here.
 
 ## Known issues / caveats
 
@@ -422,8 +382,8 @@ Vault-MCP/
 ├── app.py                      # Entry point — config, logging, mode dispatch (sse / stdio / gui / workflow)
 ├── mcp_server.py               # FastMCP tool definitions (REST tools + SOAP write paths)
 ├── vault_rest_api.py           # Async Vault REST client
-├── wrike_mcp_server.py         # FastMCP tool definitions for the Wrike server (wrike_* tools)
-├── wrike_rest_api.py           # Async Wrike API v4 client (second, independent MCP server)
+├── wrike_rest_api.py           # Async Wrike API v4 client (used by the BOM → Manufacturing Tasks engine)
+├── wrike_fields.py             # Pure helpers resolving Wrike custom-field names/values for the client above
 ├── bom_purchasing.py           # Purchasing-sheet generation engine
 ├── mfg_package.py              # Manufacturing-order package builder engine (PDF + STEP + Excel BOM)
 ├── publish_bom.py              # BOM → Vault publish-job engine (queues PDF/STEP for Make parts)
