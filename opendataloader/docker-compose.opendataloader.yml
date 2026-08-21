@@ -36,8 +36,9 @@ services:
       # gives a definitive answer before RAGFlow gives up and retries.
       ODL_TIMEOUT: "540"
       ODL_MAX_UPLOAD_BYTES: "104857600"
-      # ODL_API_KEY: set this and OPENDATALOADER_API_KEY in ragflow/docker/.env
-      # together, or neither. /health stays open either way — see Dockerfile.api.
+      # Must match OPENDATALOADER_API_KEY in ragflow/docker/.env exactly.
+      # /health stays open either way — see Dockerfile.api.
+      ODL_API_KEY: "95be6db2edbfe63432e71dd9461ba53ba9973455b38a90ddf4aabd883393d3fe"
     ports:
       # Loopback only. RAGFlow reaches this over the shared docker network by
       # service name, so the published port exists purely for local curl and
